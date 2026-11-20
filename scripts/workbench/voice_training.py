@@ -7,6 +7,7 @@ import time
 import uuid
 import wave
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import voice_clone
 
@@ -18,7 +19,18 @@ UNSENT = {'prepared', 'workbench_queued'}
 PERSON_ID = r'[A-Za-z0-9_-]{1,80}'
 
 
+def managed_postpaid(person, record):
+    return (
+        person.get('speaker') == record.get('speaker_id') == 'custom_speaker_id'
+        and bool(person.get('custom_speaker_id'))
+        and person['custom_speaker_id'] == record.get('custom_speaker_id')
+        and record.get('connection', person.get('connection')) == person.get('connection')
+    )
+
+
 class VoiceTraining:
+    default_mode = 'postpaid'
+
     def __init__(self, app, read, write, run):
         self.app, self.pc, self.read, self.write, self.run = app, app.pc, read, write, run
         self.worker = None
@@ -40,13 +52,30 @@ class VoiceTraining:
         state = record.get('workbench', {})
         phase = record.get('phase')
         sample = self.pc.asset_path(person.get('sample'))
+        replacement = self.pc.asset_path(record.get('replacementSample'))
+        has_replacement = bool(replacement and replacement.is_file())
+        bound = bool(person.get('speaker'))
+        retraining = bool(record.get('retraining'))
+        managed = managed_postpaid(person, record)
+        state_name = state.get('state') or ('paused' if phase else 'idle')
+        if bound and (not managed or not state.get('state')):
+            state_name = 'ready'
+        can_retrain = (managed and phase == 'ready'
+                       and record.get('status') != 4 and state.get('state') not in ACTIVE)
+        can_query = bool(phase and phase not in UNSENT and (not bound or retraining))
+        has_sample = bool(sample and sample.is_file())
+        demo = record.get('demo', {})
         return {
-            'state': 'ready' if person.get('speaker') else state.get('state') or ('paused' if phase else 'idle'),
+            'state': state_name,
             'message': state.get('message', ''),
-            'hasSample': bool(sample and sample.is_file()),
-            'canUpload': not person.get('speaker') and (not phase or phase in UNSENT) and state.get('state') not in ACTIVE,
-            'canStart': not person.get('speaker') and (bool(sample and sample.is_file()) or bool(phase and phase not in UNSENT)),
-            'canQuery': bool(phase and phase not in UNSENT),
+            'hasSample': has_sample,
+            'canUpload': can_retrain or (not bound and (not phase or phase in UNSENT)
+                                         and state.get('state') not in ACTIVE),
+            'canStart': can_query or (not bound and has_sample),
+            'canQuery': can_query,
+            'canRetrain': can_retrain,
+            'hasReplacement': can_retrain and has_replacement,
+            'demoAudio': demo.get('url', '') if not retraining and demo.get('expiresAt', 0) > time.time() else '',
         }
 
     def active(self, ident):
@@ -94,9 +123,16 @@ class VoiceTraining:
                 folder.mkdir(parents=True, exist_ok=True)
                 destination = folder / ('sample-' + uuid.uuid4().hex[:12] + '.wav')
                 sample.replace(destination)
-                person['sample'] = str(destination.relative_to(self.pc.directory().resolve()))
+                relative_sample = str(destination.relative_to(self.pc.directory().resolve()))
                 try:
-                    self.pc.write(self.pc.directory() / 'project.json', cfg)
+                    if person.get('speaker'):
+                        path = self.path(ident)
+                        record = self.read(path)
+                        record['replacementSample'] = relative_sample
+                        self.write(path, record)
+                    else:
+                        person['sample'] = relative_sample
+                        self.pc.write(self.pc.directory() / 'project.json', cfg)
                 except Exception:
                     destination.unlink(missing_ok=True)
                     raise
@@ -112,7 +148,7 @@ class VoiceTraining:
         self.sample({'sample': str(sample)})
 
     def reserve(self, cfg, person, connection):
-        if connection.get('clone_mode') == 'postpaid':
+        if (connection.get('clone_mode') or self.default_mode) == 'postpaid':
             return {'speaker_id': 'custom_speaker_id', 'custom_speaker_id': 'montage_' + uuid.uuid4().hex}
         if connection.get('clone_mode') != 'prepaid':
             raise ValueError('请先在设置 → 制作服务中选择复刻方式。')
@@ -128,7 +164,7 @@ class VoiceTraining:
     def start(self, ident):
         with self.app.transaction():
             cfg, person = self.load_person(ident)
-            if person.get('speaker') or self.active(ident):
+            if self.active(ident) or (person.get('speaker') and not self.public(person)['canQuery']):
                 return self.public(person)
             connection = cfg['connections'].get(person.get('connection'), {})
             if not self.pc.connection_keys(connection)[0]:
@@ -139,10 +175,33 @@ class VoiceTraining:
             if not phase or phase in UNSENT:
                 self.sample(person)
                 if phase != 'prepared':
-                    record = {**self.reserve(cfg, person, connection), 'phase': 'workbench_queued'}
+                    record = {**self.reserve(cfg, person, connection), 'phase': 'workbench_queued',
+                              'connection': person.get('connection')}
             now = time.time()
             record['workbench'] = {'state': 'queued', 'nextAt': now, 'until': now + 600,
                                    'message': '等待提交录音' if record['phase'] in UNSENT else '等待查询复刻状态'}
+            self.write(path, record)
+            return self.public(person)
+
+    def retrain(self, ident):
+        with self.app.transaction():
+            cfg, person = self.load_person(ident)
+            status = self.public(person)
+            if self.active(ident):
+                return status
+            if not status['canRetrain']:
+                raise ValueError('这个音色当前不能重练。已正式合成的后付费音色会锁定。')
+            if not status['hasReplacement']:
+                raise ValueError('请先上传一段新录音。')
+            if not self.pc.connection_keys(cfg['connections'].get(person.get('connection'), {}))[0]:
+                raise ValueError('请先在制作服务中保存语音 API Key。')
+            path = self.path(ident)
+            record = self.read(path)
+            self.sample({'sample': record['replacementSample']})
+            now = time.time()
+            record.update(phase='workbench_queued', retraining=True,
+                          workbench={'state': 'queued', 'nextAt': now, 'until': now + 600,
+                                     'message': '等待检查这个音色能否重练'})
             self.write(path, record)
             return self.public(person)
 
@@ -171,8 +230,11 @@ class VoiceTraining:
         state = record['workbench']
         try:
             cfg, person = self.load_person(ident)
-            if person.get('speaker'):
-                self.finish(path, record, ticket, 'ready', '音色已绑定')
+            if person.get('speaker') and not (record.get('retraining') and managed_postpaid(person, record)):
+                if record.get('retraining'):
+                    self.end_retrain(path, record, ticket, '人物的音色 ID 已变化，请检查当前绑定。')
+                else:
+                    self.finish(path, record, ticket, 'ready', '音色已绑定')
                 return
             key = self.pc.connection_keys(cfg['connections'].get(person.get('connection'), {}))[0]
             if not key:
@@ -185,7 +247,19 @@ class VoiceTraining:
                 if identity['speaker_id'] != 'custom_speaker_id' and time.time() - record.get('slotCheckedAt', 0) > 60:
                     self.check_slot(path, record, ticket, identity, key)
                     return
-                payload = {**identity, 'audio': {'data': base64.b64encode(self.sample(person).read_bytes()).decode(), 'format': 'wav'}}
+                sample = person
+                if record.get('retraining'):
+                    reply = voice_clone.call('get_voice', identity, key)
+                    status = reply.get('status')
+                    record['status'] = status
+                    if status == 4:
+                        self.end_retrain(path, record, ticket, '这个音色已经正式合成过，不能再用原 ID 重练。')
+                        return
+                    if status not in (0, 2, 3):
+                        raise ValueError('还不能确认这个音色可重练，请稍后再试。')
+                    record['previousVoice'] = {k: reply.get(k) for k in ('status', 'create_time', 'version')}
+                    sample = {'sample': record['replacementSample']}
+                payload = {**identity, 'audio': {'data': base64.b64encode(self.sample(sample).read_bytes()).decode(), 'format': 'wav'}}
                 record['phase'] = 'submission_unknown'
                 if not self.finish(path, record, ticket, 'submitting', '正在提交录音', delay=75):
                     return
@@ -197,7 +271,10 @@ class VoiceTraining:
         except Exception as error:
             reason = self.app.redact(str(error))[:350]
             if record.get('phase') in UNSENT:
-                self.finish(path, record, ticket, 'failed', reason)
+                if record.get('retraining'):
+                    self.end_retrain(path, record, ticket, reason)
+                else:
+                    self.finish(path, record, ticket, 'failed', reason)
             elif record.get('phase') == 'submission_unknown' and state.get('state') == 'submitting':
                 self.finish(path, record, ticket, 'training', '等待核对提交结果。' + reason, delay=5)
             else:
@@ -220,25 +297,66 @@ class VoiceTraining:
         status = reply.get('status')
         record['status'] = status
         record['workbench'].pop('queryErrors', None)
+        if record.get('retraining') and record['phase'] == 'submission_unknown':
+            if status == 4:
+                self.end_retrain(path, record, ticket, '火山显示该音色已正式启用，无法确认本次重练结果。')
+                return
+            # A lost response can leave the old successful version visible under the same ID.
+            previous = record.get('previousVoice', {})
+            changed = any(previous.get(k) is not None and reply.get(k) is not None and reply[k] != previous[k]
+                          for k in ('create_time', 'version'))
+            if status == 1 or (status in (2, 3) and (status != previous.get('status') or changed)):
+                record['phase'] = 'submitted'
+            else:
+                polling = time.time() < record['workbench']['until']
+                self.finish(path, record, ticket, 'training' if polling else 'paused',
+                            '暂未确认这次重练是否提交成功，可以继续查询。', delay=5 if polling else 0)
+                return
         if status in (2, 4):
+            self.save_demo(record, reply)
             self.bind(ident, path, record, ticket, identity)
         elif status == 3:
-            self.finish(path, record, ticket, 'failed', '语音服务报告复刻失败。可以继续查询，或查看语音控制台。')
+            if record.get('retraining'):
+                self.end_retrain(path, record, ticket, '这次复刻失败，可以换录音再试。')
+            else:
+                self.finish(path, record, ticket, 'failed', '语音服务报告复刻失败。可以继续查询，或查看语音控制台。')
         elif time.time() >= record['workbench']['until']:
             self.finish(path, record, ticket, 'paused', '暂未获得最终结果，可以继续查询。')
         else:
             progress = '语音服务正在复刻' if status == 1 else '等待语音服务确认任务'
             self.finish(path, record, ticket, 'training', progress, delay=5)
 
+    def end_retrain(self, path, record, ticket, message):
+        record.pop('retraining', None)
+        record.pop('previousVoice', None)
+        record['phase'] = 'ready'
+        self.finish(path, record, ticket, 'failed', message)
+
+    def save_demo(self, record, reply):
+        record.pop('demo', None)
+        for voice in reply.get('speaker_status') or []:
+            url = voice.get('demo_audio')
+            if isinstance(url, str) and url.startswith('https://') and urlsplit(url).hostname:
+                record['demo'] = {'url': url, 'expiresAt': time.time() + 3600}
+                return
+
     def bind(self, ident, path, record, ticket, identity):
         with self.app.transaction():
             if self.read(path, {}).get('workbench', {}).get('ticket') != ticket:
                 return
-            _, person = self.load_person(ident)
-            if not person.get('speaker'):
-                self.app.people.bind(ident, identity['speaker_id'], identity.get('custom_speaker_id'))
+            cfg, person = self.load_person(ident)
+            if record.get('retraining'):
+                person['sample'] = record['replacementSample']
+                self.pc.write(self.pc.directory() / 'project.json', cfg)
+                for field in ('retraining', 'replacementSample', 'previousVoice'):
+                    record.pop(field, None)
+                message = '重练完成，继续使用原来的音色 ID。'
+            else:
+                if not person.get('speaker'):
+                    self.app.people.bind(ident, identity['speaker_id'], identity.get('custom_speaker_id'))
+                message = '复刻完成，音色 ID 已自动填写'
             record['phase'] = 'ready'
-            self.finish(path, record, ticket, 'ready', '复刻完成，音色 ID 已自动填写')
+            self.finish(path, record, ticket, 'ready', message)
 
     def finish(self, path, record, ticket, state, message, delay=0):
         with self.app.transaction():

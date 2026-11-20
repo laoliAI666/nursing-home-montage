@@ -187,7 +187,7 @@ function serviceTestControl(kind,label,detail='') {
   return `<div class="form-group"><button type="button" class="secondary" data-test-service="${kind}">${label}</button>
     ${detail?`<p class="form-help">${detail}</p>`:''}<p class="form-help" role="status" id="test-${kind}-result"></p></div>`;
 }
-function productionServiceSettings(config, openVoiceClone = false) {
+function productionServiceSettings(config) {
   const conn = config.connection;
   const tos = conn.storage.provider === 'tos';
   const people = config.people.filter(person=>person.ready);
@@ -203,21 +203,19 @@ function productionServiceSettings(config, openVoiceClone = false) {
         ${people.map(p=>`<option value="${E(p.id)}" ${p.isDefault?'selected':''}>${E(p.name)}</option>`).join('')}
       </select></div>
       ${serviceTestControl('speech','测试语音连接','用所选音色合成四字短句，按语音平台规则计费。')}
-      <details class="form-group" ${conn.cloneMode || openVoiceClone ? 'open' : ''}>
-        <summary class="field-label">音色复刻设置</summary>
-        <p class="form-help">选择复刻方式并保存，再到数字人页面开始复刻。</p>
+      <div class="form-group">
+        <h4 class="field-label">音色复刻设置</h4>
         <div class="form-group"><label class="field-label" for="clone-mode">复刻方式</label>
           <select name="clone_mode" id="clone-mode">
-            ${conn.cloneMode ? '' : '<option value="" disabled selected>请选择复刻方式</option>'}
-            <option value="prepaid" ${conn.cloneMode === 'prepaid'?'selected':''}>使用已有预付费音色槽位</option>
-            <option value="postpaid" ${conn.cloneMode === 'postpaid'?'selected':''}>创建后付费音色 · 首次正式合成产生槽位费</option>
+            <option value="postpaid" ${conn.cloneMode !== 'prepaid'?'selected':''}>先复刻，第一次正式用时付音色费</option>
+            <option value="prepaid" ${conn.cloneMode === 'prepaid'?'selected':''}>用已经买好的音色名额</option>
           </select>
         </div>
         <div class="form-group" id="speaker-pool-fields" ${conn.cloneMode === 'prepaid'?'':'hidden'}>
-          <label class="field-label" for="speaker-pool">空闲音色槽位</label>
+          <label class="field-label" for="speaker-pool">还没用过的音色 ID</label>
           <input class="input" name="speaker_pool" id="speaker-pool" value="${E(conn.speakerPool.join(', '))}" placeholder="多个音色 ID 用逗号分隔">
         </div>
-      </details>
+      </div>
     </section>
     <section class="settings-service" aria-labelledby="avatar-settings-title">
       <div class="settings-service-heading">
@@ -313,9 +311,8 @@ function bindServiceSettings(form) {
 }
 function renderSettings() {
   const c = state.config;
-  const openVoiceClone = location.hash === '#settings/voice-clone';
   main.innerHTML = `${heading('先准备好，以后就简单了。','服务与数字人只需配置一次。设置保存在你的本地项目。')}<div class="settings-layout"><form class="settings-stack" id="settings-form">
-    ${productionServiceSettings(c, openVoiceClone)}
+    ${productionServiceSettings(c)}
     <section class="panel"><div class="settings-section-heading"><span>${icon('folder')}</span><div><h2>工作区</h2><p>新批次的工程和成品都保存在这里。已有任务继续使用自己的目录。</p></div></div>
       <div class="form-group"><label class="field-label" for="workspace-directory">工作区目录</label>
       <input class="input" id="workspace-directory" name="workspace" value="${E(c.workspaceSetting || '')}" placeholder="${E(c.workspaceDefault || c.project)}">
@@ -326,7 +323,6 @@ function renderSettings() {
   $('#storage-provider').addEventListener('change', e => { $('#tos-fields').hidden = e.target.value !== 'tos'; $('#tmpfile-note').hidden = e.target.value === 'tos'; });
   $('#clone-mode').addEventListener('change', e => { $('#speaker-pool-fields').hidden = e.target.value !== 'prepaid'; });
   bindServiceSettings($('#settings-form'));
-  if (openVoiceClone) requestAnimationFrame(() => $('#clone-mode')?.focus());
   $('#settings-form').addEventListener('submit', async e => {
     e.preventDefault(); const next = e.submitter?.dataset.next; const form = e.target, data = Object.fromEntries(new FormData(form)); $('#settings-error').textContent = '';
     await busy(form.querySelector('[type=submit]'), async () => {
@@ -342,34 +338,35 @@ function agentStatusBlock() {
 function personVoice(person, editor=false) {
   const voice=person.voiceTraining;
   if(!voice)return '';
-  if(person.speaker){
-    const id=person.custom_speaker_id||person.speaker;
-    return `<p class="form-help" role="status">${voice.message==='复刻完成，音色 ID 已自动填写'?'复刻完成 · ':''}音色 ID <code>${E(id)}</code></p>`;
-  }
+  const id=person.custom_speaker_id||person.speaker;
   const active=['queued','checking','submitting','training'].includes(voice.state);
-  const canStart = voice.canStart && !active;
-  const needsCloneMode = canStart && !voice.canQuery && person.connection === 'main' && !state.config.connection.cloneMode;
-  const text=voice.message||(needsCloneMode?'录音已保存，请先选择复刻方式。':voice.canQuery?'有复刻记录，可以继续查询。':voice.hasSample?'录音已保存，可以开始复刻。':'请上传录音或填写已有音色 ID。');
-  const action=voice.canQuery?'继续查询':'开始复刻';
+  const canStart=voice.canStart&&!active;
+  const text=voice.message||(!id&&(
+    voice.canQuery?'有复刻记录，可以继续查询。':voice.hasSample?'录音已保存，可以开始复刻。':'请上传录音或填写已有音色 ID。'));
   return `<div class="person-voice">
-    <p class="${voice.state==='failed'?'inline-error':'form-help'}" role="status">${E(text)}</p>
+    ${id?`<p class="form-help">音色 ID <code>${E(id)}</code></p>`:''}
+    ${text?`<p class="${voice.state==='failed'?'inline-error':'form-help'}" role="status">${E(text)}</p>`:''}
+    ${editor&&voice.demoAudio?`<audio controls preload="none" aria-label="试听复刻音色" src="${E(voice.demoAudio)}"></audio>`:''}
+    ${editor&&voice.hasReplacement?'<p class="form-help">新录音已保存，可以用原来的音色 ID 重练。</p>':''}
     <div class="person-voice-actions">
-      ${editor&&voice.canUpload?`<input type="file" id="person-voice-file" data-person="${E(person.id)}" accept=".wav,.mp3,.m4a,.aac,.flac,.ogg" hidden><button type="button" class="secondary" data-action="pick-voice-sample">${icon('plus')} ${voice.hasSample?'更换录音':'上传录音'}</button>`:''}
-      ${needsCloneMode?'<a class="secondary" href="#settings/voice-clone">选择复刻方式</a>':canStart?`<button type="button" class="secondary" data-action="start-voice-training" data-id="${E(person.id)}">${action}</button>`:''}
+      ${editor&&voice.canUpload?`<input type="file" id="person-voice-file" data-person="${E(person.id)}" accept=".wav,.mp3,.m4a,.aac,.flac,.ogg" hidden><button type="button" class="secondary" data-action="pick-voice-sample">${icon('plus')} ${voice.hasSample||voice.canRetrain?'更换录音':'上传录音'}</button>`:''}
+      ${canStart?`<button type="button" class="secondary" data-action="start-voice-training" data-id="${E(person.id)}">${voice.canQuery?'继续查询':'开始复刻'}</button>`:''}
+      ${editor&&voice.hasReplacement?`<button type="button" class="secondary" data-action="start-voice-training" data-id="${E(person.id)}" data-retrain="true">用原音色 ID 重练</button>`:''}
     </div>
-    ${editor&&canStart&&!voice.canQuery&&!needsCloneMode?'<p class="form-help">开始复刻会将录音发送到火山语音服务。</p>':''}
+    ${editor&&voice.canRetrain?'<p class="form-help">首次用这个音色点「测试语音连接」也会收音色费，之后就不能重练。</p>':''}
+    ${editor&&canStart&&!voice.canQuery?'<p class="form-help">开始复刻会将录音发送到火山语音服务。</p>':''}
   </div>`;
 }
 function personReadiness(person) {
   const status=person.voiceTraining?.state;
   const active=['queued','checking','submitting','training'].includes(status);
-  return badge(person.ready?'已就绪':active?'复刻进行中':'待绑定音色',person.ready?'':'warn');
+  return badge(active?'复刻进行中':person.ready?'已就绪':'待绑定音色',person.ready&&!active?'':'warn');
 }
-function paintVoiceUpdates(previousPeople, previousCloneMode) {
+function paintVoiceUpdates(previousPeople) {
   const previous=new Map(previousPeople.map(person=>[person.id,person]));
   for(const person of state.config.people){
     const prior=previous.get(person.id);
-    if(prior&&previousCloneMode===state.config.connection.cloneMode&&JSON.stringify([prior.voiceTraining,prior.speaker,prior.custom_speaker_id])===JSON.stringify([person.voiceTraining,person.speaker,person.custom_speaker_id]))continue;
+    if(prior&&JSON.stringify([prior.voiceTraining,prior.speaker,prior.custom_speaker_id])===JSON.stringify([person.voiceTraining,person.speaker,person.custom_speaker_id]))continue;
     const suffix=CSS.escape(person.id);
     const voice=$(`[data-person-voice="${suffix}"]`);
     const badgeSlot=$(`[data-person-ready="${suffix}"]`);
@@ -560,7 +557,7 @@ document.addEventListener('click', async e=>{
     if(action==='edit-person'){editPerson=button.dataset.id;renderPeople();$('#person-editor').scrollIntoView({block:'start',behavior:'smooth'});}
     if(action==='close-editor'){editPerson=undefined;renderPeople();}
     if(action==='pick-voice-sample')$('#person-voice-file')?.click();
-    if(action==='start-voice-training')await busy(button,async()=>{await api(`/api/people/${encodeURIComponent(button.dataset.id)}/voice-training`,{});await refresh();});
+    if(action==='start-voice-training')await busy(button,async()=>{await api(`/api/people/${encodeURIComponent(button.dataset.id)}/voice-training`,{retrain:button.dataset.retrain==='true'});await refresh();});
     if(action==='filter'){worksFilter=button.dataset.filter;renderWorks();}
     if(action==='start-task')await busy(button,async()=>{await api(`/api/tasks/${button.dataset.id}/start`,{});await refresh(false);renderTask();});
     if(action==='cancel-task')await busy(button,async()=>{await api(`/api/tasks/${button.dataset.id}/cancel`,{});await refresh(false);renderTask();notify('停止请求已提交，已有制作文件会保留');});

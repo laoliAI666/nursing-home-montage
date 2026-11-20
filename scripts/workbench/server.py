@@ -245,7 +245,7 @@ class App:
             voice_training = self.voice_training.public({**p, 'id': ident})
             people.append({k: p.get(k) for k in ("name", "social_media_name", "speaker", "custom_speaker_id", "status", "speech_rate", "connection", "sample")} | {"id": ident, "ready": bool(p.get("speaker") and self.pc.asset_path(p.get("portrait")) and self.pc.asset_path(p.get("portrait")).is_file()), "hasPortrait": bool(p.get("portrait")), "isDefault": ident == cfg.get("default_person"), "voiceTraining": voice_training})
         storage = self.pc.storage_settings(c.get("storage"))
-        return {"project": str(self.project), "workspace": str(self.workspace()), "workspaceDefault": str(self.workspace_default()), "workspaceSetting": read(self.data/'workspace.json', {}).get('directory', ''), "version": (self.skill / "VERSION").read_text().strip(), "people": people, "defaultPerson": cfg.get("default_person"), "connection": {"speech": bool(keys[0]), "ak": bool(keys[1]), "sk": bool(keys[2]), "storage": storage, "cloneMode": c.get("clone_mode", ""), "speakerPool": c.get("speaker_pool", [])}, "preferences": {"music": cfg.get("settings", {}).get("music", {}).get("enabled", True), "coverHeader": cfg.get("settings", {}).get("cover", {}).get("header_text", "")}, "agent": self.agent_state(), "model": self.models.public(), "phases": PHASES, "onboarded": read(self.data / "preferences.json", {}).get("onboarded", False)}
+        return {"project": str(self.project), "workspace": str(self.workspace()), "workspaceDefault": str(self.workspace_default()), "workspaceSetting": read(self.data/'workspace.json', {}).get('directory', ''), "version": (self.skill / "VERSION").read_text().strip(), "people": people, "defaultPerson": cfg.get("default_person"), "connection": {"speech": bool(keys[0]), "ak": bool(keys[1]), "sk": bool(keys[2]), "storage": storage, "cloneMode": c.get("clone_mode") or self.voice_training.default_mode, "speakerPool": c.get("speaker_pool", [])}, "preferences": {"music": cfg.get("settings", {}).get("music", {}).get("enabled", True), "coverHeader": cfg.get("settings", {}).get("cover", {}).get("header_text", "")}, "agent": self.agent_state(), "model": self.models.public(), "phases": PHASES, "onboarded": read(self.data / "preferences.json", {}).get("onboarded", False)}
 
     def agent_state(self):
         if self.models.enabled() or self.workbench_host == 'local':
@@ -297,6 +297,8 @@ class App:
                 cfg = self.pc.load()
                 if conn.get("clone_mode") in ("prepaid", "postpaid"):
                     cfg["connections"]["main"]["clone_mode"] = conn["clone_mode"]
+                else:
+                    cfg["connections"]["main"].setdefault("clone_mode", self.voice_training.default_mode)
                 if "speaker_pool" in conn:
                     cfg["connections"]["main"]["speaker_pool"] = [s.strip() for s in str(conn["speaker_pool"]).replace("，", ",").split(",") if s.strip()]
                 self.pc.write(self.pc.directory() / "project.json", cfg)
@@ -771,7 +773,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, self.app.save_person(v))
             match = re.fullmatch(r'/api/people/([A-Za-z0-9_-]{1,80})/voice-training', url.path)
             if match:
-                return self.reply(202, self.app.voice_training.start(match[1]))
+                action = self.app.voice_training.retrain if v.get('retrain') is True else self.app.voice_training.start
+                return self.reply(202, action(match[1]))
             if url.path == "/api/scan":
                 return self.reply(200, self.app.scan(v.get("folder", "")))
             if url.path == "/api/pick-folder":
