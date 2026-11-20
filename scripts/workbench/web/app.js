@@ -187,7 +187,7 @@ function serviceTestControl(kind,label,detail='') {
   return `<div class="form-group"><button type="button" class="secondary" data-test-service="${kind}">${label}</button>
     ${detail?`<p class="form-help">${detail}</p>`:''}<p class="form-help" role="status" id="test-${kind}-result"></p></div>`;
 }
-function productionServiceSettings(config) {
+function productionServiceSettings(config, openVoiceClone = false) {
   const conn = config.connection;
   const tos = conn.storage.provider === 'tos';
   const people = config.people.filter(person=>person.ready);
@@ -203,12 +203,12 @@ function productionServiceSettings(config) {
         ${people.map(p=>`<option value="${E(p.id)}" ${p.isDefault?'selected':''}>${E(p.name)}</option>`).join('')}
       </select></div>
       ${serviceTestControl('speech','测试语音连接','用所选音色合成四字短句，按语音平台规则计费。')}
-      <details class="form-group" ${conn.cloneMode?'open':''}>
+      <details class="form-group" ${conn.cloneMode || openVoiceClone ? 'open' : ''}>
         <summary class="field-label">音色复刻设置</summary>
-        <p class="form-help">在数字人页面上传录音并点击「开始复刻」。成功后音色会自动绑定到人物。</p>
+        <p class="form-help">选择复刻方式并保存，再到数字人页面开始复刻。</p>
         <div class="form-group"><label class="field-label" for="clone-mode">复刻方式</label>
           <select name="clone_mode" id="clone-mode">
-            <option value="">保留当前设置</option>
+            ${conn.cloneMode ? '' : '<option value="" disabled selected>请选择复刻方式</option>'}
             <option value="prepaid" ${conn.cloneMode === 'prepaid'?'selected':''}>使用已有预付费音色槽位</option>
             <option value="postpaid" ${conn.cloneMode === 'postpaid'?'selected':''}>创建后付费音色 · 首次正式合成产生槽位费</option>
           </select>
@@ -313,8 +313,9 @@ function bindServiceSettings(form) {
 }
 function renderSettings() {
   const c = state.config;
+  const openVoiceClone = location.hash === '#settings/voice-clone';
   main.innerHTML = `${heading('先准备好，以后就简单了。','服务与数字人只需配置一次。设置保存在你的本地项目。')}<div class="settings-layout"><form class="settings-stack" id="settings-form">
-    ${productionServiceSettings(c)}
+    ${productionServiceSettings(c, openVoiceClone)}
     <section class="panel"><div class="settings-section-heading"><span>${icon('folder')}</span><div><h2>工作区</h2><p>新批次的工程和成品都保存在这里。已有任务继续使用自己的目录。</p></div></div>
       <div class="form-group"><label class="field-label" for="workspace-directory">工作区目录</label>
       <input class="input" id="workspace-directory" name="workspace" value="${E(c.workspaceSetting || '')}" placeholder="${E(c.workspaceDefault || c.project)}">
@@ -325,6 +326,7 @@ function renderSettings() {
   $('#storage-provider').addEventListener('change', e => { $('#tos-fields').hidden = e.target.value !== 'tos'; $('#tmpfile-note').hidden = e.target.value === 'tos'; });
   $('#clone-mode').addEventListener('change', e => { $('#speaker-pool-fields').hidden = e.target.value !== 'prepaid'; });
   bindServiceSettings($('#settings-form'));
+  if (openVoiceClone) requestAnimationFrame(() => $('#clone-mode')?.focus());
   $('#settings-form').addEventListener('submit', async e => {
     e.preventDefault(); const next = e.submitter?.dataset.next; const form = e.target, data = Object.fromEntries(new FormData(form)); $('#settings-error').textContent = '';
     await busy(form.querySelector('[type=submit]'), async () => {
@@ -345,15 +347,17 @@ function personVoice(person, editor=false) {
     return `<p class="form-help" role="status">${voice.message==='复刻完成，音色 ID 已自动填写'?'复刻完成 · ':''}音色 ID <code>${E(id)}</code></p>`;
   }
   const active=['queued','checking','submitting','training'].includes(voice.state);
-  const text=voice.message||(voice.canQuery?'有复刻记录，可以继续查询。':voice.hasSample?'录音已保存，可以开始复刻。':'请上传录音或填写已有音色 ID。');
+  const canStart = voice.canStart && !active;
+  const needsCloneMode = canStart && !voice.canQuery && person.connection === 'main' && !state.config.connection.cloneMode;
+  const text=voice.message||(needsCloneMode?'录音已保存，请先选择复刻方式。':voice.canQuery?'有复刻记录，可以继续查询。':voice.hasSample?'录音已保存，可以开始复刻。':'请上传录音或填写已有音色 ID。');
   const action=voice.canQuery?'继续查询':'开始复刻';
   return `<div class="person-voice">
     <p class="${voice.state==='failed'?'inline-error':'form-help'}" role="status">${E(text)}</p>
     <div class="person-voice-actions">
       ${editor&&voice.canUpload?`<input type="file" id="person-voice-file" data-person="${E(person.id)}" accept=".wav,.mp3,.m4a,.aac,.flac,.ogg" hidden><button type="button" class="secondary" data-action="pick-voice-sample">${icon('plus')} ${voice.hasSample?'更换录音':'上传录音'}</button>`:''}
-      ${voice.canStart&&!active?`<button type="button" class="secondary" data-action="start-voice-training" data-id="${E(person.id)}">${action}</button>`:''}
+      ${needsCloneMode?'<a class="secondary" href="#settings/voice-clone">选择复刻方式</a>':canStart?`<button type="button" class="secondary" data-action="start-voice-training" data-id="${E(person.id)}">${action}</button>`:''}
     </div>
-    ${editor&&voice.canStart&&!voice.canQuery&&!active?'<p class="form-help">开始复刻会将录音发送到火山语音服务。</p>':''}
+    ${editor&&canStart&&!voice.canQuery&&!needsCloneMode?'<p class="form-help">开始复刻会将录音发送到火山语音服务。</p>':''}
   </div>`;
 }
 function personReadiness(person) {
@@ -361,11 +365,11 @@ function personReadiness(person) {
   const active=['queued','checking','submitting','training'].includes(status);
   return badge(person.ready?'已就绪':active?'复刻进行中':'待绑定音色',person.ready?'':'warn');
 }
-function paintVoiceUpdates(previousPeople) {
+function paintVoiceUpdates(previousPeople, previousCloneMode) {
   const previous=new Map(previousPeople.map(person=>[person.id,person]));
   for(const person of state.config.people){
     const prior=previous.get(person.id);
-    if(prior&&JSON.stringify([prior.voiceTraining,prior.speaker,prior.custom_speaker_id])===JSON.stringify([person.voiceTraining,person.speaker,person.custom_speaker_id]))continue;
+    if(prior&&previousCloneMode===state.config.connection.cloneMode&&JSON.stringify([prior.voiceTraining,prior.speaker,prior.custom_speaker_id])===JSON.stringify([person.voiceTraining,person.speaker,person.custom_speaker_id]))continue;
     const suffix=CSS.escape(person.id);
     const voice=$(`[data-person-voice="${suffix}"]`);
     const badgeSlot=$(`[data-person-ready="${suffix}"]`);
