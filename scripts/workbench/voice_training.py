@@ -29,6 +29,14 @@ def managed_postpaid(person, record):
     )
 
 
+def voice_binding(person):
+    return {field: person.get(field) for field in ('speaker', 'custom_speaker_id', 'voice_provider', 'connection')}
+
+
+def can_replace_with_minimax(person):
+    return bool(person.get('speaker') and person.get('voice_provider') != 'minimax')
+
+
 def retryable_registration(record):
     return (record.get('phase') == 'retryable'
             or (record.get('status') == 3 and record.get('workbench', {}).get('state') == 'failed'))
@@ -77,8 +85,9 @@ class VoiceTraining:
         bound = bool(person.get('speaker'))
         retraining = bool(record.get('retraining'))
         managed = managed_postpaid(person, record)
+        switching = bool(record.get('previousBinding'))
         state_name = state.get('state') or ('paused' if phase else 'idle')
-        if bound and (not managed or not state.get('state')):
+        if bound and not switching and (not managed or not state.get('state')):
             state_name = 'ready'
         can_retrain = (managed and phase == 'ready'
                        and record.get('status') != 4 and state.get('state') not in ACTIVE)
@@ -92,6 +101,16 @@ class VoiceTraining:
         message = state.get('message', '')
         http_status = state.get('httpStatus') or voice_http_status(message)
         needs_permission = state_name in ('failed', 'paused') and http_status in (401, 403)
+        minimax_switch = None
+        if can_replace_with_minimax(person):
+            staged = self.pc.asset_path(record.get('minimaxSample'))
+            can_edit = state_name not in ACTIVE and (not switching or phase in UNSENT or phase == 'retryable')
+            minimax_switch = {
+                'started': switching,
+                'hasSample': has_sample or bool(staged and staged.is_file()),
+                'canUpload': can_edit,
+                'canStart': can_edit or (switching and phase == 'confirmed' and state_name not in ACTIVE),
+            }
         return {
             'state': state_name,
             'message': permission_message(http_status, record) if needs_permission else message,
@@ -104,6 +123,7 @@ class VoiceTraining:
             'canQuery': can_query,
             'needsSlot': needs_slot,
             'attemptProvider': record.get('provider', 'volcengine') if phase else None,
+            'minimaxSwitch': minimax_switch,
             'replacePostpaid': replace_postpaid,
             'canRetrain': can_retrain,
             'hasReplacement': can_retrain and has_replacement,
@@ -135,12 +155,20 @@ class VoiceTraining:
             raise ValueError('工作台无法读取这段 WAV 录音，请重新上传。') from None
         return path
 
-    def attach(self, ident, filename, data):
+    def attach(self, ident, filename, data, provider=None):
         suffix = Path(filename).suffix.lower()
         if suffix not in self.app.people.AUDIO or not 0 < len(data) <= MAX_AUDIO_BYTES:
             raise ValueError('请选择不超过 10 MB 的 WAV、MP3、M4A、AAC、FLAC 或 OGG 录音。')
         cfg, person = self.load_person(ident)
-        if not self.public(person)['canUpload']:
+        def upload_field(person):
+            status = self.public(person)
+            if provider == 'minimax' and status['minimaxSwitch'] is not None:
+                return 'minimaxSample' if status['minimaxSwitch']['canUpload'] else None
+            if status['canUpload']:
+                return 'replacementSample' if person.get('speaker') else 'sample'
+
+        field = upload_field(person)
+        if not field:
             raise ValueError('这位数字人已有绑定的音色或正在查询复刻结果。')
         with tempfile.TemporaryDirectory(prefix='voice-', dir=self.app.data) as directory:
             source = Path(directory) / ('upload' + suffix)
@@ -149,7 +177,7 @@ class VoiceTraining:
             self.normalize_sample(source, sample)
             with self.app.transaction():
                 cfg, person = self.load_person(ident)
-                if not self.public(person)['canUpload']:
+                if upload_field(person) != field:
                     raise ValueError('这位数字人的复刻状态已变化，请刷新后查看。')
                 folder = self.folder(ident)
                 folder.mkdir(parents=True, exist_ok=True)
@@ -157,10 +185,10 @@ class VoiceTraining:
                 sample.replace(destination)
                 relative_sample = str(destination.relative_to(self.pc.directory().resolve()))
                 try:
-                    if person.get('speaker'):
+                    if field != 'sample':
                         path = self.path(ident)
-                        record = self.read(path)
-                        record['replacementSample'] = relative_sample
+                        record = self.read(path, {})
+                        record[field] = relative_sample
                         self.write(path, record)
                     else:
                         person['sample'] = relative_sample
@@ -240,17 +268,44 @@ class VoiceTraining:
             raise ValueError('请选择支持的语音平台。')
         return provider or person.get('voice_provider') or cfg.get('settings', {}).get('voice_provider', 'volcengine')
 
+    def start_minimax_switch(self, cfg, person, path, record):
+        options = self.public(person)['minimaxSwitch']
+        if not options or not options['canStart']:
+            raise ValueError('请先完成正在处理的复刻。若 MiniMax 上次提交未确认，请核对控制台。')
+        phase = record.get('phase') if options['started'] else None
+        if phase != 'confirmed':
+            key = self.pc.connection_keys(cfg['connections'].get('minimax', {}))[0]
+            if not key:
+                raise ValueError('请先在语音合成与复刻设置保存 MiniMax API Key。')
+            self.sample({'sample': record.get('minimaxSample') or person.get('sample')})
+            if record.get('phase') and not options['started']:
+                self.write(path.with_name('voice-training-before-minimax.json'), record)
+            record = {
+                'provider': 'minimax', 'phase': 'workbench_queued',
+                'speaker_id': record['speaker_id'] if options['started'] else 'montage-' + uuid.uuid4().hex,
+                'previousBinding': voice_binding(person), 'minimaxSample': record.get('minimaxSample'),
+            }
+        now = time.time()
+        record['workbench'] = {'state': 'queued', 'nextAt': now, 'until': now + 600,
+                               'message': '正在绑定 MiniMax 音色' if phase == 'confirmed' else '等待提交 MiniMax 录音'}
+        self.write(path, record)
+        return self.public(person)
+
     def start(self, ident, slots=None, speaker=None, overwrite=False, requested=None):
         with self.app.transaction():
             cfg, person = self.load_person(ident)
-            if self.active(ident) or (person.get('speaker') and not self.public(person)['canQuery']):
+            if self.active(ident):
                 return self.public(person)
-            connection = cfg['connections'].get(person.get('connection'), {})
             path = self.path(ident)
             record = self.read(path, {})
+            configured = self.requested_provider(cfg, person, requested)
+            if configured == 'minimax' and can_replace_with_minimax(person) and slots is None:
+                return self.start_minimax_switch(cfg, person, path, record)
+            if person.get('speaker') and not self.public(person)['canQuery']:
+                return self.public(person)
+            connection = cfg['connections'].get(person.get('connection'), {})
             phase = record.get('phase')
             retryable = not person.get('speaker') and retryable_registration(record)
-            configured = self.requested_provider(cfg, person, requested)
             replace_postpaid = configured == 'minimax' and self.public(person)['replacePostpaid']
             initial = not phase or phase in UNSENT or retryable or replace_postpaid
             provider = configured if initial or slots is not None else record.get('provider', 'volcengine')
@@ -336,31 +391,40 @@ class VoiceTraining:
         submitting = False
         try:
             cfg, person = self.load_person(ident)
-            if person.get('speaker') and not (record.get('retraining') and managed_postpaid(person, record)):
+            is_minimax = record.get('provider') == 'minimax'
+            phase = record['phase']
+            identity = {k: record[k] for k in ('speaker_id', 'custom_speaker_id') if record.get(k)}
+            if is_minimax and phase == 'confirmed':
+                self.bind(ident, path, record, ticket, identity)
+                return
+            if record.get('previousBinding') and voice_binding(person) != record['previousBinding']:
+                self.finish(path, record, ticket, 'failed', '人物音色已变化，请检查当前绑定。')
+                return
+            if person.get('speaker') and not record.get('previousBinding') and not (record.get('retraining') and managed_postpaid(person, record)):
                 if record.get('retraining'):
                     self.end_retrain(path, record, ticket, '人物的音色 ID 已变化，请检查当前绑定。')
                 else:
                     self.finish(path, record, ticket, 'ready', '音色已绑定')
                 return
-            is_minimax = record.get('provider') == 'minimax'
             connection = 'minimax' if is_minimax else person.get('connection')
             key = self.pc.connection_keys(cfg['connections'].get(connection, {}))[0]
             if not key:
                 raise ValueError('语音 API Key 已失效，请补齐后继续。')
-            phase = record['phase']
-            identity = {k: record[k] for k in ('speaker_id', 'custom_speaker_id') if record.get(k)}
             if is_minimax:
                 if phase not in UNSENT:
                     self.finish(path, record, ticket, 'paused', 'MiniMax 未确认上次提交，请先在 MiniMax 控制台核对音色。')
                     return
                 if not record.get('fileId'):
-                    record['fileId'] = minimax_voice.upload(self.sample(person), key)
+                    sample = record.get('minimaxSample') or person.get('sample')
+                    record['fileId'] = minimax_voice.upload(self.sample({'sample': sample}), key)
                 record['phase'] = 'submission_unknown'
                 if not self.finish(path, record, ticket, 'submitting', '正在提交 MiniMax 复刻', delay=120):
                     return
                 submitting = True
                 minimax_voice.clone(record['fileId'], identity['speaker_id'], key)
-                self.bind(ident, path, record, ticket, identity)
+                record['phase'] = 'confirmed'
+                if self.finish(path, record, ticket, 'queued', '复刻成功，正在绑定音色', delay=75):
+                    self.bind(ident, path, record, ticket, identity)
             elif phase == 'ready':
                 self.bind(ident, path, record, ticket, identity)
             elif phase in UNSENT:
@@ -498,6 +562,19 @@ class VoiceTraining:
                 for field in ('retraining', 'replacementSample', 'previousVoice'):
                     record.pop(field, None)
                 message = '重练完成，继续使用原来的音色 ID。'
+            elif record.get('previousBinding'):
+                voice_id = identity['speaker_id']
+                if person.get('voice_provider') != 'minimax' or person.get('speaker') != voice_id:
+                    if voice_binding(person) != record['previousBinding']:
+                        self.finish(path, record, ticket, 'failed', '人物音色已变化，请检查当前绑定。')
+                        return
+                    person.update(speaker=voice_id, custom_speaker_id=None, status='ready', voice_provider='minimax')
+                    if record.get('minimaxSample'):
+                        person['sample'] = record['minimaxSample']
+                    self.pc.write(self.pc.directory() / 'project.json', cfg)
+                record.pop('previousBinding', None)
+                record.pop('minimaxSample', None)
+                message = 'MiniMax 复刻完成，已切换为新音色'
             else:
                 if not person.get('speaker') and (record.get('slotOwner') or record.get('provider') == 'minimax'):
                     owner = cfg['people'].get(record.get('slotOwner'))

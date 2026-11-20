@@ -881,7 +881,7 @@ class Handler(BaseHTTPRequestHandler):
         data = self.rfile.read(length)
         if len(data) != length:
             raise ValueError('录音上传中断，请重试。')
-        return self.reply(201, self.app.voice_training.attach(ident, q.get('name', [''])[0], data))
+        return self.reply(201, self.app.voice_training.attach(ident, q.get('name', [''])[0], data, q.get('provider', [None])[0]))
 
     def upload_music(self,q):
         from music_library import AUDIO, MAX_BYTES

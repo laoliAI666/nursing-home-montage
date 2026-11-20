@@ -463,10 +463,30 @@ async function showVoiceSlots(opener, person) {
 function personVoicePlatform(person) {
   return person.voice_provider||(person.speaker?'volcengine':state.config.voice.provider);
 }
+function voiceUploadControl(person, label, provider='') {
+  return `<input type="file" id="person-voice-file" data-person="${E(person.id)}" data-provider="${provider}" accept=".wav,.mp3,.m4a,.aac,.flac,.ogg" hidden><button type="button" class="secondary" data-action="pick-voice-sample">${icon('plus')} ${label}</button>`;
+}
+function minimaxVoiceSwitch(person, voice) {
+  const options=voice.minimaxSwitch;
+  const issue=['failed','paused'].includes(voice.state);
+  return `<div class="person-voice">
+    <p class="form-help">当前使用火山音色。MiniMax 复刻成功后会自动切换。</p>
+    ${options.started&&voice.message?`<p class="${issue?'inline-error':'form-help'}" role="status">${E(voice.message)}</p>`:''}
+    ${options.canUpload?`<p class="form-help">${options.hasSample?'可以用已保存的录音复刻，也可以更换录音。':'请先上传至少 10 秒的单人录音。'}</p>`:''}
+    ${!state.config.voice.minimaxConfigured?'<p class="form-help">复刻前请到<a href="#settings">设置</a>保存 MiniMax API Key。</p>':''}
+    <div class="person-voice-actions">
+      ${options.canUpload?voiceUploadControl(person,options.hasSample?'更换录音':'上传录音','minimax'):''}
+      <button type="button" class="secondary" data-action="start-voice-training" data-id="${E(person.id)}" data-provider="minimax"
+        ${options.canStart&&options.hasSample?'':'disabled'}>复刻</button>
+    </div>
+    ${options.canStart&&options.hasSample?'<p class="form-help">点击「复刻」会把录音发送给 MiniMax。</p>':''}
+  </div>`;
+}
 function personVoice(person, editor=false, provider=personVoicePlatform(person)) {
   const voice=person.voiceTraining;
   if(!voice)return '';
   if(editor&&person.speaker&&provider!==boundVoicePlatform(person)){
+    if(provider==='minimax'&&voice.minimaxSwitch)return minimaxVoiceSwitch(person,voice);
     return `<p class="form-help">当前绑定的是 ${voicePlatforms[boundVoicePlatform(person)]} 音色。填入所选平台的音色 ID 并保存，即可切换。</p>`;
   }
   const id=person.custom_speaker_id||person.speaker;
@@ -484,7 +504,7 @@ function personVoice(person, editor=false, provider=personVoicePlatform(person))
     ${editor&&voice.demoAudio?`<audio controls preload="none" aria-label="试听复刻音色" src="${E(voice.demoAudio)}"></audio>`:''}
     ${editor&&voice.hasReplacement?'<p class="form-help">新录音已保存。点「复刻」会沿用原来的音色 ID。</p>':''}
     <div class="person-voice-actions">
-      ${editor&&voice.canUpload?`<input type="file" id="person-voice-file" data-person="${E(person.id)}" accept=".wav,.mp3,.m4a,.aac,.flac,.ogg" hidden><button type="button" class="secondary" data-action="pick-voice-sample">${icon('plus')} ${voice.hasSample||voice.canRetrain?'更换录音':'上传录音'}</button>`:''}
+      ${editor&&voice.canUpload?voiceUploadControl(person,voice.hasSample||voice.canRetrain?'更换录音':'上传录音'):''}
       ${canStart?`<button type="button" class="secondary" data-action="start-voice-training" data-id="${E(person.id)}" data-retrain="${Boolean(voice.hasReplacement)}" data-provider="${platform}">复刻</button>`:''}
     </div>
     ${editor&&voice.canRetrain?'<p class="form-help">首次用这个音色点「测试语音连接」也会收音色费，之后就不能重练。</p>':''}
@@ -524,10 +544,12 @@ function paintVoiceUpdates(previousPeople) {
 async function uploadPersonVoice(input) {
   const file=input.files[0];if(!file)return;
   const ident=input.dataset.person;
+  const query=new URLSearchParams({name:file.name});
+  if(input.dataset.provider)query.set('provider',input.dataset.provider);
   const button=input.nextElementSibling;
   await busy(button,async()=>{
     try {
-      const response=await fetch(`/api/people/${encodeURIComponent(ident)}/voice-sample?name=${encodeURIComponent(file.name)}`,{
+      const response=await fetch(`/api/people/${encodeURIComponent(ident)}/voice-sample?${query}`,{
         method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file});
       const result=await response.json();if(!response.ok)throw new Error(result.error);
       await refresh();notify('录音已保存');
