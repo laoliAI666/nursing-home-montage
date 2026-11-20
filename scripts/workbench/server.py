@@ -300,6 +300,8 @@ class App:
                     raise ValueError('阿里百炼 API Key 格式不正确。')
                 voice_project = project_name(conn['voice_project']) if conn.get('voice_project') else None
                 provider = conn.get('voice_provider')
+                if provider == 'aliyun' and not ali_workspace:
+                    workspace_id(self.pc.load()['connections'].get('aliyun', {}).get('workspace'))
                 model = conn.get('minimax_model')
                 if provider not in (None, 'volcengine', 'minimax', 'aliyun') or model not in (None, *MODELS):
                     raise ValueError('请选择支持的语音服务和模型。')
@@ -840,6 +842,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, check(self.app, v))
             if url.path == "/api/people":
                 return self.reply(200, self.app.save_person(v))
+            match = re.fullmatch(r'/api/people/([A-Za-z0-9_-]{1,80})/voice-preview', url.path)
+            if match:
+                from service_checks import preview_voice
+                return self.reply(200, preview_voice(self.app, match[1], v), 'audio/mpeg')
             if url.path == '/api/voice-slots':
                 ident = v.get('person')
                 if ident is not None:

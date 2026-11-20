@@ -153,7 +153,7 @@ function credentialLink(url, label) {
   return `<a class="credential-link" href="${E(url)}" target="_blank" rel="noopener noreferrer">${E(label)} ${icon('arrow-up-right')}</a>`;
 }
 function modelKeyGuide(provider) {
-  if(provider==='ark')return credentialLink('https://ark.volcengine.com/region%3Acn-beijing/apikey','获取火山方舟 API Key');
+  if(provider==='ark')return credentialLink('https://ark.volcengine.com/region:cn-beijing/apiKey?apikey=%7B%7D','获取火山方舟 API Key');
   if(provider==='deepseek')return credentialLink('https://platform.deepseek.com/api_keys','获取 DeepSeek API Key');
   return `到 Base URL 对应的服务商后台创建 Key。如果使用 OpenAI，${credentialLink('https://platform.openai.com/api-keys','打开 OpenAI API Keys')}。`;
 }
@@ -278,9 +278,9 @@ function productionServiceSettings(config) {
             <p class="form-help">${credentialLink('https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key','获取百炼北京区 API Key')}</p>
           </div>
           <div class="form-group">
-            <label class="field-label" for="aliyun-workspace">北京区业务空间 ID</label>
-            <input class="input" name="aliyun_workspace" id="aliyun-workspace" value="${E(config.voice.aliyunWorkspace)}" placeholder="例如 llm-xxxxxxxx" maxlength="63">
-            <p class="form-help">${credentialLink('https://bailian.console.aliyun.com/cn-beijing?tab=globalset','查看北京区业务空间')}，填写 API Host 中的 <code>llm-…</code> 部分。</p>
+            <label class="field-label" for="aliyun-workspace">北京区业务空间 ID <span class="optional">使用百炼时必填</span></label>
+            <input class="input" name="aliyun_workspace" id="aliyun-workspace" value="${E(config.voice.aliyunWorkspace)}" placeholder="例如 ws-xxxxxxxx" maxlength="63" required aria-describedby="aliyun-workspace-help">
+            <p class="form-help" id="aliyun-workspace-help">${credentialLink('https://bailian.console.aliyun.com/cn-beijing','打开百炼北京区控制台')}。点击右上角的「默认业务空间」或当前空间名称，复制「业务空间ID」一行，直接粘贴到这里。</p>
           </div>
           <div class="form-group">
             <label class="field-label" for="aliyun-model">默认百炼语音模型</label>
@@ -581,17 +581,75 @@ function personReadiness(person) {
   const issue=person.voiceTraining?.needsPermission?'缺少复刻权限':status==='failed'?'复刻失败':status==='paused'?'复刻中断':'';
   return badge(active?'复刻进行中':issue||(person.ready?'已就绪':'待绑定音色'),person.ready&&!active&&!issue?'':'warn');
 }
+let voicePreviewUrl;
+function voicePreviewBinding(person) {
+  return person?.speaker?[boundVoicePlatform(person),person.speaker,person.custom_speaker_id??null,
+    person.aliyun_model??null,person.speech_rate??null]:null;
+}
+function clearVoicePreview() {
+  const player=$('#voice-preview-player');
+  player?.querySelector('audio')?.pause();
+  player?.replaceChildren();
+  if(voicePreviewUrl)URL.revokeObjectURL(voicePreviewUrl);
+  voicePreviewUrl=undefined;
+}
+function syncVoicePreview(person, previous) {
+  const section=$('#voice-preview');
+  if(!section)return;
+  const binding=voicePreviewBinding(person);
+  section.hidden=!binding;
+  $('#voice-preview-platform').textContent=binding?voicePlatforms[binding[0]]:'';
+  if(JSON.stringify(binding)!==JSON.stringify(voicePreviewBinding(previous))){
+    clearVoicePreview();
+    $('#voice-preview-status').textContent='';
+  }
+}
+function bindVoicePreview(editing) {
+  const button=$('#generate-voice-preview');
+  if(!button)return;
+  const status=$('#voice-preview-status'), player=$('#voice-preview-player'), text=$('#voice-preview-text');
+  button.addEventListener('click',()=>busy(button,async()=>{
+    const person=editing(), binding=voicePreviewBinding(person);
+    if(!binding)return;
+    const current=()=>button.isConnected&&JSON.stringify(voicePreviewBinding(editing()))===JSON.stringify(binding);
+    clearVoicePreview();
+    status.className='form-help';
+    status.textContent='正在合成试听…';
+    try{
+      const response=await fetch(`/api/people/${encodeURIComponent(person.id)}/voice-preview`,{
+        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text.value,binding})
+      });
+      if(!response.ok)throw new Error((await response.json()).error||'试听合成失败。');
+      const audio=await response.blob();
+      if(!current())return;
+      voicePreviewUrl=URL.createObjectURL(audio);
+      const element=document.createElement('audio');
+      element.controls=true;
+      element.preload='metadata';
+      element.setAttribute('aria-label','生成的音色试听');
+      element.src=voicePreviewUrl;
+      player.append(element);
+      status.textContent='试听已生成，点击播放。';
+    }catch(error){
+      if(current()){
+        status.className='inline-error';
+        status.textContent=error.message;
+      }
+    }
+  }));
+}
 function paintVoiceUpdates(previousPeople) {
   const previous=new Map(previousPeople.map(person=>[person.id,person]));
   for(const person of state.config.people){
     const prior=previous.get(person.id);
-    if(prior&&JSON.stringify([prior.voiceTraining,prior.speaker,prior.custom_speaker_id,prior.voice_provider])===JSON.stringify([person.voiceTraining,person.speaker,person.custom_speaker_id,person.voice_provider]))continue;
+    if(prior&&JSON.stringify([prior.voiceTraining,voicePreviewBinding(prior)])===JSON.stringify([person.voiceTraining,voicePreviewBinding(person)]))continue;
     const suffix=CSS.escape(person.id);
     const voice=$(`[data-person-voice="${suffix}"]`);
     const badgeSlot=$(`[data-person-ready="${suffix}"]`);
     if(voice)voice.innerHTML=personVoice(person);
     if(badgeSlot)badgeSlot.innerHTML=personReadiness(person);
     if(person.id!==editPerson||!$('#person-voice-editor'))continue;
+    syncVoicePreview(person,prior);
     for(const field of $('#person-form').querySelectorAll('[data-person-platform]')){
       const platform=field.dataset.personPlatform;
       const input=field.querySelector('[name="speaker"]');
@@ -623,6 +681,7 @@ async function uploadPersonVoice(input) {
   });
 }
 function renderPeople() {
+  clearVoicePreview();
   main.innerHTML = `${heading('每条视频，都有自己的主角。','照片、音色和社媒署名绑定在一起，选好人物就能直接制作。',`<button class="secondary" data-action="add-person">${icon('plus')} 添加数字人</button>`)}<div class="people-grid">${state.config.people.map(p => `<article class="person-card"><div class="portrait-area">${p.hasPortrait ? `<img src="/media/person/${E(p.id)}" alt="${E(p.name)}的数字人照片">` : ''}${p.isDefault ? badge('默认出镜') : ''}</div><div class="person-card-content"><h2>${E(p.name)} <span data-person-ready="${E(p.id)}">${personReadiness(p)}</span></h2><p>${E(p.social_media_name || '还没有设置社媒署名')}</p><div data-person-voice="${E(p.id)}">${personVoice(p)}</div><button class="secondary" data-action="edit-person" data-id="${E(p.id)}">编辑人物资料 ${icon('arrow-right')}</button></div></article>`).join('')}<button class="add-person" data-action="add-person">${icon('plus')}<strong>添加一位新数字人</strong><small>一张照片，一段声音。<br>让更多人替你讲述。</small></button></div><div id="person-editor">${editPerson !== undefined ? personEditor() : ''}</div>`;
   bindPerson();
 }
@@ -678,6 +737,15 @@ function personEditor() {
         <input class="input" id="person-aliyun-speaker" name="speaker" value="${E(speaker('aliyun'))}">
       </fieldset>
       <div id="person-voice-editor" class="form-group">${p?personVoice(p,true,provider):'<p class="form-help">没有音色可留空，保存人物后点击「复刻」，音色会自动绑定。</p>'}</div>
+      ${p?`<details id="voice-preview" class="form-group" ${p.speaker?'':'hidden'}>
+        <summary class="field-label">试听音色</summary>
+        <label class="field-label" for="voice-preview-text">试听文案 <span class="optional">选填</span></label>
+        <textarea id="voice-preview-text" maxlength="200" placeholder="留空会用人物名生成一段约 10 秒的自我介绍。"></textarea>
+        <p class="form-help">使用当前绑定的 <span id="voice-preview-platform">${p.speaker?voicePlatforms[boundVoicePlatform(p)]:''}</span> 音色，按平台规则计费。</p>
+        <div class="person-voice-actions"><button type="button" class="secondary" id="generate-voice-preview">确认合成试听</button></div>
+        <p id="voice-preview-status" class="form-help" role="status"></p>
+        <div id="voice-preview-player"></div>
+      </details>`:''}
       <div class="form-group">
         <label class="field-label" for="speech-rate">语速</label>
         <input class="input" type="number" min="-50" max="100" id="speech-rate" name="speech_rate" value="${p?.speech_rate??-3}">
@@ -703,6 +771,7 @@ function bindPerson() {
   const form = $('#person-form');
   if (!form) return;
   const editing=()=>state.config.people.find(person=>person.id===editPerson);
+  bindVoicePreview(editing);
   form.elements.person_voice_provider.addEventListener('change',()=>syncPersonVoice(form,editing()));
   const aliSpeaker=$('#person-aliyun-speaker');
   const aliDrafts=new Map([[$('#person-aliyun-model').value,aliSpeaker.value]]);
@@ -874,7 +943,7 @@ document.addEventListener('click', async e=>{
 });
 $('#folder-upload').addEventListener('change',e=>importFolder(e.target.files));
 document.addEventListener('change',e=>{if(e.target.id==='person-voice-file')uploadPersonVoice(e.target);});
-window.addEventListener('hashchange',()=>{render();window.scrollTo({top:0});});
+window.addEventListener('hashchange',()=>{clearVoicePreview();render();window.scrollTo({top:0});});
 async function refresh(paint=true) {
   const old=state;state=await api('/api/state');
   if(!paint)return;

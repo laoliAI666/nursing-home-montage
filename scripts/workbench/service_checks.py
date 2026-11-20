@@ -40,42 +40,11 @@ def check(app, values):
     if kind == 'speech':
         person = cfg['people'].get(values.get('person') or cfg.get('default_person'), {})
         provider = person.get('voice_provider') or 'volcengine'
-        if not person.get('speaker') or values.get('provider', provider) != provider:
+        if values.get('provider', provider) != provider:
             raise ValueError('请先选择已绑定此平台音色的人物。')
-        if provider == 'aliyun':
-            from aliyun_voice import synthesize
-            target = cfg['connections'].get('aliyun', {})
-            raw = fields.get('aliyun_api_key', '')
-            if not isinstance(raw, str) or len(raw) > 512 or any(c in raw for c in '\r\n'):
-                raise ValueError('阿里百炼 API Key 格式不正确。')
-            key = raw.strip() or app.pc.connection_keys(target)[0]
-            workspace = person.get('aliyun_workspace') or fields.get('aliyun_workspace') or target.get('workspace')
-            synthesize('连接测试。', person['speaker'], person.get('aliyun_model'), person.get('speech_rate', 0), key, workspace)
-            return {'ok': True, 'message': '阿里百炼语音合成通过。'}
-        if provider == 'minimax':
-            from minimax_voice import MODELS, synthesize
-            raw = fields.get('minimax_api_key', '')
-            if not isinstance(raw, str) or len(raw) > 512 or any(c in raw for c in '\r\n'):
-                raise ValueError('MiniMax API Key 格式不正确。')
-            key = raw.strip() or app.pc.connection_keys(cfg['connections'].get('minimax', {}))[0]
-            model = fields.get('minimax_model') or cfg.get('settings', {}).get('minimax_model', 'speech-2.8-hd')
-            if model not in MODELS:
-                raise ValueError('请选择支持的 MiniMax 合成模型。')
-            synthesize('连接测试。', person['speaker'], model, person.get('speech_rate', 0), key)
-            return {'ok': True, 'message': 'MiniMax 语音合成通过。'}
-        person_connection = person.get('connection')
-        if person_connection and person_connection != 'main':
-            connection = cfg['connections'].get(person_connection, {})
-            credentials['api_key'] = app.pc.connection_keys(connection)[0]
-        defaults = json.loads((app.skill / 'preset.json').read_text(encoding='utf-8'))['voice']
-        voice = {**media['tts'], **defaults, **cfg.get('settings', {}).get('voice', {}), **connection.get('tts', {})}
-        voice.update(endpoint='https://openspeech.bytedance.com/api/v3/tts/unidirectional',
-                     speaker=person['speaker'], speech_rate=person.get('speech_rate', voice['speech_rate']),
-                     custom_speaker_id=person.get('custom_speaker_id'))
-        if not credentials['api_key']:
-            raise ValueError('该人物绑定的语音连接缺少 API Key。')
-        media['tts'] = voice
-        return speech(media, credentials['api_key'])
+        person_audio(app, cfg, person, '连接测试。', fields, credentials['api_key'])
+        message = {'aliyun': '阿里百炼语音合成通过。', 'minimax': 'MiniMax 语音合成通过。'}
+        return {'ok': True, 'message': message.get(provider, '语音连接正常，已用所选音色合成短句。')}
     if not credentials['ak'] or not credentials['sk']:
         raise ValueError('先在设置保存火山 Access Key ID 和 Secret Access Key。')
     media['avatar'].update(connection.get('avatar', {}))
@@ -175,9 +144,64 @@ def recent_avatar_task(app, operation):
     return None
 
 
-def speech(media, key):
-    voice = media['tts']
-    request_params = {'speaker': voice['speaker'], 'model': voice['model'], 'text': '连接测试',
+PREVIEW_TEXT_LIMIT = 200
+PREVIEW_AUDIO_LIMIT = 2_000_000
+
+
+def person_audio(app, cfg, person, text, fields, main_key=None):
+    if not person.get('speaker'):
+        raise ValueError('请先为人物绑定音色。')
+    provider = person.get('voice_provider') or 'volcengine'
+    if provider in ('aliyun', 'minimax'):
+        target = cfg['connections'].get(provider, {})
+        raw = fields.get(provider + '_api_key', '')
+        label = '阿里百炼' if provider == 'aliyun' else 'MiniMax'
+        if not isinstance(raw, str) or len(raw) > 512 or any(c in raw for c in '\r\n'):
+            raise ValueError(f'{label} API Key 格式不正确。')
+        key = raw.strip() or app.pc.connection_keys(target)[0]
+        if provider == 'aliyun':
+            from aliyun_voice import synthesize
+            workspace = person.get('aliyun_workspace') or fields.get('aliyun_workspace') or target.get('workspace')
+            return synthesize(text, person['speaker'], person.get('aliyun_model'), person.get('speech_rate') or 0, key, workspace)[0]
+        from minimax_voice import synthesize
+        model = fields.get('minimax_model') or cfg.get('settings', {}).get('minimax_model', 'speech-2.8-hd')
+        return synthesize(text, person['speaker'], model, person.get('speech_rate') or 0, key)[0]
+    connection_name = person.get('connection') or 'main'
+    connection = cfg['connections'].get(connection_name, {})
+    key = (main_key if connection_name == 'main' and main_key is not None
+           else app.pc.connection_keys(connection)[0])
+    if not key:
+        raise ValueError('该人物绑定的语音连接缺少 API Key。')
+    media = json.loads((app.skill / 'modules/digital-human/config.json').read_text(encoding='utf-8'))
+    defaults = json.loads((app.skill / 'preset.json').read_text(encoding='utf-8'))['voice']
+    voice = {**media['tts'], **defaults, **cfg.get('settings', {}).get('voice', {}), **connection.get('tts', {})}
+    voice.update(endpoint='https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+                 speaker=person['speaker'], speech_rate=person.get('speech_rate', voice['speech_rate']),
+                 custom_speaker_id=person.get('custom_speaker_id'))
+    return speech(voice, key, text)
+
+
+def preview_voice(app, ident, values):
+    cfg, person = app.voice_training.load_person(ident)
+    text = values.get('text', '')
+    if not isinstance(text, str) or len(text.strip()) > PREVIEW_TEXT_LIMIT:
+        raise ValueError(f'试听文案最多 {PREVIEW_TEXT_LIMIT} 个字符。')
+    if not person.get('speaker'):
+        raise ValueError('请先复刻或绑定音色，再试听。')
+    expected = [person.get('voice_provider') or 'volcengine', person['speaker'],
+                person.get('custom_speaker_id'), person.get('aliyun_model'), person.get('speech_rate')]
+    if values.get('binding') != expected:
+        raise ValueError('音色或语速已更新，请刷新人物资料后再试听。')
+    name = (person.get('name') or '你的数字人')[:12]
+    text = text.strip() or f'大家好，我是{name}。很高兴和你见面。今天用这段话，给你听听我的声音和说话的节奏。'
+    audio = person_audio(app, cfg, person, text, {})
+    if not 0 < len(audio) <= PREVIEW_AUDIO_LIMIT:
+        raise ValueError('试听音频为空或太长，请换一段较短的文案。')
+    return audio
+
+
+def speech(voice, key, text):
+    request_params = {'speaker': voice['speaker'], 'model': voice['model'], 'text': text,
                       'audio_params': {'format': 'mp3', 'sample_rate': voice['sample_rate'],
                                        'speech_rate': voice['speech_rate'], 'bit_rate': voice['bit_rate']}}
     if voice.get('custom_speaker_id'):
@@ -188,13 +212,13 @@ def speech(media, key):
          'X-Api-Request-Id': secrets.token_hex(16)})
     try:
         with urllib.request.build_opener(NoRedirect()).open(request, timeout=25) as response:
-            messages = [json.loads(line) for line in response.read(400_000).splitlines() if line.strip()]
+            messages = [json.loads(line) for line in response.read(PREVIEW_AUDIO_LIMIT * 2).splitlines() if line.strip()]
     except urllib.error.HTTPError as exc:
         code = exc.code
         exc.close()
         raise ValueError(f'语音服务返回 HTTP {code}，请检查 Key、资源和音色权限。') from None
     except (OSError, ValueError):
-        raise ValueError('语音测试未取得有效响应，请检查网络和语音配置。') from None
+        raise ValueError('语音合成未取得有效响应，请检查网络和语音配置。') from None
     error = next((x.get('code') for x in messages if x.get('code') not in (None, 0, 20000000)), None)
     try:
         audio = b''.join(base64.b64decode(x['data'], validate=True) for x in messages if x.get('data'))
@@ -202,8 +226,8 @@ def speech(media, key):
         raise ValueError('语音服务返回的音频数据无效。') from None
     if error is not None or not audio:
         details = f'（服务代码 {error}）' if isinstance(error, int) else ''
-        raise ValueError('测试配音失败，请检查语音资源和音色绑定' + details + '。')
-    return {'ok': True, 'message': '语音连接正常，已用所选音色合成短句。'}
+        raise ValueError('语音合成失败，请检查语音资源和音色绑定' + details + '。')
+    return audio
 
 
 def signed_probe(kind, module):
