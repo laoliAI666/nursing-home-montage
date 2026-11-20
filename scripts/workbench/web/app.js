@@ -149,7 +149,18 @@ function bindCreate() {
 function credentialStatus(saved) {
   return saved ? `<span class="saved-mark">${icon('check')} 已保存</span>` : badge('待填写','warn');
 }
-function credentialField(name, label, saved, placeholder, maxLength) {
+function credentialLink(url, label) {
+  return `<a class="credential-link" href="${E(url)}" target="_blank" rel="noopener noreferrer">${E(label)} ${icon('arrow-up-right')}</a>`;
+}
+function modelKeyGuide(provider) {
+  if(provider==='ark')return credentialLink('https://ark.volcengine.com/region%3Acn-beijing/apikey','获取火山方舟 API Key');
+  if(provider==='deepseek')return credentialLink('https://platform.deepseek.com/api_keys','获取 DeepSeek API Key');
+  return `到 Base URL 对应的服务商后台创建 Key。如果使用 OpenAI，${credentialLink('https://platform.openai.com/api-keys','打开 OpenAI API Keys')}。`;
+}
+function volcengineSpeechKeyUrl(project) {
+  return 'https://console.volcengine.com/speech/new/setting/apikeys?projectName='+encodeURIComponent(project?.trim()||'default');
+}
+function credentialField(name, label, saved, placeholder, maxLength, guide='') {
   return `<div class="form-group">
     <div class="label-row"><label for="key-${name}">${label}</label>${credentialStatus(saved)}</div>
     <div class="input-wrap">
@@ -157,6 +168,7 @@ function credentialField(name, label, saved, placeholder, maxLength) {
         ${maxLength?`maxlength="${maxLength}"`:''} placeholder="${saved ? '已配置 · 留空保留原值' : placeholder}">
       <button type="button" class="reveal" data-action="reveal" aria-label="显示${label}" aria-pressed="false">${icon('eye')}</button>
     </div>
+    ${guide}
   </div>`;
 }
 function modelSettings() {
@@ -180,7 +192,8 @@ function modelSettings() {
         value="${E(custom?.baseUrl || '')}" placeholder="例如 https://api.example.com/v1" ${isCustom?'':'disabled'}>
       <p class="form-help">填服务商给的接口地址。工作台会自动补上 /chat/completions。</p>
     </div>
-    ${credentialField('model_key','模型 API Key',provider.configured,'粘贴当前地址的推理 API Key',512)}
+    ${credentialField('model_key','模型 API Key',provider.configured,'粘贴当前地址的推理 API Key',512,
+      `<p class="form-help" id="model-key-guide">${modelKeyGuide(model.provider)}</p>`)}
     <details class="form-group" id="model-advanced" ${isCustom?'':'hidden'}>
       <summary class="field-label">高级选项</summary>
       <p class="form-help">鉴权方式为 Bearer API Key。如果服务不支持 JSON 模式，可以改用提示词。</p>
@@ -230,8 +243,8 @@ function productionServiceSettings(config) {
           <p class="form-help">新增数字人默认用这个平台，添加或编辑人物时也能单独选。</p>
         </div>
         <fieldset class="provider-fields" data-speech-provider="volcengine" ${fire?'':'hidden disabled'}>
-        ${credentialField('api_key','火山语音 API Key',conn.speech,'填写火山语音 API Key')}
-        <div class="form-group settings-links"><a href="https://console.volcengine.com/speech/app" target="_blank" rel="noreferrer">获取火山语音 API Key ${icon('arrow-up-right')}</a></div>
+        ${credentialField('api_key','火山语音 API Key',conn.speech,'填写火山语音 API Key',undefined,
+          `<p class="form-help" id="fire-speech-key-guide">${credentialLink(volcengineSpeechKeyUrl(config.voice.project),'获取该项目的火山语音 API Key')}</p>`)}
         <div class="form-group">
           <label class="field-label" for="voice-project">火山项目</label>
           <input class="input" name="voice_project" id="voice-project" value="${E(config.voice.project)}" placeholder="default">
@@ -247,6 +260,7 @@ function productionServiceSettings(config) {
           <div class="label-row"><label for="minimax-api-key">MiniMax API Key</label>${credentialStatus(config.voice.minimaxConfigured)}</div>
           <input class="input" id="minimax-api-key" name="minimax_api_key" type="password" autocomplete="new-password" maxlength="512"
             placeholder="${config.voice.minimaxConfigured?'已配置 · 留空保留原值':'填写 MiniMax 开放平台 API Key'}">
+          <p class="form-help">${credentialLink('https://platform.minimax.cn/console/keys','获取 MiniMax 接口密钥')}</p>
         </div>
         <div class="form-group">
           <label class="field-label" for="minimax-model">MiniMax 合成模型</label>
@@ -261,11 +275,12 @@ function productionServiceSettings(config) {
             <div class="label-row"><label for="aliyun-api-key">百炼 API Key（北京）</label>${credentialStatus(config.voice.aliyunConfigured)}</div>
             <input class="input" id="aliyun-api-key" name="aliyun_api_key" type="password" autocomplete="new-password" maxlength="512"
               placeholder="${config.voice.aliyunConfigured?'已配置 · 留空保留原值':'填写阿里百炼北京区 API Key'}">
+            <p class="form-help">${credentialLink('https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key','获取百炼北京区 API Key')}</p>
           </div>
           <div class="form-group">
             <label class="field-label" for="aliyun-workspace">北京区业务空间 ID</label>
             <input class="input" name="aliyun_workspace" id="aliyun-workspace" value="${E(config.voice.aliyunWorkspace)}" placeholder="例如 llm-xxxxxxxx" maxlength="63">
-            <p class="form-help"><a href="https://bailian.console.aliyun.com/" target="_blank" rel="noreferrer">到百炼控制台查看 API Key 和业务空间</a></p>
+            <p class="form-help">${credentialLink('https://bailian.console.aliyun.com/cn-beijing?tab=globalset','查看北京区业务空间')}，填写 API Host 中的 <code>llm-…</code> 部分。</p>
           </div>
           <div class="form-group">
             <label class="field-label" for="aliyun-model">默认百炼语音模型</label>
@@ -283,10 +298,10 @@ function productionServiceSettings(config) {
     <section class="settings-service" aria-labelledby="avatar-settings-title">
       <div class="settings-service-heading">
         <h3 id="avatar-settings-title">数字人视频 · 火山 OmniHuman 2.0</h3>
-        <div class="settings-links"><a href="https://console.volcengine.com/iam/keymanage/" target="_blank" rel="noreferrer">获取火山 AK / SK ${icon('arrow-up-right')}</a></div>
       </div>
       <p class="form-help form-group">生成数字人视频时，配音可以来自任一语音平台，视频仍由火山生成。</p>
       <div class="form-row">${credentialField('ak','Access Key ID',conn.ak,'填写 Access Key ID')}${credentialField('sk','Secret Access Key',conn.sk,'填写 Secret Access Key')}</div>
+      <p class="form-help form-group">${credentialLink('https://console.volcengine.com/iam/keymanage/','获取火山 Access Key ID 和 Secret Access Key')}</p>
       ${serviceTestControl('avatar','测试数字人连接','只验证任务查询权限。')}
     </section>
     <section class="settings-service" aria-labelledby="storage-settings-title">
@@ -349,6 +364,7 @@ function bindModelSettings(form) {
     $('#model-base-url-fields').hidden=!isCustom;
     $('#model-advanced').hidden=!isCustom;
     form.elements.model_base_url.disabled=!isCustom;
+    $('#model-key-guide').innerHTML=modelKeyGuide(e.target.value);
     setKeyHint();
     testResult.textContent='';
   });
@@ -364,6 +380,9 @@ function toggleProviderFields(fields, visible) {
 }
 function bindServiceSettings(form) {
   bindModelSettings(form);
+  form.elements.voice_project.addEventListener('input',event=>{
+    $('#fire-speech-key-guide a').href=volcengineSpeechKeyUrl(event.target.value);
+  });
   const provider=form.elements.voice_provider;
   const person=$('#test-person');
   const result=$('#test-speech-result');
