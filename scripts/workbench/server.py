@@ -243,9 +243,14 @@ class App:
         people = []
         for ident, p in cfg["people"].items():
             voice_training = self.voice_training.public({**p, 'id': ident})
-            people.append({k: p.get(k) for k in ("name", "social_media_name", "speaker", "custom_speaker_id", "status", "speech_rate", "connection", "sample")} | {"id": ident, "ready": bool(p.get("speaker") and self.pc.asset_path(p.get("portrait")) and self.pc.asset_path(p.get("portrait")).is_file()), "hasPortrait": bool(p.get("portrait")), "isDefault": ident == cfg.get("default_person"), "voiceTraining": voice_training})
+            people.append({k: p.get(k) for k in ("name", "social_media_name", "speaker", "custom_speaker_id", "status", "speech_rate", "connection", "sample", "voice_provider")} | {"id": ident, "ready": bool(p.get("speaker") and self.pc.asset_path(p.get("portrait")) and self.pc.asset_path(p.get("portrait")).is_file()), "hasPortrait": bool(p.get("portrait")), "isDefault": ident == cfg.get("default_person"), "voiceTraining": voice_training})
         storage = self.pc.storage_settings(c.get("storage"))
-        return {"project": str(self.project), "workspace": str(self.workspace()), "workspaceDefault": str(self.workspace_default()), "workspaceSetting": read(self.data/'workspace.json', {}).get('directory', ''), "version": (self.skill / "VERSION").read_text().strip(), "people": people, "defaultPerson": cfg.get("default_person"), "connection": {"speech": bool(keys[0]), "ak": bool(keys[1]), "sk": bool(keys[2]), "storage": storage, "cloneMode": c.get("clone_mode") or self.voice_training.default_mode, "speakerPool": c.get("speaker_pool", [])}, "preferences": {"music": cfg.get("settings", {}).get("music", {}).get("enabled", True), "coverHeader": cfg.get("settings", {}).get("cover", {}).get("header_text", "")}, "agent": self.agent_state(), "model": self.models.public(), "phases": PHASES, "onboarded": read(self.data / "preferences.json", {}).get("onboarded", False)}
+        voice_settings = cfg.get('settings', {})
+        voice_public = {'provider': voice_settings.get('voice_provider', 'volcengine'),
+                        'minimaxConfigured': bool(self.pc.connection_keys(cfg['connections'].get('minimax', {}))[0]),
+                        'minimaxModel': voice_settings.get('minimax_model', 'speech-2.8-hd'),
+                        'project': c.get('voice_project', 'default')}
+        return {"project": str(self.project), "workspace": str(self.workspace()), "workspaceDefault": str(self.workspace_default()), "workspaceSetting": read(self.data/'workspace.json', {}).get('directory', ''), "version": (self.skill / "VERSION").read_text().strip(), "people": people, "defaultPerson": cfg.get("default_person"), "voice": voice_public, "connection": {"speech": bool(keys[0]), "ak": bool(keys[1]), "sk": bool(keys[2]), "storage": storage, "cloneMode": c.get("clone_mode") or self.voice_training.default_mode, "speakerPool": c.get("speaker_pool", [])}, "preferences": {"music": cfg.get("settings", {}).get("music", {}).get("enabled", True), "coverHeader": cfg.get("settings", {}).get("cover", {}).get("header_text", "")}, "agent": self.agent_state(), "model": self.models.public(), "phases": PHASES, "onboarded": read(self.data / "preferences.json", {}).get("onboarded", False)}
 
     def agent_state(self):
         if self.models.enabled() or self.workbench_host == 'local':
@@ -280,6 +285,16 @@ class App:
                 self.validate_workspace(values['workspace'])
             conn = values.get("connection")
             if conn is not None:
+                from voice_slots import project_name
+                from minimax_voice import MODELS
+                voice_project = project_name(conn['voice_project']) if conn.get('voice_project') else None
+                provider = conn.get('voice_provider')
+                model = conn.get('minimax_model')
+                if provider not in (None, 'volcengine', 'minimax') or model not in (None, *MODELS):
+                    raise ValueError('请选择支持的语音服务和模型。')
+                mini_key = conn.get('minimax_api_key', '')
+                if not isinstance(mini_key, str) or len(mini_key) > 512 or any(c in mini_key for c in '\r\n'):
+                    raise ValueError('MiniMax API Key 格式不正确。')
                 allowed = {"api_key", "ak", "sk", "storage_provider", "bucket", "region", "endpoint"}
                 clean = {k: str(v).strip() for k, v in conn.items() if k in allowed and v}
                 if clean.get("storage_provider") not in (None, "tmpfile", "tos"):
@@ -294,7 +309,16 @@ class App:
                 self.models.save(values['model'])
             if conn is not None:
                 self.pc.store_connection("main", clean)
+                if mini_key.strip():
+                    self.pc.store_connection('minimax', {'api_key': mini_key})
                 cfg = self.pc.load()
+                if voice_project is not None:
+                    cfg['connections']['main']['voice_project'] = voice_project
+                if provider is not None:
+                    cfg['settings']['voice_provider'] = provider
+                    cfg['connections']['main']['clone_mode'] = 'prepaid'
+                if model is not None:
+                    cfg['settings']['minimax_model'] = model
                 if conn.get("clone_mode") in ("prepaid", "postpaid"):
                     cfg["connections"]["main"]["clone_mode"] = conn["clone_mode"]
                 else:
@@ -350,7 +374,14 @@ class App:
             if any((p.get('speaker'), p.get('custom_speaker_id'), p['connection']) ==
                    (speaker, custom, person['connection']) for p in others):
                 raise ValueError('该音色已绑定其他人物。')
-            person.update(speaker=speaker, custom_speaker_id=custom, status='ready')
+            provider = values.get('person_voice_provider') or person.get('voice_provider') or 'volcengine'
+            if provider not in ('volcengine', 'minimax'):
+                raise ValueError('请选择这个音色所属的语音服务。')
+            if provider == 'minimax' and speaker == 'custom_speaker_id':
+                raise ValueError('请填写 MiniMax 的实际 Voice ID。')
+            if provider == 'volcengine' and speaker != person.get('speaker') and speaker in self.voice_training.reserved_slots(cfg, person['id']):
+                raise ValueError('这个音色槽位正在复刻中。')
+            person.update(speaker=speaker, custom_speaker_id=custom, status='ready', voice_provider=provider)
         if values.get('default') or (speaker and not cfg.get('default_person')):
             cfg['default_person'] = person['id']
 
@@ -771,10 +802,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, check(self.app, v))
             if url.path == "/api/people":
                 return self.reply(200, self.app.save_person(v))
+            if url.path == '/api/voice-slots':
+                ident = v.get('person')
+                if ident is not None:
+                    self.app.voice_training.load_person(ident)
+                return self.reply(200, {'slots': self.app.voice_training.available_slots(ident, v.get('project'))})
             match = re.fullmatch(r'/api/people/([A-Za-z0-9_-]{1,80})/voice-training', url.path)
             if match:
-                action = self.app.voice_training.retrain if v.get('retrain') is True else self.app.voice_training.start
-                return self.reply(202, action(match[1]))
+                ident = match[1]
+                trainer = self.app.voice_training
+                if v.get('retrain') is True:
+                    return self.reply(202, trainer.retrain(ident))
+                cfg, person = trainer.load_person(ident)
+                use_slots = (cfg.get('settings', {}).get('voice_provider', 'volcengine') == 'volcengine'
+                             and trainer.public(person)['needsSlot'] and not trainer.active(ident))
+                slots = trainer.available_slots(ident, cfg['connections'].get('main', {}).get('voice_project', 'default')) if use_slots else None
+                return self.reply(202, trainer.start(ident, slots, v.get('slot'), v.get('overwrite') is True))
             if url.path == "/api/scan":
                 return self.reply(200, self.app.scan(v.get("folder", "")))
             if url.path == "/api/pick-folder":

@@ -109,6 +109,9 @@ def resolved(job):
     if p:
         out['voice']['speaker']=p.get('speaker');out['voice']['speech_rate']=p.get('speech_rate',out['voice']['speech_rate'])
         out['voice']['custom_speaker_id']=p.get('custom_speaker_id')
+        if p.get('voice_provider')=='minimax':
+            out['voice']['provider']='minimax'
+            out['voice']['minimax_model']=cfg.get('settings',{}).get('minimax_model','speech-2.8-hd')
         out['avatar']['portrait']=str(asset_path(p.get('portrait')))
         out['person']={'id':p['id'],'name':p['name'],'spokenName':p.get('spoken_name',p['name']),'connection':p['connection'],
             'socialMediaName':p.get('social_media_name'),'coverPortrait':str(asset_path(p['cover_portrait'])) if p.get('cover_portrait') else None,
@@ -212,6 +215,8 @@ def freeze(job):
 def engine_env(job):
     cfg=resolved(job);name=cfg.get('person',{}).get('connection');conn=load()['connections'].get(name,{})
     api,ak,sk=connection_keys(conn);env=os.environ.copy()
+    if cfg.get('voice',{}).get('provider')=='minimax':
+        env['MINIMAX_TTS_API_KEY']=secret(load()['connections'].get('minimax',{}).get('speech_key'))
     # Explicit values prevent inherited keys from accidentally selecting another account.
     env.update(MONTAGE_PROJECT_ROOT=str(root()),MONTAGE_AVATAR_CONFIG=str(job/'avatar-engine.json'),VOLCANO_TTS_API_KEY=api,VOLC_ACCESSKEY=ak,VOLC_SECRETKEY=sk,MONTAGE_MANAGED_CREDENTIALS='1')
     return env

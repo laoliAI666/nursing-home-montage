@@ -16,8 +16,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from avatar_client import AvatarClient
-from common import PROJECT_ROOT, SKILL_DIR, audio_duration, command, config, merge_rules, now, read_json, sanitized, save_state, tts_key, write_json
-from tts_client import synthesize
+from common import PROJECT_ROOT, SKILL_DIR, audio_duration, command, config, merge_rules, now, read_json, sanitized, save_state, write_json
+from tts_client import speech_key, synthesize
 from verify import check_audio, finalize
 
 
@@ -185,7 +185,7 @@ def main():
         return create(args)
     if args.action == "doctor":
         cfg = config()
-        tts_key()
+        speech_key(cfg["tts"])
         client = AvatarClient(cfg)
         result = {"default_portrait_exists": (SKILL_DIR / cfg["image"]).is_file(),
                   "ffmpeg": bool(shutil.which("ffmpeg")), "ffprobe": bool(shutil.which("ffprobe")),

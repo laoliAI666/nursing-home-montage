@@ -216,6 +216,8 @@ def setup(job,install=False):
     connection=cfg.get('service',{})
     e['storage']=pc.storage_settings(connection.get('storage',{}))
     e['tts'].update({k:v for k,v in connection.get('tts',{}).items() if k in ('endpoint','resource_id','model','sample_rate','bit_rate')})
+    if cfg['voice'].get('provider')=='minimax':
+        e['tts'].update(provider='minimax', model=cfg['voice']['minimax_model'], sample_rate=32000)
     e['avatar'].update(connection.get('avatar',{}))
     if cfg['avatar'].get('prompt'):e['avatar']['prompt']=cfg['avatar']['prompt']
     if cfg['voice'].get('pronunciation_dict'):

@@ -21,7 +21,7 @@ from model_api import NoRedirect
 
 def check(app, values):
     kind = values.get('kind')
-    if kind not in ('speech', 'avatar', 'storage'):
+    if kind not in ('speech', 'avatar', 'storage', 'voice_slots'):
         raise ValueError('未知连接测试。')
     cfg = app.pc.load()
     connection = cfg['connections'].get('main', {})
@@ -39,6 +39,15 @@ def check(app, values):
     media = json.loads((module / 'config.json').read_text(encoding='utf-8'))
     if kind == 'speech':
         person = cfg['people'].get(values.get('person') or cfg.get('default_person'), {})
+        if person.get('voice_provider') == 'minimax':
+            from minimax_voice import synthesize
+            raw = fields.get('minimax_api_key', '')
+            if not isinstance(raw, str) or len(raw) > 512 or any(c in raw for c in '\r\n'):
+                raise ValueError('MiniMax API Key 格式不正确。')
+            key = raw.strip() or app.pc.connection_keys(cfg['connections'].get('minimax', {}))[0]
+            model = cfg.get('settings', {}).get('minimax_model', 'speech-2.8-hd')
+            synthesize('连接测试。', person['speaker'], model, person.get('speech_rate', 0), key)
+            return {'ok': True, 'message': 'MiniMax 语音合成通过。'}
         if not credentials['api_key'] or not person.get('speaker'):
             raise ValueError('先填语音 API Key 并选择已绑定音色的人物。')
         person_connection = person.get('connection')
@@ -55,8 +64,12 @@ def check(app, values):
         media['tts'] = voice
         return speech(media, credentials['api_key'])
     if not credentials['ak'] or not credentials['sk']:
-        raise ValueError('先填写数字人 Access Key ID 与 Secret Access Key。')
+        raise ValueError('先在设置保存火山 Access Key ID 和 Secret Access Key。')
     media['avatar'].update(connection.get('avatar', {}))
+    if kind == 'voice_slots':
+        from voice_slots import project_name
+        project = project_name(values.get('project') or connection.get('voice_project', 'default'))
+        return run_signed(app, kind, module, {'ak': credentials['ak'], 'sk': credentials['sk'], 'project': project})
     task_id = None
     if kind == 'avatar':
         operation = media['avatar']['req_key']
@@ -82,12 +95,20 @@ def check(app, values):
         if not re.fullmatch(r'tos-[a-z0-9-]+\.volces\.com', endpoint, re.I):
             raise ValueError('测试需要火山 TOS 的官方 Endpoint。')
         media['storage'] = {'provider': 'tos', 'endpoint': endpoint, 'region': storage['region'], 'bucket': storage['bucket']}
+    response = run_signed(app, kind, module, {'media': media, 'ak': credentials['ak'],
+                                              'sk': credentials['sk'], 'taskId': task_id})
+    if kind == 'avatar':
+        with app.transaction():
+            app.pc.write(receipt_path, {'keyId': key_id, 'reqKey': operation, 'taskId': task_id}, private=True)
+    return response
+
+
+def run_signed(app, kind, module, payload):
     uv = shutil.which('uv')
     if not uv:
         raise ValueError('本机缺少 uv，安装制作依赖后可测试签名接口。')
     command = [uv, 'run', '--python', '3.11', str(Path(__file__).resolve()), kind, str(module)]
     env = {**os.environ, 'UV_CACHE_DIR': str(app.data / 'uv-cache')}
-    payload = {'media': media, 'ak': credentials['ak'], 'sk': credentials['sk'], 'taskId': task_id}
     try:
         result = subprocess.run(command, input=json.dumps(payload), env=env,
                                 capture_output=True, text=True, timeout=55)
@@ -105,9 +126,6 @@ def check(app, values):
         raise ValueError('本机签名接口测试程序返回了无效结果。') from None
     if response.get('ok') is not True:
         raise ValueError(response['message'])
-    if kind == 'avatar':
-        with app.transaction():
-            app.pc.write(receipt_path, {'keyId': key_id, 'reqKey': operation, 'taskId': task_id}, private=True)
     return response
 
 
@@ -177,6 +195,14 @@ def speech(media, key):
 
 def signed_probe(kind, module):
     values = json.load(sys.stdin)
+    if kind == 'voice_slots':
+        from voice_slots import signed_list
+        try:
+            return {'ok': True, 'slots': signed_list(values['ak'], values['sk'], values['project'])}
+        except ValueError as error:
+            return {'ok': False, 'message': str(error)}
+        except OSError:
+            return {'ok': False, 'message': '查询火山音色列表超时或网络中断。'}
     os.environ.update(VOLC_ACCESSKEY=values['ak'], VOLC_SECRETKEY=values['sk'], MONTAGE_MANAGED_CREDENTIALS='1')
     sys.path.insert(0, str(module / 'scripts'))
     from avatar_client import AvatarClient

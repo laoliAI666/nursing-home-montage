@@ -1,6 +1,8 @@
 """Explicit cloned-speaker TTS; no voice training or client-side time stretching."""
 import base64
 import json
+import os
+import sys
 import urllib.error
 import urllib.request
 import uuid
@@ -25,9 +27,30 @@ def parse_audio(raw):
     return b"".join(chunks)
 
 
+def speech_key(settings):
+    if settings.get('provider') == 'minimax':
+        key = os.environ.get('MINIMAX_TTS_API_KEY', '').strip()
+        if not key:
+            raise ValueError('请在工作台保存 MiniMax API Key。')
+        return key
+    return tts_key()
+
+
 def synthesize(text, cfg, directory, revision=0):
-    key = tts_key()
     settings = cfg["tts"]
+    key = speech_key(settings)
+    if settings.get('provider') == 'minimax':
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts'))
+        from minimax_voice import synthesize as mini_synthesize
+        data, payload, trace = mini_synthesize(text, settings['speaker'], settings['model'],
+                                               settings['speech_rate'], key, settings.get('pronunciation_dict'))
+        directory = Path(directory)
+        write_json(directory / f"tts-request-{revision}.json", payload)
+        output = directory / f"narration-{revision}.mp3"
+        output.write_bytes(data)
+        return {'file': str(output), 'provider': 'minimax', 'speaker': settings['speaker'],
+                'resource_id': settings['model'], 'speech_rate': settings['speech_rate'],
+                'logid': trace, 'revision': revision}
     payload = {"user": {"uid": "project-text-to-digital-human"}, "req_params": {
         "text": text, "speaker": settings["speaker"], "model": settings["model"],
         "audio_params": {"format": "mp3", "sample_rate": settings["sample_rate"],

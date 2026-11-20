@@ -10,7 +10,7 @@ function closeSelect(focus=false){if(!activeSelect)return;const open=activeSelec
 function selectLabel(select){return select.getAttribute('aria-label')||[...(select.labels||[])].map(x=>x.textContent.trim()).join(' ')||select.getAttribute('title')||'选择选项';}
 function syncSelect(select,ui){const option=select.selectedOptions[0];const text=option?.textContent||'请选择';if(ui.value.textContent!==text)ui.value.textContent=text;if(ui.button.disabled!==select.disabled)ui.button.disabled=select.disabled;const label=selectLabel(select);if(ui.button.getAttribute('aria-label')!==label)ui.button.setAttribute('aria-label',label);ui.button.setAttribute('aria-required',String(select.required));ui.wrap.classList.toggle('is-disabled',select.disabled);}
 function enhanceSelect(select){
-  if(select.multiple||select.size>1)return;
+  if(select.multiple||select.size>1||select.hasAttribute('data-native-select'))return;
   if(styledSelects.has(select)){syncSelect(select,styledSelects.get(select));return;}
   const wrap=document.createElement('div');wrap.className='field-select';select.before(wrap);wrap.append(select);select.classList.add('field-select-source');select.tabIndex=-1;select.setAttribute('aria-hidden','true');
   const button=document.createElement('button');button.type='button';button.className='select-trigger';button.setAttribute('role','combobox');button.setAttribute('aria-haspopup','listbox');button.setAttribute('aria-expanded','false');button.innerHTML='<span class="select-value"></span>'+icon('chevron-down');wrap.append(button);

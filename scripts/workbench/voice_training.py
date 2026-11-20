@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import voice_clone
+import minimax_voice
 
 
 MAX_AUDIO_BYTES = 10_000_000
@@ -48,7 +49,7 @@ def permission_message(status, record):
 
 
 class VoiceTraining:
-    default_mode = 'postpaid'
+    default_mode = 'prepaid'
 
     def __init__(self, app, read, write, run):
         self.app, self.pc, self.read, self.write, self.run = app, app.pc, read, write, run
@@ -85,6 +86,9 @@ class VoiceTraining:
         can_query = bool(phase and phase not in UNSENT and not retryable and (not bound or retraining))
         has_sample = bool(sample and sample.is_file())
         demo = record.get('demo', {})
+        replace_postpaid = not bound and record.get('speaker_id') == 'custom_speaker_id' and state_name not in ACTIVE
+        needs_slot = not bound and (
+            not phase or phase in UNSENT or retryable or replace_postpaid)
         message = state.get('message', '')
         http_status = state.get('httpStatus') or voice_http_status(message)
         needs_permission = state_name in ('failed', 'paused') and http_status in (401, 403)
@@ -98,6 +102,8 @@ class VoiceTraining:
             'needsPermission': needs_permission,
             'canStart': can_query or (not bound and has_sample),
             'canQuery': can_query,
+            'needsSlot': needs_slot,
+            'replacePostpaid': replace_postpaid,
             'canRetrain': can_retrain,
             'hasReplacement': can_retrain and has_replacement,
             'demoAudio': demo.get('url', '') if not retraining and demo.get('expiresAt', 0) > time.time() else '',
@@ -173,9 +179,10 @@ class VoiceTraining:
         self.sample({'sample': str(sample)})
 
     def reserve(self, cfg, person, connection):
-        if (connection.get('clone_mode') or self.default_mode) == 'postpaid':
+        mode = connection.get('clone_mode') or self.default_mode
+        if mode == 'postpaid':
             return {'speaker_id': 'custom_speaker_id', 'custom_speaker_id': 'montage_' + uuid.uuid4().hex}
-        if connection.get('clone_mode') != 'prepaid':
+        if mode != 'prepaid':
             raise ValueError('请先在设置 → 制作服务中选择复刻方式。')
         used = {p.get('speaker') for p in cfg['people'].values()}
         for other in cfg['people']:
@@ -186,22 +193,83 @@ class VoiceTraining:
             raise ValueError('当前没有空闲预付费音色槽位，请在制作服务中填写未占用的槽位 ID。')
         return {'speaker_id': speaker}
 
-    def start(self, ident):
+    def available_slots(self, ident=None, project=None):
+        from service_checks import check
+        slots = check(self.app, {'kind': 'voice_slots', 'project': project})['slots']
+        cfg = self.pc.load()
+        owners = {person['speaker']: person['name'] for person in cfg['people'].values()
+                  if person.get('speaker') and person.get('voice_provider') != 'minimax'}
+        busy = self.reserved_slots(cfg, ident)
+        return [{**slot, 'owner': owners.get(slot['id']), 'empty': slot['empty'] and slot['id'] not in owners,
+                 'selectable': slot['selectable'] and slot['id'] not in busy,
+                 'status': '本机复刻中' if slot['id'] in busy else slot['status']} for slot in slots]
+
+    def reserved_slots(self, cfg, ident):
+        reserved = set()
+        for other in cfg['people']:
+            if other == ident:
+                continue
+            record = self.read(self.path(other), {})
+            if self.active(other) or (record.get('phase') in ('submission_unknown', 'submitted')
+                                      and record.get('workbench', {}).get('state') == 'paused'):
+                reserved.add(record.get('speaker_id'))
+        return reserved
+
+    def select_slot(self, cfg, ident, slots, speaker, overwrite):
+        reserved = self.reserved_slots(cfg, ident)
+        owners = {p['speaker']: p['id'] for p in cfg['people'].values()
+                  if p.get('speaker') and p.get('voice_provider') != 'minimax'}
+        options = [slot for slot in slots if slot['selectable'] and slot['id'] not in reserved]
+        if speaker:
+            choice = next((slot for slot in options if slot['id'] == speaker), None)
+            if choice is None:
+                raise ValueError('这个槽位现在不可用，请刷新后选另一个。')
+        else:
+            choice = next((slot for slot in options if slot['empty'] and slot['id'] not in owners), None)
+            if choice is None:
+                raise ValueError('没有可用空槽位，请选择一个可以覆盖的槽位，或前往火山购买。')
+        current = owners.get(choice['id'])
+        covers = not choice['empty'] or bool(current)
+        if covers and overwrite is not True:
+            raise ValueError('继续会覆盖原音色，请先确认。')
+        return {'speaker_id': choice['id'], 'overwrite': covers, 'slotOwner': current}
+
+    def start(self, ident, slots=None, speaker=None, overwrite=False):
         with self.app.transaction():
             cfg, person = self.load_person(ident)
             if self.active(ident) or (person.get('speaker') and not self.public(person)['canQuery']):
                 return self.public(person)
             connection = cfg['connections'].get(person.get('connection'), {})
-            if not self.pc.connection_keys(connection)[0]:
-                raise ValueError('请先在制作服务中保存语音 API Key。')
             path = self.path(ident)
             record = self.read(path, {})
             phase = record.get('phase')
             retryable = not person.get('speaker') and retryable_registration(record)
+            configured = cfg.get('settings', {}).get('voice_provider', 'volcengine')
+            replace_postpaid = configured == 'minimax' and self.public(person)['replacePostpaid']
+            initial = not phase or phase in UNSENT or retryable or replace_postpaid
+            provider = configured if initial or slots is not None else record.get('provider', 'volcengine')
+            voice_connection = cfg['connections'].get('minimax', {}) if provider == 'minimax' else connection
+            if not self.pc.connection_keys(voice_connection)[0]:
+                service = 'MiniMax' if provider == 'minimax' else '火山'
+                raise ValueError(f'请先在语音合成与复刻设置保存{service} API Key。')
             resume = phase in ('submission_unknown', 'submitted') and record.get('workbench', {}).get('state') == 'paused'
-            if not phase or phase in UNSENT or retryable:
+            if initial or slots is not None:
                 self.sample(person)
-                if phase != 'prepared':
+                if slots is not None:
+                    if not self.public(person)['needsSlot'] or provider != 'volcengine':
+                        raise ValueError('已经有复刻任务在处理，请等结果返回。')
+                    identity = self.select_slot(cfg, ident, slots, speaker, overwrite)
+                    if record.get('speaker_id') == 'custom_speaker_id':
+                        self.write(path.with_name('voice-training-previous-postpaid.json'), record)
+                    record = {**identity, 'phase': 'workbench_queued', 'connection': person.get('connection')}
+                    resume = False
+                elif provider == 'minimax':
+                    if replace_postpaid:
+                        self.write(path.with_name('voice-training-previous-postpaid.json'), record)
+                    same = record.get('provider') == 'minimax'
+                    record = {'provider': 'minimax', 'speaker_id': record['speaker_id'] if same else 'montage-' + uuid.uuid4().hex,
+                              'phase': 'workbench_queued', 'connection': person.get('connection')}
+                elif phase != 'prepared':
                     identity = self.reserve(cfg, person, connection)
                     if (retryable and identity['speaker_id'] == record.get('speaker_id') == 'custom_speaker_id'
                             and record.get('connection', person.get('connection')) == person.get('connection')
@@ -268,12 +336,26 @@ class VoiceTraining:
                 else:
                     self.finish(path, record, ticket, 'ready', '音色已绑定')
                 return
-            key = self.pc.connection_keys(cfg['connections'].get(person.get('connection'), {}))[0]
+            is_minimax = record.get('provider') == 'minimax'
+            connection = 'minimax' if is_minimax else person.get('connection')
+            key = self.pc.connection_keys(cfg['connections'].get(connection, {}))[0]
             if not key:
                 raise ValueError('语音 API Key 已失效，请补齐后继续。')
             phase = record['phase']
             identity = {k: record[k] for k in ('speaker_id', 'custom_speaker_id') if record.get(k)}
-            if phase == 'ready':
+            if is_minimax:
+                if phase not in UNSENT:
+                    self.finish(path, record, ticket, 'paused', 'MiniMax 未确认上次提交，请先在 MiniMax 控制台核对音色。')
+                    return
+                if not record.get('fileId'):
+                    record['fileId'] = minimax_voice.upload(self.sample(person), key)
+                record['phase'] = 'submission_unknown'
+                if not self.finish(path, record, ticket, 'submitting', '正在提交 MiniMax 复刻', delay=120):
+                    return
+                submitting = True
+                minimax_voice.clone(record['fileId'], identity['speaker_id'], key)
+                self.bind(ident, path, record, ticket, identity)
+            elif phase == 'ready':
                 self.bind(ident, path, record, ticket, identity)
             elif phase in UNSENT:
                 if identity['speaker_id'] != 'custom_speaker_id' and time.time() - record.get('slotCheckedAt', 0) > 60:
@@ -305,7 +387,8 @@ class VoiceTraining:
             reason = self.app.redact(str(error))[:350]
             http_status = voice_http_status(reason)
             state['httpStatus'] = http_status
-            if submitting and record['phase'] == 'submission_unknown' and http_status in (400, 401, 403, 422):
+            if submitting and record['phase'] == 'submission_unknown' and (
+                    http_status in (400, 401, 403, 422) or isinstance(error, minimax_voice.Rejected)):
                 self.fail_registration(path, record, ticket, '复刻请求被拒绝。' + reason)
             elif record.get('phase') in UNSENT:
                 if record.get('retraining'):
@@ -327,8 +410,12 @@ class VoiceTraining:
         if not self.finish(path, record, ticket, 'checking', '正在检查预付费槽位', delay=75):
             return
         reply = voice_clone.call('get_voice', identity, key)
-        if reply.get('status') not in (0, 3) or reply.get('available_training_times') == 0:
-            raise ValueError('这个槽位已有音色、正在复刻或不可用。请在制作服务中换一个空闲槽位。')
+        allowed = (0, 2, 3) if record.get('overwrite') else (0, 3)
+        if reply.get('status') not in allowed or reply.get('available_training_times') == 0:
+            self.fail_registration(path, record, ticket, '这个槽位的状态已经变化，请重新选择。')
+            return
+        if record.get('overwrite'):
+            record['previousVoice'] = {k: reply.get(k) for k in ('status', 'create_time', 'version', 'available_training_times')}
         record['slotCheckedAt'] = time.time()
         self.finish(path, record, ticket, 'queued', '槽位可用，等待提交录音')
 
@@ -347,14 +434,14 @@ class VoiceTraining:
             return
         if status == 1 and record['phase'] == 'submission_unknown':
             record['phase'] = 'submitted'
-        if record.get('retraining') and record['phase'] == 'submission_unknown':
+        if (record.get('retraining') or record.get('overwrite')) and record['phase'] == 'submission_unknown':
             if status == 4:
-                self.end_retrain(path, record, ticket, '火山显示该音色已正式启用，无法确认本次重练结果。')
+                self.fail_registration(path, record, ticket, '火山显示音色已锁定，无法确认本次覆盖。')
                 return
             # A lost response can leave the old successful version visible under the same ID.
             previous = record.get('previousVoice', {})
             changed = any(previous.get(k) is not None and reply.get(k) is not None and reply[k] != previous[k]
-                          for k in ('create_time', 'version'))
+                          for k in ('create_time', 'version', 'available_training_times'))
             if status == 1 or (status in (2, 3) and (status != previous.get('status') or changed)):
                 record['phase'] = 'submitted'
             else:
@@ -406,7 +493,19 @@ class VoiceTraining:
                     record.pop(field, None)
                 message = '重练完成，继续使用原来的音色 ID。'
             else:
-                if not person.get('speaker'):
+                if not person.get('speaker') and (record.get('slotOwner') or record.get('provider') == 'minimax'):
+                    owner = cfg['people'].get(record.get('slotOwner'))
+                    if owner and owner['id'] != ident and owner.get('speaker') == identity['speaker_id']:
+                        owner.update(speaker=None, custom_speaker_id=None, status='needs_voice')
+                        owner.pop('voice_provider', None)
+                        old_path = self.path(owner['id'])
+                        self.write(old_path, {'phase': 'retryable', 'workbench': {'state': 'failed',
+                           'message': '原槽位已转给其他人物，上传录音后可以重新复刻。'}})
+                    person.update(speaker=identity['speaker_id'], custom_speaker_id=None, status='ready',
+                                  voice_provider=record.get('provider', 'volcengine'))
+                    cfg['default_person'] = cfg.get('default_person') or ident
+                    self.pc.write(self.pc.directory() / 'project.json', cfg)
+                elif not person.get('speaker'):
                     self.app.people.bind(ident, identity['speaker_id'], identity.get('custom_speaker_id'))
                 message = '复刻完成，音色 ID 已自动填写'
             record['phase'] = 'ready'

@@ -80,7 +80,7 @@ function updateChrome() {
   document.querySelectorAll('[data-nav]').forEach(a => { if (a.dataset.nav === (route==='task'?'tasks':['preview','video'].includes(route)?'works':['institution','asset','institution-new'].includes(route)?'library':route)) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
   $('#page-label').textContent = route==='settings'&&location.hash==='#settings/music'?'配乐管理':labels[route] || labels.create;
 }
-function hasServices() { return ['speech','ak','sk'].every(k => state.config.connection[k]); }
+function hasServices() { const c=state.config; return (c.voice.provider==='minimax'?c.voice.minimaxConfigured:c.connection.speech)&&c.connection.ak&&c.connection.sk; }
 function hasPerson() { return state.config.people.some(p => p.ready && p.social_media_name); }
 function allConfigured() { return hasServices() && hasPerson() && state.config.agent.state === 'connected'; }
 function heading(title, text, action = '') { return `<div class="page-heading"><div><h1>${title}</h1><p>${text}</p></div>${action}</div>`; }
@@ -195,8 +195,8 @@ function productionServiceSettings(config) {
     <div class="settings-section-heading"><span>${icon('clapper')}</span><h2 id="production-services-title">制作服务</h2></div>
     <section class="settings-service" aria-labelledby="speech-settings-title">
       <div class="settings-service-heading">
-        <h3 id="speech-settings-title">语音与音色复刻</h3>
-        <div class="settings-links"><a href="https://console.volcengine.com/speech/app" target="_blank" rel="noreferrer">获取语音 API Key ${icon('arrow-up-right')}</a></div>
+        <h3 id="speech-settings-title">语音合成与复刻</h3>
+        <div class="settings-links"><a href="https://console.volcengine.com/speech/app" target="_blank" rel="noreferrer">获取火山语音 API Key ${icon('arrow-up-right')}</a></div>
       </div>
       ${credentialField('api_key','语音 API Key',conn.speech,'填写语音服务的 API Key')}
       <div class="form-group"><label class="field-label" for="test-person">测试音色</label><select id="test-person">
@@ -205,15 +205,31 @@ function productionServiceSettings(config) {
       ${serviceTestControl('speech','测试语音连接','用所选音色合成四字短句，按语音平台规则计费。')}
       <div class="form-group">
         <h4 class="field-label">音色复刻设置</h4>
-        <div class="form-group"><label class="field-label" for="clone-mode">复刻方式</label>
-          <select name="clone_mode" id="clone-mode">
-            <option value="postpaid" ${conn.cloneMode !== 'prepaid'?'selected':''}>先复刻，第一次正式用时付音色费</option>
-            <option value="prepaid" ${conn.cloneMode === 'prepaid'?'selected':''}>用已经买好的音色名额</option>
+        <div class="form-group"><label class="field-label" for="clone-mode">新复刻使用的语音服务</label>
+          <select name="voice_provider" id="clone-mode">
+            <option value="volcengine" ${config.voice.provider === 'volcengine'?'selected':''}>火山 · 用已购买的音色名额</option>
+            <option value="minimax" ${config.voice.provider === 'minimax'?'selected':''}>MiniMax</option>
           </select>
         </div>
-        <div class="form-group" id="speaker-pool-fields" ${conn.cloneMode === 'prepaid'?'':'hidden'}>
-          <label class="field-label" for="speaker-pool">还没用过的音色 ID</label>
-          <input class="input" name="speaker_pool" id="speaker-pool" value="${E(conn.speakerPool.join(', '))}" placeholder="多个音色 ID 用逗号分隔">
+        <div class="form-group">
+          <label class="field-label" for="voice-project">火山项目</label>
+          <input class="input" name="voice_project" id="voice-project" value="${E(config.voice.project)}" placeholder="default">
+          <p class="form-help">复刻时优先用空槽位。音色列表使用下方的火山 AK / SK。</p>
+          <div class="person-voice-actions">
+            <button class="secondary" type="button" data-action="view-voice-slots">拉取音色槽位</button>
+            <a href="https://console.volcengine.com/speech/new/overview?projectName=${encodeURIComponent(config.voice.project)}" target="_blank" rel="noreferrer">到火山购买预付费音色</a>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="field-label" for="minimax-api-key">MiniMax API Key ${credentialStatus(config.voice.minimaxConfigured)}</label>
+          <input class="input" id="minimax-api-key" name="minimax_api_key" type="password" autocomplete="off" placeholder="填写 MiniMax 开放平台 API Key">
+        </div>
+        <div class="form-group">
+          <label class="field-label" for="minimax-model">MiniMax 合成模型</label>
+          <select name="minimax_model" id="minimax-model">
+            <option value="speech-2.8-hd" ${config.voice.minimaxModel==='speech-2.8-hd'?'selected':''}>2.8 HD · 音质优先</option>
+            <option value="speech-2.8-turbo" ${config.voice.minimaxModel==='speech-2.8-turbo'?'selected':''}>2.8 Turbo · 速度优先</option>
+          </select>
         </div>
       </div>
     </section>
@@ -297,7 +313,7 @@ function bindServiceSettings(form) {
   form.querySelectorAll('[data-test-service]').forEach(button=>button.addEventListener('click',()=>{
     const kind=button.dataset.testService,status=$('#test-'+kind+'-result');
     const payload=kind==='model'?modelFields(form):{kind,person:$('#test-person').value,
-      connection:Object.fromEntries(['api_key','ak','sk','bucket','region','endpoint'].map(name=>[name,form.elements[name].value]))};
+      connection:Object.fromEntries(['api_key','minimax_api_key','ak','sk','bucket','region','endpoint'].map(name=>[name,form.elements[name].value]))};
     const isCurrent=()=>form.isConnected&&(kind!=='model'||JSON.stringify(modelFields(form))===JSON.stringify(payload));
     status.className='form-help';
     status.textContent='正在测试…';
@@ -321,7 +337,6 @@ function renderSettings() {
     ${c.agent.mode === 'desktop' ? `<section class="panel"><div class="settings-section-heading"><span>${icon('clapper')}</span><div><h2>用 Codex 接手制作</h2></div></div><div id="agent-config-status">${agentStatusBlock()}</div></section>` : ''}
     <section class="panel"><div class="settings-section-heading"><span>${icon('settings')}</span><div><h2>你的制作偏好</h2><p>这些设置将用于之后创建的新任务。</p></div></div><div class="form-group"><label class="field-label" for="cover-header" style="margin-bottom:10px">封面固定头标</label><input class="input" name="coverHeader" id="cover-header" value="${E(c.preferences.coverHeader)}" placeholder="例如：重庆养老院探访"></div><div class="switch-row"><label for="default-music">${icon('music')} 默认添加背景音乐</label><input type="checkbox" class="switch" id="default-music" name="music" ${c.preferences.music ? 'checked' : ''}></div></section><div class="sticky-actions"><button class="primary" type="submit">${icon('save')} 保存本地设置</button><button class="secondary" type="submit" data-next="people">下一步：配置数字人 ${icon('arrow-right')}</button><span id="settings-error" class="inline-error error-slot" role="alert"></span></div></form><aside class="settings-guide"><h3>第一次使用，跟着做就好。</h3><ol><li><strong>配置制作服务</strong>在本页配置模型、语音和数字人服务。</li><li><strong>添加你自己的数字人</strong>准备一张正面照片。绑定已有音色，或先用录音单独复刻。</li><li><strong>选择机构素材，开始制作</strong>放入实拍视频和真实介绍，写下这条视频的想法。</li></ol><p>留空的 Key 会保留原配置。保存后输入框自动清空，页面只显示是否已配置。</p><div class="path-note">当前项目<br>${E(c.project)}<p style="margin-top:10px">配置位于项目的 .montage 目录，更新 skill 后仍会保留。</p></div><section class="panel"><h3>本地工作台</h3><p class="form-help">空闲时可退出并停止本地服务。</p><button type="button" class="secondary" data-action="exit-workbench">退出工作台</button></section></aside></div>`;
   $('#storage-provider').addEventListener('change', e => { $('#tos-fields').hidden = e.target.value !== 'tos'; $('#tmpfile-note').hidden = e.target.value === 'tos'; });
-  $('#clone-mode').addEventListener('change', e => { $('#speaker-pool-fields').hidden = e.target.value !== 'prepaid'; });
   bindServiceSettings($('#settings-form'));
   $('#settings-form').addEventListener('submit', async e => {
     e.preventDefault(); const next = e.submitter?.dataset.next; const form = e.target, data = Object.fromEntries(new FormData(form)); $('#settings-error').textContent = '';
@@ -335,13 +350,57 @@ function agentStatusBlock() {
   const a = state.config.agent;
   return `<div class="agent-status-box"><span>${icon('clapper')}</span><div><strong>${a.uncertain ? '等待进度回传' : a.state === 'connected' ? a.label+' 已连接' : a.installed ? '已检测到 Agent' : '等待宿主连接'}</strong><p>${E(a.message)}</p></div><button type="button" class="secondary" data-action="check-agent">${icon('retry')}检查连接</button></div>${a.probe==='passed' ? '<p class="saved-mark">网页提交 → Agent 接收 → 回传进度，连接自检已通过。</p>' : ['pending','claimed'].includes(a.probe) ? '<p class="form-help">连接自检中，正在等待 Agent 回传…</p>' : ''}${a.state !== 'connected' ? `<div class="inline-note"><strong>只需在 Agent 发送一次这句话</strong><p style="margin:8px 0 12px">${E(a.instruction)}</p><button type="button" class="secondary" data-action="copy-agent">复制连接指令 ${icon('text')}</button> <p style="margin:10px 0 0">Agent 接上后，这里自动变为已连接。之后直接在网页点“开始制作”。</p></div>` : ''}`;
 }
+async function showVoiceSlots(opener, person) {
+  const dialog=managementDialog(person?'选择复刻用的音色':'火山音色槽位',opener);
+  const body=dialog.querySelector('.management-dialog-content');
+  const close='<form method="dialog"><button class="secondary" type="submit">关闭</button></form>';
+  try{
+    const project=person?undefined:$('#voice-project')?.value;
+    const {slots}=await api('/api/voice-slots',{person,project});
+    const empty=slots.filter(slot=>slot.empty&&slot.selectable).length;
+    const label=slot=>[slot.id,slot.status,slot.owner?`已绑定 ${slot.owner}`:'',slot.remaining==null?'':`还可复刻 ${slot.remaining} 次`].filter(Boolean).join(' · ');
+    body.innerHTML=`<p class="form-help">共 ${slots.length} 个槽位，${empty} 个空槽位可用。</p>`;
+    if(!person){
+      body.insertAdjacentHTML('beforeend',`<ul>${slots.map(slot=>`<li>${E(label(slot))}</li>`).join('')}</ul>${close}`);
+      return;
+    }
+    body.insertAdjacentHTML('beforeend',`<label class="field-label" for="voice-slot-picker">音色槽位</label>
+      <select id="voice-slot-picker" data-native-select class="input"><option value="" ${empty?'':'disabled'} selected>${empty?'自动分配空槽位':'没有空槽位，请手动选择'}</option>
+      ${slots.map(slot=>`<option value="${E(slot.id)}" ${slot.selectable?'':'disabled'}>${E(label(slot))}</option>`).join('')}</select>
+      <p class="form-help" data-slot-warning hidden></p>
+      <label data-slot-consent hidden><input type="checkbox"> 我确认覆盖原音色</label>
+      <p class="inline-error" role="alert"></p>
+      <div class="person-voice-actions"><button class="primary" type="button" data-submit-slot>复刻</button>${close}</div>`);
+    const select=body.querySelector('select'), submit=body.querySelector('[data-submit-slot]');
+    const warning=body.querySelector('[data-slot-warning]'), consent=body.querySelector('[data-slot-consent]');
+    const checkbox=consent.querySelector('input');
+    const current=()=>slots.find(slot=>slot.id===select.value);
+    const update=()=>{
+      const slot=current(), overwrites=Boolean(slot&&!slot.empty);
+      warning.hidden=consent.hidden=!overwrites;
+      warning.textContent=overwrites?(slot.owner?`复刻会覆盖这个槽位里「${slot.owner}」原来的声音，并将槽位绑定到当前人物。`:'复刻会覆盖这个槽位原来的声音。'):'';
+      submit.disabled=overwrites?!checkbox.checked:!slot&&!empty;
+    };
+    select.addEventListener('change',()=>{checkbox.checked=false;update();});
+    checkbox.addEventListener('change',update);
+    submit.addEventListener('click',()=>busy(submit,async()=>{
+      try{
+        await api(`/api/people/${encodeURIComponent(person)}/voice-training`,{slot:select.value,overwrite:checkbox.checked});
+        dialog.close();
+        await refresh();
+      }catch(error){body.querySelector('[role="alert"]').textContent=error.message;}
+    }));
+    update();
+  }catch(error){body.innerHTML=`<p class="inline-error" role="alert">${E(error.message)}</p>${close}`;}
+}
+
 function personVoice(person, editor=false) {
   const voice=person.voiceTraining;
   if(!voice)return '';
   const id=person.custom_speaker_id||person.speaker;
   const active=['queued','checking','submitting','training'].includes(voice.state);
   const canStart=(voice.canStart||voice.hasReplacement)&&!active;
-  const text=voice.message||(!id&&(
+  const text=(voice.replacePostpaid&&state.config.voice.provider==='volcengine'?'上次用了后付费。点「复刻」可改用已购买的火山槽位。':voice.replacePostpaid?'上次用的是火山后付费。点「复刻」将改用 MiniMax。':voice.message)||(!id&&(
     voice.canQuery?'上次复刻还没完成，点「复刻」继续。':voice.hasSample?'录音已保存，可以复刻。':'请上传录音或填写已有音色 ID。'));
   return `<div class="person-voice">
     ${id?`<p class="form-help">音色 ID <code>${E(id)}</code></p>`:''}
@@ -354,7 +413,7 @@ function personVoice(person, editor=false) {
       ${canStart?`<button type="button" class="secondary" data-action="start-voice-training" data-id="${E(person.id)}" data-retrain="${Boolean(voice.hasReplacement)}">复刻</button>`:''}
     </div>
     ${editor&&voice.canRetrain?'<p class="form-help">首次用这个音色点「测试语音连接」也会收音色费，之后就不能重练。</p>':''}
-    ${editor&&canStart&&!voice.canQuery?'<p class="form-help">开始复刻会将录音发送到火山语音服务。</p>':''}
+    ${editor&&canStart&&!voice.canQuery?`<p class="form-help">复刻会将录音发送到${state.config.voice.provider==='minimax'?' MiniMax':'火山语音'}。</p>`:''}
   </div>`;
 }
 function personReadiness(person) {
@@ -377,6 +436,8 @@ function paintVoiceUpdates(previousPeople) {
     $('#person-voice-editor').innerHTML=personVoice(person,true);
     if(person.speaker){
       const speaker=$('#person-speaker'), custom=$('#custom-speaker');
+      const provider=$('#person-voice-provider');
+      if(provider.value===(prior?.voice_provider||'volcengine'))provider.value=person.voice_provider||'volcengine';
       if(speaker.value===(prior?.speaker||''))speaker.value=person.speaker;
       if(custom.value===(prior?.custom_speaker_id||''))custom.value=person.custom_speaker_id||'';
     }
@@ -416,7 +477,7 @@ function personUploadFields() {
 }
 function personEditor() {
   const p = state.config.people.find(p => p.id === editPerson);
-  return `<section class="panel editor-panel"><div class="editor-heading"><h2>${p ? '编辑 ' + E(p.name) : '添加一个数字人'}</h2><button data-action="close-editor" aria-label="关闭人物编辑">${icon('close')}</button></div><form id="person-form">${p ? `<input type="hidden" name="id" value="${E(p.id)}">` : personUploadFields()}<div class="form-row"><div class="form-group"><label class="field-label" for="person-name" style="margin-bottom:10px">人物名称</label><input id="person-name" name="name" class="input" value="${E(p?.name)}" placeholder="例如：小林" required></div><div class="form-group"><label class="field-label" for="person-social" style="margin-bottom:10px">社媒署名</label><input id="person-social" name="social_media_name" class="input" value="${E(p?.social_media_name)}" placeholder="例如：小林带你看养老" required></div></div><div class="form-group"><label class="field-label" for="person-speaker" style="margin-bottom:10px">音色 ID<span class="optional">有音色直接填写；没有可留空</span></label><input id="person-speaker" name="speaker" class="input" value="${E(p?.speaker)}" placeholder="例如：S_xxxxxxxx"><p class="form-help">复刻成功后会自动填入音色 ID。</p></div>${p?`<div id="person-voice-editor" class="form-group">${personVoice(p,true)}</div>`:'<p class="form-help">人物保存后可以开始复刻。</p>'}<details class="form-group"><summary class="field-label">自定义音色与语速<span class="optional">高级选项</span></summary><div class="form-row" style="margin-top:15px"><div class="form-group"><label class="field-label" for="custom-speaker">自定义音色 ID</label><input class="input" id="custom-speaker" name="custom_speaker_id" value="${E(p?.custom_speaker_id)}" placeholder="speaker 为 custom_speaker_id 时填写"></div><div class="form-group"><label class="field-label" for="speech-rate">语速参数</label><input class="input" type="number" min="-50" max="100" id="speech-rate" name="speech_rate" value="${p?.speech_rate ?? -3}"><p class="form-help">0 为标准速度，负数稍慢，正数稍快。</p></div></div></details><div class="switch-row"><label for="person-default">设为默认出镜人物</label><input class="switch" type="checkbox" name="default" id="person-default" ${p?.isDefault || !state.config.people.length ? 'checked' : ''}></div><div id="person-error" class="inline-error error-slot" role="alert"></div><button class="primary" type="submit" style="margin-top:16px">${icon('save')} 保存人物资料</button></form></section>`;
+  return `<section class="panel editor-panel"><div class="editor-heading"><h2>${p ? '编辑 ' + E(p.name) : '添加一个数字人'}</h2><button data-action="close-editor" aria-label="关闭人物编辑">${icon('close')}</button></div><form id="person-form">${p ? `<input type="hidden" name="id" value="${E(p.id)}">` : personUploadFields()}<div class="form-row"><div class="form-group"><label class="field-label" for="person-name" style="margin-bottom:10px">人物名称</label><input id="person-name" name="name" class="input" value="${E(p?.name)}" placeholder="例如：小林" required></div><div class="form-group"><label class="field-label" for="person-social" style="margin-bottom:10px">社媒署名</label><input id="person-social" name="social_media_name" class="input" value="${E(p?.social_media_name)}" placeholder="例如：小林带你看养老" required></div></div><div class="form-group"><label class="field-label" for="person-speaker" style="margin-bottom:10px">音色 ID<span class="optional">有音色直接填写；没有可留空</span></label><input id="person-speaker" name="speaker" class="input" value="${E(p?.speaker)}" placeholder="例如：S_xxxxxxxx"><p class="form-help">复刻成功后会自动填入音色 ID。</p></div><div class="form-group"><label class="field-label" for="person-voice-provider">音色所属服务</label><select id="person-voice-provider" name="person_voice_provider"><option value="volcengine" ${p?.voice_provider!=='minimax'?'selected':''}>火山</option><option value="minimax" ${p?.voice_provider==='minimax'?'selected':''}>MiniMax</option></select></div>${p?`<div id="person-voice-editor" class="form-group">${personVoice(p,true)}</div>`:'<p class="form-help">人物保存后可以开始复刻。</p>'}<details class="form-group"><summary class="field-label">自定义音色与语速<span class="optional">高级选项</span></summary><div class="form-row" style="margin-top:15px"><div class="form-group"><label class="field-label" for="custom-speaker">自定义音色 ID</label><input class="input" id="custom-speaker" name="custom_speaker_id" value="${E(p?.custom_speaker_id)}" placeholder="speaker 为 custom_speaker_id 时填写"></div><div class="form-group"><label class="field-label" for="speech-rate">语速参数</label><input class="input" type="number" min="-50" max="100" id="speech-rate" name="speech_rate" value="${p?.speech_rate ?? -3}"><p class="form-help">0 为标准速度，负数稍慢，正数稍快。</p></div></div></details><div class="switch-row"><label for="person-default">设为默认出镜人物</label><input class="switch" type="checkbox" name="default" id="person-default" ${p?.isDefault || !state.config.people.length ? 'checked' : ''}></div><div id="person-error" class="inline-error error-slot" role="alert"></div><button class="primary" type="submit" style="margin-top:16px">${icon('save')} 保存人物资料</button></form></section>`;
 }
 function bindPerson() {
   const form = $('#person-form');
@@ -558,7 +619,17 @@ document.addEventListener('click', async e=>{
     if(action==='edit-person'){editPerson=button.dataset.id;renderPeople();$('#person-editor').scrollIntoView({block:'start',behavior:'smooth'});}
     if(action==='close-editor'){editPerson=undefined;renderPeople();}
     if(action==='pick-voice-sample')$('#person-voice-file')?.click();
-    if(action==='start-voice-training')await busy(button,async()=>{await api(`/api/people/${encodeURIComponent(button.dataset.id)}/voice-training`,{retrain:button.dataset.retrain==='true'});await refresh();});
+    if(action==='view-voice-slots')await showVoiceSlots(button);
+    if(action==='start-voice-training')await busy(button,async()=>{
+      const person=state.config.people.find(p=>p.id===button.dataset.id);
+      const retrain=button.dataset.retrain==='true';
+      if(!retrain&&person?.voiceTraining.needsSlot&&state.config.voice.provider==='volcengine'){
+        await showVoiceSlots(button,person.id);
+      }else{
+        await api(`/api/people/${encodeURIComponent(button.dataset.id)}/voice-training`,{retrain});
+        await refresh();
+      }
+    });
     if(action==='filter'){worksFilter=button.dataset.filter;renderWorks();}
     if(action==='start-task')await busy(button,async()=>{await api(`/api/tasks/${button.dataset.id}/start`,{});await refresh(false);renderTask();});
     if(action==='cancel-task')await busy(button,async()=>{await api(`/api/tasks/${button.dataset.id}/cancel`,{});await refresh(false);renderTask();notify('停止请求已提交，已有制作文件会保留');});
