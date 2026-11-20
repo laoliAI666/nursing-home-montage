@@ -340,20 +340,18 @@ function personVoice(person, editor=false) {
   if(!voice)return '';
   const id=person.custom_speaker_id||person.speaker;
   const active=['queued','checking','submitting','training'].includes(voice.state);
-  const canStart=voice.canStart&&!active;
-  const action=voice.canQuery?(voice.state==='paused'?'重试查询':'继续查询'):voice.canRetry?'重新复刻':'开始复刻';
+  const canStart=(voice.canStart||voice.hasReplacement)&&!active;
   const text=voice.message||(!id&&(
-    voice.canQuery?'有复刻记录，可以继续查询。':voice.hasSample?'录音已保存，可以开始复刻。':'请上传录音或填写已有音色 ID。'));
+    voice.canQuery?'上次复刻还没完成，点「复刻」继续。':voice.hasSample?'录音已保存，可以复刻。':'请上传录音或填写已有音色 ID。'));
   return `<div class="person-voice">
     ${id?`<p class="form-help">音色 ID <code>${E(id)}</code></p>`:''}
     ${text?`<p class="${['failed','paused'].includes(voice.state)?'inline-error':'form-help'}" role="status">${E(text)}</p>`:''}
+    ${voice.needsPermission?'<p class="form-help"><a href="https://console.volcengine.com/speech/new/overview?projectName=default" target="_blank" rel="noreferrer">打开火山语音控制台</a></p>':''}
     ${editor&&voice.demoAudio?`<audio controls preload="none" aria-label="试听复刻音色" src="${E(voice.demoAudio)}"></audio>`:''}
-    ${editor&&voice.hasReplacement?'<p class="form-help">新录音已保存，可以用原来的音色 ID 重练。</p>':''}
+    ${editor&&voice.hasReplacement?'<p class="form-help">新录音已保存。点「复刻」会沿用原来的音色 ID。</p>':''}
     <div class="person-voice-actions">
       ${editor&&voice.canUpload?`<input type="file" id="person-voice-file" data-person="${E(person.id)}" accept=".wav,.mp3,.m4a,.aac,.flac,.ogg" hidden><button type="button" class="secondary" data-action="pick-voice-sample">${icon('plus')} ${voice.hasSample||voice.canRetrain?'更换录音':'上传录音'}</button>`:''}
-      ${canStart?`<button type="button" class="secondary" data-action="start-voice-training" data-id="${E(person.id)}">${action}</button>`:''}
-      ${voice.needsPermission?'<a class="secondary" href="#settings">检查语音设置</a>':''}
-      ${voice.hasReplacement?`<button type="button" class="secondary" data-action="start-voice-training" data-id="${E(person.id)}" data-retrain="true">用原音色 ID 重练</button>`:''}
+      ${canStart?`<button type="button" class="secondary" data-action="start-voice-training" data-id="${E(person.id)}" data-retrain="${Boolean(voice.hasReplacement)}">复刻</button>`:''}
     </div>
     ${editor&&voice.canRetrain?'<p class="form-help">首次用这个音色点「测试语音连接」也会收音色费，之后就不能重练。</p>':''}
     ${editor&&canStart&&!voice.canQuery?'<p class="form-help">开始复刻会将录音发送到火山语音服务。</p>':''}
@@ -362,7 +360,7 @@ function personVoice(person, editor=false) {
 function personReadiness(person) {
   const status=person.voiceTraining?.state;
   const active=['queued','checking','submitting','training'].includes(status);
-  const issue=status==='failed'?'复刻失败':status==='paused'?'复刻待确认':'';
+  const issue=person.voiceTraining?.needsPermission?'缺少复刻权限':status==='failed'?'复刻失败':status==='paused'?'复刻中断':'';
   return badge(active?'复刻进行中':issue||(person.ready?'已就绪':'待绑定音色'),person.ready&&!active&&!issue?'':'warn');
 }
 function paintVoiceUpdates(previousPeople) {
