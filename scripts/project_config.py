@@ -112,6 +112,11 @@ def resolved(job):
         if p.get('voice_provider')=='minimax':
             out['voice']['provider']='minimax'
             out['voice']['minimax_model']=cfg.get('settings',{}).get('minimax_model','speech-2.8-hd')
+        if p.get('voice_provider')=='aliyun':
+            from aliyun_voice import model_id, workspace_id
+            out['voice'].update(provider='aliyun', aliyun_model=model_id(p.get('aliyun_model')),
+                                aliyun_workspace=workspace_id(p.get('aliyun_workspace') or
+                                    cfg['connections'].get('aliyun',{}).get('workspace')))
         out['avatar']['portrait']=str(asset_path(p.get('portrait')))
         out['person']={'id':p['id'],'name':p['name'],'spokenName':p.get('spoken_name',p['name']),'connection':p['connection'],
             'socialMediaName':p.get('social_media_name'),'coverPortrait':str(asset_path(p['cover_portrait'])) if p.get('cover_portrait') else None,
@@ -217,6 +222,8 @@ def engine_env(job):
     api,ak,sk=connection_keys(conn);env=os.environ.copy()
     if cfg.get('voice',{}).get('provider')=='minimax':
         env['MINIMAX_TTS_API_KEY']=secret(load()['connections'].get('minimax',{}).get('speech_key'))
+    if cfg.get('voice',{}).get('provider')=='aliyun':
+        env['DASHSCOPE_API_KEY']=connection_keys(load()['connections'].get('aliyun',{}))[0]
     # Explicit values prevent inherited keys from accidentally selecting another account.
     env.update(MONTAGE_PROJECT_ROOT=str(root()),MONTAGE_AVATAR_CONFIG=str(job/'avatar-engine.json'),VOLCANO_TTS_API_KEY=api,VOLC_ACCESSKEY=ak,VOLC_SECRETKEY=sk,MONTAGE_MANAGED_CREDENTIALS='1')
     return env

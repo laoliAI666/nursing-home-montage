@@ -243,12 +243,17 @@ class App:
         people = []
         for ident, p in cfg["people"].items():
             voice_training = self.voice_training.public({**p, 'id': ident})
-            people.append({k: p.get(k) for k in ("name", "social_media_name", "speaker", "custom_speaker_id", "status", "speech_rate", "connection", "sample", "voice_provider")} | {"id": ident, "ready": bool(p.get("speaker") and self.pc.asset_path(p.get("portrait")) and self.pc.asset_path(p.get("portrait")).is_file()), "hasPortrait": bool(p.get("portrait")), "isDefault": ident == cfg.get("default_person"), "voiceTraining": voice_training})
+            people.append({k: p.get(k) for k in ("name", "social_media_name", "speaker", "custom_speaker_id", "status", "speech_rate", "connection", "sample", "voice_provider", "aliyun_model")} | {"id": ident, "ready": bool(p.get("speaker") and self.pc.asset_path(p.get("portrait")) and self.pc.asset_path(p.get("portrait")).is_file()), "hasPortrait": bool(p.get("portrait")), "isDefault": ident == cfg.get("default_person"), "voiceTraining": voice_training})
         storage = self.pc.storage_settings(c.get("storage"))
         voice_settings = cfg.get('settings', {})
+        from aliyun_voice import DEFAULT_MODEL
+        aliyun = cfg['connections'].get('aliyun', {})
         voice_public = {'provider': voice_settings.get('voice_provider', 'volcengine'),
                         'minimaxConfigured': bool(self.pc.connection_keys(cfg['connections'].get('minimax', {}))[0]),
                         'minimaxModel': voice_settings.get('minimax_model', 'speech-2.8-hd'),
+                        'aliyunConfigured': bool(aliyun.get('workspace') and self.pc.connection_keys(aliyun)[0]),
+                        'aliyunWorkspace': aliyun.get('workspace', ''),
+                        'aliyunModel': voice_settings.get('aliyun_model', DEFAULT_MODEL),
                         'project': c.get('voice_project', 'default')}
         return {"project": str(self.project), "workspace": str(self.workspace()), "workspaceDefault": str(self.workspace_default()), "workspaceSetting": read(self.data/'workspace.json', {}).get('directory', ''), "version": (self.skill / "VERSION").read_text().strip(), "people": people, "defaultPerson": cfg.get("default_person"), "voice": voice_public, "connection": {"speech": bool(keys[0]), "ak": bool(keys[1]), "sk": bool(keys[2]), "storage": storage, "cloneMode": c.get("clone_mode") or self.voice_training.default_mode, "speakerPool": c.get("speaker_pool", [])}, "preferences": {"music": cfg.get("settings", {}).get("music", {}).get("enabled", True), "coverHeader": cfg.get("settings", {}).get("cover", {}).get("header_text", "")}, "agent": self.agent_state(), "model": self.models.public(), "phases": PHASES, "onboarded": read(self.data / "preferences.json", {}).get("onboarded", False)}
 
@@ -287,10 +292,16 @@ class App:
             if conn is not None:
                 from voice_slots import project_name
                 from minimax_voice import MODELS
+                from aliyun_voice import model_id, workspace_id
+                ali_workspace = workspace_id(conn['aliyun_workspace']) if conn.get('aliyun_workspace') else None
+                ali_model = model_id(conn['aliyun_model']) if conn.get('aliyun_model') else None
+                ali_key = conn.get('aliyun_api_key', '')
+                if not isinstance(ali_key, str) or len(ali_key) > 512 or any(c in ali_key for c in '\r\n'):
+                    raise ValueError('阿里百炼 API Key 格式不正确。')
                 voice_project = project_name(conn['voice_project']) if conn.get('voice_project') else None
                 provider = conn.get('voice_provider')
                 model = conn.get('minimax_model')
-                if provider not in (None, 'volcengine', 'minimax') or model not in (None, *MODELS):
+                if provider not in (None, 'volcengine', 'minimax', 'aliyun') or model not in (None, *MODELS):
                     raise ValueError('请选择支持的语音服务和模型。')
                 mini_key = conn.get('minimax_api_key', '')
                 if not isinstance(mini_key, str) or len(mini_key) > 512 or any(c in mini_key for c in '\r\n'):
@@ -311,7 +322,13 @@ class App:
                 self.pc.store_connection("main", clean)
                 if mini_key.strip():
                     self.pc.store_connection('minimax', {'api_key': mini_key})
+                if ali_key.strip():
+                    self.pc.store_connection('aliyun', {'api_key': ali_key})
                 cfg = self.pc.load()
+                if ali_workspace:
+                    cfg['connections'].setdefault('aliyun', {})['workspace'] = ali_workspace
+                if ali_model:
+                    cfg['settings']['aliyun_model'] = ali_model
                 if voice_project is not None:
                     cfg['connections']['main']['voice_project'] = voice_project
                 if provider is not None:
@@ -368,11 +385,23 @@ class App:
             person['social_media_name'] = social
         speaker = values.get('speaker', '').strip()
         provider = values.get('person_voice_provider') or person.get('voice_provider') or 'volcengine'
-        if provider not in ('volcengine', 'minimax'):
+        if provider not in ('volcengine', 'minimax', 'aliyun'):
             raise ValueError('请选择音色所属的语音平台。')
+        if provider == 'aliyun':
+            from aliyun_voice import DEFAULT_MODEL, MODELS, model_id, workspace_id
+            ali_model = model_id(values.get('person_aliyun_model') or person.get('aliyun_model')
+                                 or cfg.get('settings', {}).get('aliyun_model', DEFAULT_MODEL))
+            if speaker:
+                if any(speaker.startswith(model + '-') and model != ali_model for model in MODELS):
+                    raise ValueError('此音色 ID 对应另一个模型，请选择创建它时的模型。')
+                existing = person.get('voice_provider') == 'aliyun' and speaker == person.get('speaker')
+                if existing and person.get('aliyun_model') != ali_model:
+                    raise ValueError('更换百炼模型时，请填入该模型的音色 ID，或点「复刻」创建新音色。')
+                workspace = workspace_id((person.get('aliyun_workspace') if existing else None)
+                                         or cfg['connections'].get('aliyun', {}).get('workspace'))
         if speaker:
-            if provider == 'minimax' and speaker == 'custom_speaker_id':
-                raise ValueError('请填写 MiniMax 的实际 Voice ID。')
+            if provider != 'volcengine' and speaker == 'custom_speaker_id':
+                raise ValueError('请填写该语音平台的实际音色 ID。')
             custom = (values.get('custom_speaker_id') or None) if provider == 'volcengine' else None
             if speaker == 'custom_speaker_id' and not custom:
                 raise ValueError('请填写火山自定义音色 ID。')
@@ -382,8 +411,15 @@ class App:
             if provider == 'volcengine' and speaker != person.get('speaker') and speaker in self.voice_training.reserved_slots(cfg, person['id']):
                 raise ValueError('这个音色槽位正在复刻中。')
             person.update(speaker=speaker, custom_speaker_id=custom, status='ready', voice_provider=provider)
+            if provider == 'aliyun':
+                person.update(aliyun_model=ali_model, aliyun_workspace=workspace)
+            else:
+                person.pop('aliyun_model', None)
+                person.pop('aliyun_workspace', None)
         elif not person.get('speaker') and values.get('person_voice_provider'):
             person['voice_provider'] = provider
+            if provider == 'aliyun':
+                person['aliyun_model'] = ali_model
         if values.get('default') or (speaker and not cfg.get('default_person')):
             cfg['default_person'] = person['id']
 
@@ -820,7 +856,7 @@ class Handler(BaseHTTPRequestHandler):
                 use_slots = (provider == 'volcengine'
                              and trainer.public(person)['needsSlot'] and not trainer.active(ident))
                 slots = trainer.available_slots(ident, cfg['connections'].get('main', {}).get('voice_project', 'default')) if use_slots else None
-                return self.reply(202, trainer.start(ident, slots, v.get('slot'), v.get('overwrite') is True, provider))
+                return self.reply(202, trainer.start(ident, slots, v.get('slot'), v.get('overwrite') is True, provider, v.get('model')))
             if url.path == "/api/scan":
                 return self.reply(200, self.app.scan(v.get("folder", "")))
             if url.path == "/api/pick-folder":

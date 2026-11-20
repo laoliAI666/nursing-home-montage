@@ -42,6 +42,16 @@ def check(app, values):
         provider = person.get('voice_provider') or 'volcengine'
         if not person.get('speaker') or values.get('provider', provider) != provider:
             raise ValueError('请先选择已绑定此平台音色的人物。')
+        if provider == 'aliyun':
+            from aliyun_voice import synthesize
+            target = cfg['connections'].get('aliyun', {})
+            raw = fields.get('aliyun_api_key', '')
+            if not isinstance(raw, str) or len(raw) > 512 or any(c in raw for c in '\r\n'):
+                raise ValueError('阿里百炼 API Key 格式不正确。')
+            key = raw.strip() or app.pc.connection_keys(target)[0]
+            workspace = person.get('aliyun_workspace') or fields.get('aliyun_workspace') or target.get('workspace')
+            synthesize('连接测试。', person['speaker'], person.get('aliyun_model'), person.get('speech_rate', 0), key, workspace)
+            return {'ok': True, 'message': '阿里百炼语音合成通过。'}
         if provider == 'minimax':
             from minimax_voice import MODELS, synthesize
             raw = fields.get('minimax_api_key', '')

@@ -80,12 +80,17 @@ function updateChrome() {
   document.querySelectorAll('[data-nav]').forEach(a => { if (a.dataset.nav === (route==='task'?'tasks':['preview','video'].includes(route)?'works':['institution','asset','institution-new'].includes(route)?'library':route)) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
   $('#page-label').textContent = route==='settings'&&location.hash==='#settings/music'?'配乐管理':labels[route] || labels.create;
 }
-const voicePlatforms={volcengine:'火山语音',minimax:'MiniMax'};
+const voicePlatforms={volcengine:'火山语音',minimax:'MiniMax',aliyun:'阿里百炼'};
+const aliyunModels={'qwen-audio-3.1-tts-plus':'千问 Qwen-Audio 3.1 TTS Plus','cosyvoice-v3.5-flash':'CosyVoice 3.5 Flash'};
+function aliyunModelOptions(selected) {
+  return Object.entries(aliyunModels).map(([id,label])=>`<option value="${id}" ${id===selected?'selected':''}>${label}</option>`).join('');
+}
 function voicePlatformOptions(selected) {
   return Object.entries(voicePlatforms).map(([id,label])=>`<option value="${id}" ${id===selected?'selected':''}>${label}</option>`).join('');
 }
 function boundVoicePlatform(person) {return person.voice_provider||'volcengine';}
 function voiceConfigured(config, provider) {
+  if(provider==='aliyun')return config.voice.aliyunConfigured;
   return provider==='minimax'?config.voice.minimaxConfigured:config.connection.speech;
 }
 function hasServices() {
@@ -237,7 +242,7 @@ function productionServiceSettings(config) {
           </div>
         </div>
         </fieldset>
-        <fieldset class="provider-fields" data-speech-provider="minimax" ${fire?'hidden disabled':''}>
+        <fieldset class="provider-fields" data-speech-provider="minimax" ${provider==='minimax'?'':'hidden disabled'}>
         <div class="form-group">
           <div class="label-row"><label for="minimax-api-key">MiniMax API Key</label>${credentialStatus(config.voice.minimaxConfigured)}</div>
           <input class="input" id="minimax-api-key" name="minimax_api_key" type="password" autocomplete="new-password" maxlength="512"
@@ -250,6 +255,23 @@ function productionServiceSettings(config) {
             <option value="speech-2.8-turbo" ${config.voice.minimaxModel==='speech-2.8-turbo'?'selected':''}>2.8 Turbo · 速度优先</option>
           </select>
         </div>
+        </fieldset>
+        <fieldset class="provider-fields" data-speech-provider="aliyun" ${provider==='aliyun'?'':'hidden disabled'}>
+          <div class="form-group">
+            <div class="label-row"><label for="aliyun-api-key">百炼 API Key（北京）</label>${credentialStatus(config.voice.aliyunConfigured)}</div>
+            <input class="input" id="aliyun-api-key" name="aliyun_api_key" type="password" autocomplete="new-password" maxlength="512"
+              placeholder="${config.voice.aliyunConfigured?'已配置 · 留空保留原值':'填写阿里百炼北京区 API Key'}">
+          </div>
+          <div class="form-group">
+            <label class="field-label" for="aliyun-workspace">北京区业务空间 ID</label>
+            <input class="input" name="aliyun_workspace" id="aliyun-workspace" value="${E(config.voice.aliyunWorkspace)}" placeholder="例如 llm-xxxxxxxx" maxlength="63">
+            <p class="form-help"><a href="https://bailian.console.aliyun.com/" target="_blank" rel="noreferrer">到百炼控制台查看 API Key 和业务空间</a></p>
+          </div>
+          <div class="form-group">
+            <label class="field-label" for="aliyun-model">默认百炼语音模型</label>
+            <select name="aliyun_model" id="aliyun-model">${aliyunModelOptions(config.voice.aliyunModel)}</select>
+            <p class="form-help">新复刻默认用这个模型，也可以在数字人页另选。</p>
+          </div>
         </fieldset>
       </div>
       <div class="form-group"><label class="field-label" for="test-person">测试音色</label>
@@ -374,7 +396,9 @@ function bindServiceSettings(form) {
   });
   form.querySelectorAll('[data-test-service]').forEach(button=>button.addEventListener('click',()=>{
     const kind=button.dataset.testService,status=$('#test-'+kind+'-result');
-    const fields=kind==='speech'?(provider.value==='minimax'?['minimax_api_key','minimax_model']:['api_key'])
+    const speechFields={volcengine:['api_key'],minimax:['minimax_api_key','minimax_model'],
+      aliyun:['aliyun_api_key','aliyun_workspace']};
+    const fields=kind==='speech'?speechFields[provider.value]
       :kind==='storage'?['ak','sk','bucket','region','endpoint']:['ak','sk'];
     const request=()=>kind==='model'?modelFields(form):{kind,
       ...(kind==='speech'?{person:person.value,provider:provider.value}:{}),
@@ -482,9 +506,29 @@ function minimaxVoiceSwitch(person, voice) {
     ${options.canStart&&options.hasSample?'<p class="form-help">点击「复刻」会把录音发送给 MiniMax。</p>':''}
   </div>`;
 }
-function personVoice(person, editor=false, provider=personVoicePlatform(person)) {
+function aliyunPersonVoice(person, voice, selectedModel) {
+  const options=voice.aliyunClone;
+  const issue=['failed','paused'].includes(voice.state);
+  const model=options.resuming?options.model:selectedModel;
+  const showStatus=options.started||(voice.state==='ready'&&voice.attemptProvider==='aliyun');
+  return `<div class="person-voice">
+    ${person.speaker?'<p class="form-help">新音色复刻成功后会自动换绑。</p>':''}
+    ${showStatus&&voice.message?`<p class="${issue?'inline-error':'form-help'}" role="status">${E(voice.message)}</p>`:''}
+    ${options.resuming?`<p class="form-help">正在处理的模型为 ${E(aliyunModels[model])}。</p>`:''}
+    ${options.canUpload?`<p class="form-help">${options.hasSample?'可用已保存的录音，也可以更换。':'请上传录音。'}建议 10–20 秒清晰单人朗读，最长 60 秒。</p>`:''}
+    ${!state.config.voice.aliyunConfigured?'<p class="form-help">请先在<a href="#settings">设置</a>填写百炼 API Key 和北京区业务空间 ID。</p>':''}
+    <div class="person-voice-actions">
+      ${options.canUpload?voiceUploadControl(person,options.hasSample?'更换录音':'上传录音','aliyun'):''}
+      <button type="button" class="secondary" data-action="start-voice-training" data-id="${E(person.id)}" data-provider="aliyun"
+        data-model="${E(model)}" ${options.canStart&&(options.hasSample||options.resuming)?'':'disabled'}>复刻</button>
+    </div>
+    ${options.canStart&&options.hasSample&&!options.resuming?'<p class="form-help">点击「复刻」会把录音发送给阿里百炼。</p>':''}
+  </div>`;
+}
+function personVoice(person, editor=false, provider=personVoicePlatform(person), model=person.aliyun_model||state.config.voice.aliyunModel) {
   const voice=person.voiceTraining;
   if(!voice)return '';
+  if(editor&&provider==='aliyun'&&voice.aliyunClone)return aliyunPersonVoice(person,voice,model);
   if(editor&&person.speaker&&provider!==boundVoicePlatform(person)){
     if(provider==='minimax'&&voice.minimaxSwitch)return minimaxVoiceSwitch(person,voice);
     return `<p class="form-help">当前绑定的是 ${voicePlatforms[boundVoicePlatform(person)]} 音色。填入所选平台的音色 ID 并保存，即可切换。</p>`;
@@ -498,7 +542,7 @@ function personVoice(person, editor=false, provider=personVoicePlatform(person))
   const text=(voice.replacePostpaid?`上次用了火山后付费。点「复刻」可用${platform==='volcengine'?'已购买的火山槽位':' MiniMax'}重新复刻。`:permission||!voice.needsPermission?voice.message:'')||(!id&&(
     voice.canQuery?'上次复刻还没完成，点「复刻」继续。':voice.hasSample?'录音已保存，可以复刻。':'请上传录音或填写已有音色 ID。'));
   return `<div class="person-voice">
-    ${id&&!editor?`<p class="form-help">${voicePlatforms[boundVoicePlatform(person)]}音色 <code>${E(id)}</code></p>`:''}
+    ${id&&!editor?`<p class="form-help">${voicePlatforms[boundVoicePlatform(person)]}音色 ${person.aliyun_model?`· ${E(aliyunModels[person.aliyun_model])} `:''}<code>${E(id)}</code></p>`:''}
     ${text?`<p class="${['failed','paused'].includes(voice.state)?'inline-error':'form-help'}" role="status">${E(text)}</p>`:''}
     ${permission&&platform==='volcengine'?'<p class="form-help"><a href="https://console.volcengine.com/speech/new/overview?projectName=default" target="_blank" rel="noreferrer">打开火山语音控制台</a></p>':''}
     ${editor&&voice.demoAudio?`<audio controls preload="none" aria-label="试听复刻音色" src="${E(voice.demoAudio)}"></audio>`:''}
@@ -538,6 +582,8 @@ function paintVoiceUpdates(previousPeople) {
     const custom=$('#custom-speaker'), provider=$('#person-voice-provider');
     if(custom.value===(prior?.custom_speaker_id||''))custom.value=person.custom_speaker_id||'';
     if(prior&&provider.value===personVoicePlatform(prior))provider.value=personVoicePlatform(person);
+    const model=$('#person-aliyun-model');
+    if(person.aliyun_model&&person.aliyun_model!==prior?.aliyun_model)model.value=person.aliyun_model;
     syncPersonVoice($('#person-form'),person);
   }
 }
@@ -604,6 +650,14 @@ function personEditor() {
         <label class="field-label" for="person-minimax-speaker">MiniMax Voice ID<span class="optional">已有音色才填</span></label>
         <input class="input" id="person-minimax-speaker" name="speaker" value="${E(speaker('minimax'))}">
       </fieldset>
+      <fieldset class="form-group provider-fields" data-person-platform="aliyun" ${provider==='aliyun'?'':'hidden disabled'}>
+        <div class="form-group">
+          <label class="field-label" for="person-aliyun-model">百炼语音模型</label>
+          <select id="person-aliyun-model" name="person_aliyun_model">${aliyunModelOptions(p?.aliyun_model||state.config.voice.aliyunModel)}</select>
+        </div>
+        <label class="field-label" for="person-aliyun-speaker">百炼音色 ID<span class="optional">已有音色才填</span></label>
+        <input class="input" id="person-aliyun-speaker" name="speaker" value="${E(speaker('aliyun'))}">
+      </fieldset>
       <div id="person-voice-editor" class="form-group">${p?personVoice(p,true,provider):'<p class="form-help">没有音色可留空，保存人物后点击「复刻」，音色会自动绑定。</p>'}</div>
       <div class="form-group">
         <label class="field-label" for="speech-rate">语速</label>
@@ -624,13 +678,21 @@ function syncPersonVoice(form, person) {
   const speaker=$('#person-speaker').value.trim();
   const showCustom=provider==='volcengine'&&(speaker==='custom_speaker_id'||Boolean(person?.custom_speaker_id&&speaker===person.speaker));
   $('#person-custom-fields').hidden=$('#custom-speaker').disabled=!showCustom;
-  if(person)$('#person-voice-editor').innerHTML=personVoice(person,true,provider);
+  if(person)$('#person-voice-editor').innerHTML=personVoice(person,true,provider,form.elements.person_aliyun_model.value);
 }
 function bindPerson() {
   const form = $('#person-form');
   if (!form) return;
   const editing=()=>state.config.people.find(person=>person.id===editPerson);
   form.elements.person_voice_provider.addEventListener('change',()=>syncPersonVoice(form,editing()));
+  const aliSpeaker=$('#person-aliyun-speaker');
+  const aliDrafts=new Map([[$('#person-aliyun-model').value,aliSpeaker.value]]);
+  aliSpeaker.addEventListener('input',()=>aliDrafts.set($('#person-aliyun-model').value,aliSpeaker.value));
+  $('#person-aliyun-model').addEventListener('change',event=>{
+    const person=editing(), model=event.target.value;
+    aliSpeaker.value=aliDrafts.get(model)||(person?.voice_provider==='aliyun'&&person.aliyun_model===model?person.speaker:'')||'';
+    syncPersonVoice(form,person);
+  });
   $('#person-speaker').addEventListener('input',()=>{
     const person=editing(), speaker=$('#person-speaker').value.trim();
     const show=speaker==='custom_speaker_id'||Boolean(person?.custom_speaker_id&&speaker===person.speaker);
@@ -780,7 +842,8 @@ document.addEventListener('click', async e=>{
       if(!retrain&&person?.voiceTraining.needsSlot&&provider==='volcengine'){
         await showVoiceSlots(button,person.id);
       }else{
-        await api(`/api/people/${encodeURIComponent(button.dataset.id)}/voice-training`,{retrain,provider});
+        await api(`/api/people/${encodeURIComponent(button.dataset.id)}/voice-training`,
+          {retrain,provider,model:button.dataset.model});
         await refresh();
       }
     });

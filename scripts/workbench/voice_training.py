@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 import voice_clone
 import minimax_voice
+import aliyun_voice
 
 
 MAX_AUDIO_BYTES = 10_000_000
@@ -30,11 +31,15 @@ def managed_postpaid(person, record):
 
 
 def voice_binding(person):
-    return {field: person.get(field) for field in ('speaker', 'custom_speaker_id', 'voice_provider', 'connection')}
+    return {field: person.get(field) for field in ('speaker', 'custom_speaker_id', 'voice_provider', 'connection', 'aliyun_model', 'aliyun_workspace')}
+
+
+def matches_binding(person, snapshot):
+    return all(person.get(field) == value for field, value in snapshot.items())
 
 
 def can_replace_with_minimax(person):
-    return bool(person.get('speaker') and person.get('voice_provider') != 'minimax')
+    return bool(person.get('speaker') and (person.get('voice_provider') or 'volcengine') == 'volcengine')
 
 
 def retryable_registration(record):
@@ -101,15 +106,27 @@ class VoiceTraining:
         message = state.get('message', '')
         http_status = state.get('httpStatus') or voice_http_status(message)
         needs_permission = state_name in ('failed', 'paused') and http_status in (401, 403)
+        ali_started = record.get('provider') == 'aliyun' and phase != 'ready'
+        ali_resuming = ali_started and phase in ('submitted', 'submission_unknown', 'confirmed')
+        ali_sample = self.pc.asset_path(record.get('aliyunSample'))
+        aliyun_clone = {
+            'started': ali_started, 'model': record.get('model') if ali_started else None,
+            'hasSample': has_sample or bool(ali_sample and ali_sample.is_file()),
+            'canUpload': state_name not in ACTIVE and not ali_resuming and (not can_query or needs_slot or ali_started),
+            'canStart': state_name not in ACTIVE and (not can_query or needs_slot or ali_started),
+            'resuming': ali_resuming,
+        }
         minimax_switch = None
         if can_replace_with_minimax(person):
             staged = self.pc.asset_path(record.get('minimaxSample'))
-            can_edit = state_name not in ACTIVE and (not switching or phase in UNSENT or phase == 'retryable')
+            mini_started = switching and record.get('provider') == 'minimax'
+            can_edit = state_name not in ACTIVE and not ali_resuming and (
+                not mini_started or phase in UNSENT or phase == 'retryable')
             minimax_switch = {
-                'started': switching,
+                'started': mini_started,
                 'hasSample': has_sample or bool(staged and staged.is_file()),
                 'canUpload': can_edit,
-                'canStart': can_edit or (switching and phase == 'confirmed' and state_name not in ACTIVE),
+                'canStart': can_edit or (mini_started and phase == 'confirmed' and state_name not in ACTIVE),
             }
         return {
             'state': state_name,
@@ -124,6 +141,7 @@ class VoiceTraining:
             'needsSlot': needs_slot,
             'attemptProvider': record.get('provider', 'volcengine') if phase else None,
             'minimaxSwitch': minimax_switch,
+            'aliyunClone': aliyun_clone,
             'replacePostpaid': replace_postpaid,
             'canRetrain': can_retrain,
             'hasReplacement': can_retrain and has_replacement,
@@ -162,6 +180,8 @@ class VoiceTraining:
         cfg, person = self.load_person(ident)
         def upload_field(person):
             status = self.public(person)
+            if provider == 'aliyun':
+                return 'aliyunSample' if status['aliyunClone']['canUpload'] else None
             if provider == 'minimax' and status['minimaxSwitch'] is not None:
                 return 'minimaxSample' if status['minimaxSwitch']['canUpload'] else None
             if status['canUpload']:
@@ -227,7 +247,7 @@ class VoiceTraining:
         slots = check(self.app, {'kind': 'voice_slots', 'project': project})['slots']
         cfg = self.pc.load()
         owners = {person['speaker']: person['name'] for person in cfg['people'].values()
-                  if person.get('speaker') and person.get('voice_provider') != 'minimax'}
+                  if person.get('speaker') and (person.get('voice_provider') or 'volcengine') == 'volcengine'}
         busy = self.reserved_slots(cfg, ident)
         return [{**slot, 'owner': owners.get(slot['id']), 'empty': slot['empty'] and slot['id'] not in owners,
                  'selectable': slot['selectable'] and slot['id'] not in busy,
@@ -247,7 +267,7 @@ class VoiceTraining:
     def select_slot(self, cfg, ident, slots, speaker, overwrite):
         reserved = self.reserved_slots(cfg, ident)
         owners = {p['speaker']: p['id'] for p in cfg['people'].values()
-                  if p.get('speaker') and p.get('voice_provider') != 'minimax'}
+                  if p.get('speaker') and (p.get('voice_provider') or 'volcengine') == 'volcengine'}
         options = [slot for slot in slots if slot['selectable'] and slot['id'] not in reserved]
         if speaker:
             choice = next((slot for slot in options if slot['id'] == speaker), None)
@@ -264,7 +284,7 @@ class VoiceTraining:
         return {'speaker_id': choice['id'], 'overwrite': covers, 'slotOwner': current}
 
     def requested_provider(self, cfg, person, provider):
-        if provider not in (None, 'minimax', 'volcengine'):
+        if provider not in (None, 'minimax', 'volcengine', 'aliyun'):
             raise ValueError('请选择支持的语音平台。')
         return provider or person.get('voice_provider') or cfg.get('settings', {}).get('voice_provider', 'volcengine')
 
@@ -291,7 +311,36 @@ class VoiceTraining:
         self.write(path, record)
         return self.public(person)
 
-    def start(self, ident, slots=None, speaker=None, overwrite=False, requested=None):
+    def start_aliyun(self, cfg, person, path, record, requested_model):
+        options = self.public(person)['aliyunClone']
+        if not options['canStart']:
+            raise ValueError('请先完成正在处理的复刻。')
+        conn = cfg['connections'].get('aliyun', {})
+        if not self.pc.connection_keys(conn)[0]:
+            raise ValueError('请先在设置保存阿里百炼 API Key。')
+        if options['resuming']:
+            if not matches_binding(person, record.get('previousBinding', {})):
+                raise ValueError('人物音色已变化，请检查当前绑定。')
+            if requested_model and requested_model != record['model']:
+                raise ValueError('请先用上次所选模型继续复刻。')
+        else:
+            model = aliyun_voice.model_id(requested_model or person.get('aliyun_model') or
+                                          cfg.get('settings', {}).get('aliyun_model', aliyun_voice.DEFAULT_MODEL))
+            workspace = aliyun_voice.workspace_id(conn.get('workspace'))
+            self.sample({'sample': record.get('aliyunSample') or person.get('sample')})
+            new = {'provider': 'aliyun', 'model': model, 'workspace': workspace,
+                   'phase': 'workbench_queued', 'prefix': 'wb' + uuid.uuid4().hex[:8],
+                   'aliyunSample': record.get('aliyunSample')}
+            if person.get('speaker'):
+                new['previousBinding'] = voice_binding(person)
+            record = new
+        now = time.time()
+        record['workbench'] = {'state': 'queued', 'nextAt': now, 'until': now + 600,
+                               'message': '等待阿里百炼复刻' if record['phase'] in UNSENT else '正在恢复阿里百炼复刻'}
+        self.write(path, record)
+        return self.public(person)
+
+    def start(self, ident, slots=None, speaker=None, overwrite=False, requested=None, model=None):
         with self.app.transaction():
             cfg, person = self.load_person(ident)
             if self.active(ident):
@@ -299,6 +348,11 @@ class VoiceTraining:
             path = self.path(ident)
             record = self.read(path, {})
             configured = self.requested_provider(cfg, person, requested)
+            ali_pending = self.public(person)['aliyunClone']['resuming']
+            if configured == 'aliyun' or ali_pending:
+                if configured != 'aliyun':
+                    raise ValueError('还有阿里百炼复刻待确认，请在人物中选择阿里百炼继续。')
+                return self.start_aliyun(cfg, person, path, record, model)
             if configured == 'minimax' and can_replace_with_minimax(person) and slots is None:
                 return self.start_minimax_switch(cfg, person, path, record)
             if person.get('speaker') and not self.public(person)['canQuery']:
@@ -392,12 +446,13 @@ class VoiceTraining:
         try:
             cfg, person = self.load_person(ident)
             is_minimax = record.get('provider') == 'minimax'
+            is_aliyun = record.get('provider') == 'aliyun'
             phase = record['phase']
             identity = {k: record[k] for k in ('speaker_id', 'custom_speaker_id') if record.get(k)}
-            if is_minimax and phase == 'confirmed':
+            if (is_minimax or is_aliyun) and phase == 'confirmed':
                 self.bind(ident, path, record, ticket, identity)
                 return
-            if record.get('previousBinding') and voice_binding(person) != record['previousBinding']:
+            if record.get('previousBinding') and not matches_binding(person, record['previousBinding']):
                 self.finish(path, record, ticket, 'failed', '人物音色已变化，请检查当前绑定。')
                 return
             if person.get('speaker') and not record.get('previousBinding') and not (record.get('retraining') and managed_postpaid(person, record)):
@@ -406,11 +461,23 @@ class VoiceTraining:
                 else:
                     self.finish(path, record, ticket, 'ready', '音色已绑定')
                 return
-            connection = 'minimax' if is_minimax else person.get('connection')
+            connection = record['provider'] if is_minimax or is_aliyun else person.get('connection')
             key = self.pc.connection_keys(cfg['connections'].get(connection, {}))[0]
             if not key:
                 raise ValueError('语音 API Key 已失效，请补齐后继续。')
-            if is_minimax:
+            if is_aliyun:
+                if phase in UNSENT:
+                    audio = aliyun_voice.sample_audio(self.sample({'sample': record.get('aliyunSample') or person.get('sample')}))
+                    record['phase'] = 'submission_unknown'
+                    if not self.finish(path, record, ticket, 'submitting', '正在提交阿里百炼复刻', delay=75):
+                        return
+                    submitting = True
+                    record['speaker_id'] = aliyun_voice.create(record['workspace'], key, record['model'], record['prefix'], audio)
+                    record['phase'] = 'submitted'
+                    self.finish(path, record, ticket, 'training', '等待阿里百炼确认音色', delay=2)
+                else:
+                    self.query_aliyun(ident, path, record, ticket, key)
+            elif is_minimax:
                 if phase not in UNSENT:
                     self.finish(path, record, ticket, 'paused', 'MiniMax 未确认上次提交，请先在 MiniMax 控制台核对音色。')
                     return
@@ -458,7 +525,7 @@ class VoiceTraining:
             http_status = voice_http_status(reason)
             state['httpStatus'] = http_status
             if submitting and record['phase'] == 'submission_unknown' and (
-                    http_status in (400, 401, 403, 422) or isinstance(error, minimax_voice.Rejected)):
+                    http_status in (400, 401, 403, 422) or isinstance(error, (minimax_voice.Rejected, aliyun_voice.Rejected))):
                 self.fail_registration(path, record, ticket, '复刻请求被拒绝。' + reason)
             elif record.get('phase') in UNSENT:
                 if record.get('retraining'):
@@ -475,6 +542,33 @@ class VoiceTraining:
                 polling = failures < 3 and time.time() < state['until']
                 message = '复刻进度暂未更新。' if polling else '复刻暂时中断，再点一次「复刻」即可恢复。'
                 self.finish(path, record, ticket, 'training' if polling else 'paused', message + reason, delay=6 if polling else 0)
+
+    def query_aliyun(self, ident, path, record, ticket, key):
+        workspace = record['workspace']
+        if not record.get('speaker_id'):
+            voice = aliyun_voice.find_voice(workspace, key, record['model'], record['prefix'])
+            if not voice:
+                if time.time() >= record['workbench']['until']:
+                    self.finish(path, record, ticket, 'paused', '上次提交未确认。点「复刻」继续核对阿里百炼。')
+                else:
+                    self.finish(path, record, ticket, 'training', '正在核对阿里百炼上次提交', delay=8)
+                return
+            record.update(speaker_id=voice, phase='submitted')
+            self.finish(path, record, ticket, 'training', '找到阿里百炼音色，等待确认')
+            return
+        status = aliyun_voice.enrollment(workspace, key, 'query_voice', voice_id=record['speaker_id'])
+        if status.get('target_model') != record['model']:
+            self.fail_registration(path, record, ticket, '阿里百炼返回的音色模型与选择不符。')
+        elif status.get('status') == 'OK':
+            record['phase'] = 'confirmed'
+            if self.finish(path, record, ticket, 'queued', '复刻成功，正在绑定音色', delay=75):
+                self.bind(ident, path, record, ticket, {'speaker_id': record['speaker_id']})
+        elif status.get('status') == 'UNDEPLOYED':
+            self.fail_registration(path, record, ticket, '阿里百炼未通过录音审核，换一段录音可重试。')
+        elif time.time() >= record['workbench']['until']:
+            self.finish(path, record, ticket, 'paused', '阿里百炼仍在处理，点「复刻」可继续确认。')
+        else:
+            self.finish(path, record, ticket, 'training', '阿里百炼正在审核音色', delay=4)
 
     def check_slot(self, path, record, ticket, identity, key):
         if not self.finish(path, record, ticket, 'checking', '正在检查预付费槽位', delay=75):
@@ -562,13 +656,31 @@ class VoiceTraining:
                 for field in ('retraining', 'replacementSample', 'previousVoice'):
                     record.pop(field, None)
                 message = '重练完成，继续使用原来的音色 ID。'
+            elif record.get('provider') == 'aliyun':
+                voice_id = identity['speaker_id']
+                if person.get('voice_provider') != 'aliyun' or person.get('speaker') != voice_id:
+                    prior = record.get('previousBinding')
+                    if (prior and not matches_binding(person, prior)) or (not prior and person.get('speaker')):
+                        self.finish(path, record, ticket, 'failed', '人物音色已变化，请检查当前绑定。')
+                        return
+                    person.update(speaker=voice_id, custom_speaker_id=None, status='ready', voice_provider='aliyun',
+                                  aliyun_model=record['model'], aliyun_workspace=record['workspace'])
+                    if record.get('aliyunSample'):
+                        person['sample'] = record['aliyunSample']
+                    cfg['default_person'] = cfg.get('default_person') or ident
+                    self.pc.write(self.pc.directory() / 'project.json', cfg)
+                record.pop('previousBinding', None)
+                record.pop('aliyunSample', None)
+                message = '阿里百炼复刻完成，已绑定音色'
             elif record.get('previousBinding'):
                 voice_id = identity['speaker_id']
                 if person.get('voice_provider') != 'minimax' or person.get('speaker') != voice_id:
-                    if voice_binding(person) != record['previousBinding']:
+                    if not matches_binding(person, record['previousBinding']):
                         self.finish(path, record, ticket, 'failed', '人物音色已变化，请检查当前绑定。')
                         return
                     person.update(speaker=voice_id, custom_speaker_id=None, status='ready', voice_provider='minimax')
+                    person.pop('aliyun_model', None)
+                    person.pop('aliyun_workspace', None)
                     if record.get('minimaxSample'):
                         person['sample'] = record['minimaxSample']
                     self.pc.write(self.pc.directory() / 'project.json', cfg)

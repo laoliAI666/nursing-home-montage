@@ -33,22 +33,33 @@ def speech_key(settings):
         if not key:
             raise ValueError('请在工作台保存 MiniMax API Key。')
         return key
+    if settings.get('provider') == 'aliyun':
+        key = os.environ.get('DASHSCOPE_API_KEY', '').strip()
+        if not key:
+            raise ValueError('请在工作台保存阿里百炼 API Key。')
+        return key
     return tts_key()
 
 
 def synthesize(text, cfg, directory, revision=0):
     settings = cfg["tts"]
     key = speech_key(settings)
-    if settings.get('provider') == 'minimax':
+    provider = settings.get('provider')
+    if provider in ('minimax', 'aliyun'):
         sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts'))
-        from minimax_voice import synthesize as mini_synthesize
-        data, payload, trace = mini_synthesize(text, settings['speaker'], settings['model'],
-                                               settings['speech_rate'], key, settings.get('pronunciation_dict'))
+        if provider == 'aliyun':
+            from aliyun_voice import synthesize as provider_synthesize
+            extra = settings['workspace']
+        else:
+            from minimax_voice import synthesize as provider_synthesize
+            extra = settings.get('pronunciation_dict')
+        data, payload, trace = provider_synthesize(text, settings['speaker'], settings['model'],
+                                                  settings['speech_rate'], key, extra)
         directory = Path(directory)
         write_json(directory / f"tts-request-{revision}.json", payload)
         output = directory / f"narration-{revision}.mp3"
         output.write_bytes(data)
-        return {'file': str(output), 'provider': 'minimax', 'speaker': settings['speaker'],
+        return {'file': str(output), 'provider': provider, 'speaker': settings['speaker'],
                 'resource_id': settings['model'], 'speech_rate': settings['speech_rate'],
                 'logid': trace, 'revision': revision}
     payload = {"user": {"uid": "project-text-to-digital-human"}, "req_params": {

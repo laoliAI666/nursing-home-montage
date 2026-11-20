@@ -30,6 +30,8 @@
 
 已有火山音色的人物可以在「编辑人物资料」选择 MiniMax，用保存的录音或上传一段新录音，直接点击「复刻」。成功后会换绑到新生成的 MiniMax 音色，失败时保留原来的火山绑定。
 
+选择阿里百炼时，在设置保存北京区 API Key 和业务空间 ID。数字人可选千问 Qwen-Audio 3.1 TTS Plus 或 CosyVoice 3.5 Flash，使用已有录音或上传新录音后点击「复刻」。工作台核对复刻状态，成功后自动绑定音色和模型。之后用绑定的模型合成配音。换模型可重新复刻，也可填写该模型已有的音色 ID。
+
 - 已有音色：`project.py bind <人物名或ID> --speaker <音色ID>`；自定义音色另加 --custom <ID>，speaker为custom_speaker_id。
 - 默认人物：`project.py default <人物名或ID>`。
 - 只有录音：`project.py train <人物名或ID>`。先在连接里选clone_mode：prepaid使用speaker_pool空闲槽位；postpaid创建独立自定义音色，首次正式合成会产生平台槽位费。服务模式未选择时只补问这一项。也可单次 --speaker 指定未占用槽位。
