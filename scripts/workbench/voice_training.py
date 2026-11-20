@@ -28,6 +28,17 @@ def managed_postpaid(person, record):
     )
 
 
+def retryable_registration(record):
+    return (record.get('phase') == 'retryable'
+            or (record.get('status') == 3 and record.get('workbench', {}).get('state') == 'failed'))
+
+
+def voice_http_status(message):
+    # The shared voice client preserves the HTTP status in its sanitized error.
+    match = re.search(r'声音服务HTTP (\d{3})；', message)
+    return int(match[1]) if match else None
+
+
 class VoiceTraining:
     default_mode = 'postpaid'
 
@@ -62,15 +73,19 @@ class VoiceTraining:
             state_name = 'ready'
         can_retrain = (managed and phase == 'ready'
                        and record.get('status') != 4 and state.get('state') not in ACTIVE)
-        can_query = bool(phase and phase not in UNSENT and (not bound or retraining))
+        retryable = not bound and retryable_registration(record)
+        can_query = bool(phase and phase not in UNSENT and not retryable and (not bound or retraining))
         has_sample = bool(sample and sample.is_file())
         demo = record.get('demo', {})
         return {
             'state': state_name,
             'message': state.get('message', ''),
             'hasSample': has_sample,
-            'canUpload': can_retrain or (not bound and (not phase or phase in UNSENT)
+            'canUpload': can_retrain or (not bound and (not phase or phase in UNSENT or retryable)
                                          and state.get('state') not in ACTIVE),
+            'canRetry': retryable and has_sample,
+            'needsPermission': state_name in ('failed', 'paused') and (
+                state.get('httpStatus') or voice_http_status(state.get('message', ''))) in (401, 403),
             'canStart': can_query or (not bound and has_sample),
             'canQuery': can_query,
             'canRetrain': can_retrain,
@@ -172,13 +187,19 @@ class VoiceTraining:
             path = self.path(ident)
             record = self.read(path, {})
             phase = record.get('phase')
-            if not phase or phase in UNSENT:
+            retryable = not person.get('speaker') and retryable_registration(record)
+            check_missing = phase == 'submission_unknown' and record.get('workbench', {}).get('state') == 'paused'
+            if not phase or phase in UNSENT or retryable:
                 self.sample(person)
                 if phase != 'prepared':
-                    record = {**self.reserve(cfg, person, connection), 'phase': 'workbench_queued',
-                              'connection': person.get('connection')}
+                    identity = self.reserve(cfg, person, connection)
+                    if (retryable and identity['speaker_id'] == record.get('speaker_id') == 'custom_speaker_id'
+                            and record.get('connection', person.get('connection')) == person.get('connection')
+                            and record.get('custom_speaker_id')):
+                        identity['custom_speaker_id'] = record['custom_speaker_id']
+                    record = {**identity, 'phase': 'workbench_queued', 'connection': person.get('connection')}
             now = time.time()
-            record['workbench'] = {'state': 'queued', 'nextAt': now, 'until': now + 600,
+            record['workbench'] = {'state': 'queued', 'nextAt': now, 'until': now + 600, 'checkMissing': check_missing,
                                    'message': '等待提交录音' if record['phase'] in UNSENT else '等待查询复刻状态'}
             self.write(path, record)
             return self.public(person)
@@ -228,6 +249,7 @@ class VoiceTraining:
 
     def step(self, ident, path, record, ticket):
         state = record['workbench']
+        submitting = False
         try:
             cfg, person = self.load_person(ident)
             if person.get('speaker') and not (record.get('retraining') and managed_postpaid(person, record)):
@@ -263,6 +285,7 @@ class VoiceTraining:
                 record['phase'] = 'submission_unknown'
                 if not self.finish(path, record, ticket, 'submitting', '正在提交录音', delay=75):
                     return
+                submitting = True
                 voice_clone.call('voice_clone', payload, key)
                 record['phase'] = 'submitted'
                 self.finish(path, record, ticket, 'training', '复刻请求已提交，等待服务返回状态', delay=1)
@@ -270,13 +293,21 @@ class VoiceTraining:
                 self.query(ident, path, record, ticket, identity, key)
         except Exception as error:
             reason = self.app.redact(str(error))[:350]
-            if record.get('phase') in UNSENT:
+            http_status = voice_http_status(reason)
+            state['httpStatus'] = http_status
+            if http_status in (401, 403):
+                reason = f'声音服务返回 HTTP {http_status}。请检查语音 API Key 和声音复刻服务权限。'
+            if submitting and record['phase'] == 'submission_unknown' and http_status in (400, 401, 403, 422):
+                self.fail_registration(path, record, ticket, '复刻请求被拒绝。' + reason)
+            elif record.get('phase') in UNSENT:
                 if record.get('retraining'):
                     self.end_retrain(path, record, ticket, reason)
                 else:
                     self.finish(path, record, ticket, 'failed', reason)
-            elif record.get('phase') == 'submission_unknown' and state.get('state') == 'submitting':
+            elif submitting and record.get('phase') == 'submission_unknown':
                 self.finish(path, record, ticket, 'training', '等待核对提交结果。' + reason, delay=5)
+            elif http_status in (401, 403):
+                self.finish(path, record, ticket, 'paused', '查询被拒绝。' + reason)
             else:
                 failures = state.get('queryErrors', 0) + 1
                 state['queryErrors'] = failures
@@ -296,7 +327,14 @@ class VoiceTraining:
         reply = voice_clone.call('get_voice', identity, key)
         status = reply.get('status')
         record['status'] = status
-        record['workbench'].pop('queryErrors', None)
+        state = record['workbench']
+        state.pop('queryErrors', None)
+        state.pop('httpStatus', None)
+        if record['phase'] == 'submission_unknown' and status == 1:
+            record['phase'] = 'submitted'
+        if record['phase'] == 'submission_unknown' and status == 0 and state.get('checkMissing'):
+            self.fail_registration(path, record, ticket, '火山查不到上次的复刻记录，可以重新提交。')
+            return
         if record.get('retraining') and record['phase'] == 'submission_unknown':
             if status == 4:
                 self.end_retrain(path, record, ticket, '火山显示该音色已正式启用，无法确认本次重练结果。')
@@ -316,15 +354,19 @@ class VoiceTraining:
             self.save_demo(record, reply)
             self.bind(ident, path, record, ticket, identity)
         elif status == 3:
-            if record.get('retraining'):
-                self.end_retrain(path, record, ticket, '这次复刻失败，可以换录音再试。')
-            else:
-                self.finish(path, record, ticket, 'failed', '语音服务报告复刻失败。可以继续查询，或查看语音控制台。')
+            self.fail_registration(path, record, ticket, '火山报告复刻失败，可以更换录音后再试。')
         elif time.time() >= record['workbench']['until']:
             self.finish(path, record, ticket, 'paused', '暂未获得最终结果，可以继续查询。')
         else:
             progress = '语音服务正在复刻' if status == 1 else '等待语音服务确认任务'
             self.finish(path, record, ticket, 'training', progress, delay=5)
+
+    def fail_registration(self, path, record, ticket, message):
+        if record.get('retraining'):
+            self.end_retrain(path, record, ticket, message)
+        else:
+            record['phase'] = 'retryable'
+            self.finish(path, record, ticket, 'failed', message)
 
     def end_retrain(self, path, record, ticket, message):
         record.pop('retraining', None)
