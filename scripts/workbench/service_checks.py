@@ -4,6 +4,7 @@
 # ///
 """Run bounded connection tests using the same media service credentials."""
 import base64
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -57,8 +58,19 @@ def check(app, values):
         raise ValueError('先填写数字人 Access Key ID 与 Secret Access Key。')
     media['avatar'].update(connection.get('avatar', {}))
     task_id = None
-    if kind == 'avatar' and (credentials['ak'], credentials['sk']) == tuple(saved[1:]):
-        task_id = recent_avatar_task(app, media['avatar']['req_key'])
+    if kind == 'avatar':
+        operation = media['avatar']['req_key']
+        receipt_path = app.data / 'avatar-check.json'
+        key_id = hashlib.sha256(credentials['ak'].encode()).hexdigest()
+        task_id = values.get('taskId')
+        if task_id is not None and not valid_task_id(task_id):
+            raise ValueError('请提供真实的数字人任务编号。')
+        if task_id is None and credentials['ak'] == saved[1]:
+            task_id = recent_avatar_task(app, operation)
+        if task_id is None:
+            task_id = saved_avatar_task(receipt_path, key_id, operation)
+        if task_id is None:
+            raise ValueError('当前没有可用于测试的数字人任务记录。完成一次数字人制作后可在这里查询验证。')
     if kind == 'storage':
         storage = {**connection.get('storage', {})}
         for key in ('bucket', 'region', 'endpoint'):
@@ -74,16 +86,45 @@ def check(app, values):
     if not uv:
         raise ValueError('本机缺少 uv，安装制作依赖后可测试签名接口。')
     command = [uv, 'run', '--python', '3.11', str(Path(__file__).resolve()), kind, str(module)]
+    env = {**os.environ, 'UV_CACHE_DIR': str(app.data / 'uv-cache')}
+    payload = {'media': media, 'ak': credentials['ak'], 'sk': credentials['sk'], 'taskId': task_id}
     try:
-        payload = {'media': media, 'ak': credentials['ak'], 'sk': credentials['sk'], 'taskId': task_id}
-        result = subprocess.run(command, input=json.dumps(payload),
+        result = subprocess.run(command, input=json.dumps(payload), env=env,
                                 capture_output=True, text=True, timeout=55)
+    except OSError:
+        raise ValueError('无法启动 uv，请检查本机制作依赖。') from None
+    except subprocess.TimeoutExpired:
+        raise ValueError('签名接口测试超时，请检查依赖下载和服务网络。') from None
+    if result.returncode:
+        if 'Failed to initialize cache' in result.stderr:
+            raise ValueError('uv 无法写入工作台测试缓存，请检查项目目录权限。')
+        raise ValueError('本机签名接口测试程序启动失败，请检查 Python 3.11 和服务依赖。')
+    try:
         response = json.loads(result.stdout)
-    except (OSError, ValueError, subprocess.TimeoutExpired):
-        raise ValueError('签名接口测试未返回，请检查本机依赖、网络和服务权限。') from None
+    except ValueError:
+        raise ValueError('本机签名接口测试程序返回了无效结果。') from None
     if response.get('ok') is not True:
         raise ValueError(response['message'])
+    if kind == 'avatar':
+        with app.transaction():
+            app.pc.write(receipt_path, {'keyId': key_id, 'reqKey': operation, 'taskId': task_id}, private=True)
     return response
+
+
+def valid_task_id(value):
+    return isinstance(value, str) and re.fullmatch(r'\d{10,20}', value) is not None
+
+
+def saved_avatar_task(path, key_id, operation):
+    try:
+        state = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    if isinstance(state, dict) and state.get('keyId') == key_id and state.get('reqKey') == operation:
+        task_id = state.get('taskId')
+        if valid_task_id(task_id):
+            return task_id
+    return None
 
 
 def recent_avatar_task(app, operation):
@@ -98,7 +139,7 @@ def recent_avatar_task(app, operation):
             except (OSError, ValueError):
                 continue
             ident = state.get('task_id', '')
-            if state.get('config', {}).get('avatar', {}).get('req_key') == operation and re.fullmatch(r'\d{10,20}', str(ident)):
+            if state.get('config', {}).get('avatar', {}).get('req_key') == operation and valid_task_id(str(ident)):
                 return str(ident)
     return None
 
@@ -145,8 +186,9 @@ def signed_probe(kind, module):
             api.storage_client().head_bucket(values['media']['storage']['bucket'])
             message = 'TOS 存储桶查询通过。已验证访问权限。'
         else:
-            # A local task receipt is preferable. The synthetic ID is used only for a signed query.
-            ident = values.get('taskId') or str(7 * 10**18 + secrets.randbelow(10**18))
+            ident = values.get('taskId')
+            if not valid_task_id(ident):
+                return {'ok': False, 'message': '查询数字人接口需要真实任务编号。'}
             reply = api.query(ident)
             if reply.get('code') != 10000:
                 code = reply.get('code')
