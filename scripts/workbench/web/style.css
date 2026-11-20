@@ -39,3 +39,5 @@
 .preview-review-notices summary { cursor: pointer; font-weight: 650; }
 .preview-review-notices ul { margin-bottom: 0; padding-inline-start: 1.4em; }
 .preview-review-notices li + li { margin-top: 0.5em; }
+
+.provider-fields{border:0;padding:0;min-width:0;margin-inline:0;margin-block-start:0}

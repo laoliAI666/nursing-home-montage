@@ -39,17 +39,20 @@ def check(app, values):
     media = json.loads((module / 'config.json').read_text(encoding='utf-8'))
     if kind == 'speech':
         person = cfg['people'].get(values.get('person') or cfg.get('default_person'), {})
-        if person.get('voice_provider') == 'minimax':
-            from minimax_voice import synthesize
+        provider = person.get('voice_provider') or 'volcengine'
+        if not person.get('speaker') or values.get('provider', provider) != provider:
+            raise ValueError('请先选择已绑定此平台音色的人物。')
+        if provider == 'minimax':
+            from minimax_voice import MODELS, synthesize
             raw = fields.get('minimax_api_key', '')
             if not isinstance(raw, str) or len(raw) > 512 or any(c in raw for c in '\r\n'):
                 raise ValueError('MiniMax API Key 格式不正确。')
             key = raw.strip() or app.pc.connection_keys(cfg['connections'].get('minimax', {}))[0]
-            model = cfg.get('settings', {}).get('minimax_model', 'speech-2.8-hd')
+            model = fields.get('minimax_model') or cfg.get('settings', {}).get('minimax_model', 'speech-2.8-hd')
+            if model not in MODELS:
+                raise ValueError('请选择支持的 MiniMax 合成模型。')
             synthesize('连接测试。', person['speaker'], model, person.get('speech_rate', 0), key)
             return {'ok': True, 'message': 'MiniMax 语音合成通过。'}
-        if not credentials['api_key'] or not person.get('speaker'):
-            raise ValueError('先填语音 API Key 并选择已绑定音色的人物。')
         person_connection = person.get('connection')
         if person_connection and person_connection != 'main':
             connection = cfg['connections'].get(person_connection, {})

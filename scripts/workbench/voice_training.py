@@ -103,6 +103,7 @@ class VoiceTraining:
             'canStart': can_query or (not bound and has_sample),
             'canQuery': can_query,
             'needsSlot': needs_slot,
+            'attemptProvider': record.get('provider', 'volcengine') if phase else None,
             'replacePostpaid': replace_postpaid,
             'canRetrain': can_retrain,
             'hasReplacement': can_retrain and has_replacement,
@@ -234,7 +235,12 @@ class VoiceTraining:
             raise ValueError('继续会覆盖原音色，请先确认。')
         return {'speaker_id': choice['id'], 'overwrite': covers, 'slotOwner': current}
 
-    def start(self, ident, slots=None, speaker=None, overwrite=False):
+    def requested_provider(self, cfg, person, provider):
+        if provider not in (None, 'minimax', 'volcengine'):
+            raise ValueError('请选择支持的语音平台。')
+        return provider or person.get('voice_provider') or cfg.get('settings', {}).get('voice_provider', 'volcengine')
+
+    def start(self, ident, slots=None, speaker=None, overwrite=False, requested=None):
         with self.app.transaction():
             cfg, person = self.load_person(ident)
             if self.active(ident) or (person.get('speaker') and not self.public(person)['canQuery']):
@@ -244,7 +250,7 @@ class VoiceTraining:
             record = self.read(path, {})
             phase = record.get('phase')
             retryable = not person.get('speaker') and retryable_registration(record)
-            configured = cfg.get('settings', {}).get('voice_provider', 'volcengine')
+            configured = self.requested_provider(cfg, person, requested)
             replace_postpaid = configured == 'minimax' and self.public(person)['replacePostpaid']
             initial = not phase or phase in UNSENT or retryable or replace_postpaid
             provider = configured if initial or slots is not None else record.get('provider', 'volcengine')

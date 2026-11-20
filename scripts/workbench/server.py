@@ -367,21 +367,23 @@ class App:
                 raise ValueError('该社媒名已绑定其他数字人，请指定不同名字。')
             person['social_media_name'] = social
         speaker = values.get('speaker', '').strip()
+        provider = values.get('person_voice_provider') or person.get('voice_provider') or 'volcengine'
+        if provider not in ('volcengine', 'minimax'):
+            raise ValueError('请选择音色所属的语音平台。')
         if speaker:
-            custom = values.get('custom_speaker_id') or None
-            if speaker == 'custom_speaker_id' and not custom:
-                raise ValueError('请填写自定义音色 ID。')
-            if any((p.get('speaker'), p.get('custom_speaker_id'), p['connection']) ==
-                   (speaker, custom, person['connection']) for p in others):
-                raise ValueError('该音色已绑定其他人物。')
-            provider = values.get('person_voice_provider') or person.get('voice_provider') or 'volcengine'
-            if provider not in ('volcengine', 'minimax'):
-                raise ValueError('请选择这个音色所属的语音服务。')
             if provider == 'minimax' and speaker == 'custom_speaker_id':
                 raise ValueError('请填写 MiniMax 的实际 Voice ID。')
+            custom = (values.get('custom_speaker_id') or None) if provider == 'volcengine' else None
+            if speaker == 'custom_speaker_id' and not custom:
+                raise ValueError('请填写火山自定义音色 ID。')
+            if any((p.get('speaker'), p.get('custom_speaker_id'), p['connection'], p.get('voice_provider') or 'volcengine') ==
+                   (speaker, custom, person['connection'], provider) for p in others):
+                raise ValueError('该平台的音色已绑定其他人物。')
             if provider == 'volcengine' and speaker != person.get('speaker') and speaker in self.voice_training.reserved_slots(cfg, person['id']):
                 raise ValueError('这个音色槽位正在复刻中。')
             person.update(speaker=speaker, custom_speaker_id=custom, status='ready', voice_provider=provider)
+        elif not person.get('speaker') and values.get('person_voice_provider'):
+            person['voice_provider'] = provider
         if values.get('default') or (speaker and not cfg.get('default_person')):
             cfg['default_person'] = person['id']
 
@@ -814,10 +816,11 @@ class Handler(BaseHTTPRequestHandler):
                 if v.get('retrain') is True:
                     return self.reply(202, trainer.retrain(ident))
                 cfg, person = trainer.load_person(ident)
-                use_slots = (cfg.get('settings', {}).get('voice_provider', 'volcengine') == 'volcengine'
+                provider = trainer.requested_provider(cfg, person, v.get('provider'))
+                use_slots = (provider == 'volcengine'
                              and trainer.public(person)['needsSlot'] and not trainer.active(ident))
                 slots = trainer.available_slots(ident, cfg['connections'].get('main', {}).get('voice_project', 'default')) if use_slots else None
-                return self.reply(202, trainer.start(ident, slots, v.get('slot'), v.get('overwrite') is True))
+                return self.reply(202, trainer.start(ident, slots, v.get('slot'), v.get('overwrite') is True, provider))
             if url.path == "/api/scan":
                 return self.reply(200, self.app.scan(v.get("folder", "")))
             if url.path == "/api/pick-folder":
