@@ -69,11 +69,13 @@ class JobQueue:
     def public(self):
         data=self.data();head=self.head(data)
         pending=[x for x in data['items'] if not(x['status'] in TERMINAL and x.get('settled'))]
+        positions = {row['id']: i for i, row in enumerate(
+            (row for row in pending if row['kind'] != 'planning'), start=1)}
         fields=('id','taskId','index','kind','sequence','personName','number','title','status','phase','message','created','updated','deadline','stopReason','platformAgentId','settled','recoveryRequested','answerPending','recoveryRequestedAt','recoveryDispatched','recoveryState','recoveryResult')
-        return {'items':[{k:x.get(k) for k in fields}|{'position':pending.index(x)+1 if x in pending else None,'answerSaved':bool(x.get('answer'))} for x in data['items']],
-                'headId':head['id'] if head else None,'waiting':sum(x['status']=='queued' for x in pending),'paused':bool(head and head['status'] in BLOCKED),
+        return {'items':[{k:x.get(k) for k in fields}|{'position':positions.get(x['id']),'answerSaved':bool(x.get('answer'))} for x in data['items']],
+                'headId':head['id'] if head else None,'waiting':sum(x['status']=='queued' and x['id'] in positions for x in pending),'paused':bool(head and head['status'] in BLOCKED),
                 'busy':bool(head and (head['status'] in ('assigned','running','stopping') or not head.get('settled'))),
-                'coordinator':'local' if self.app.models.enabled() else 'native-subagent','total':len(pending)}
+                'coordinator':'local' if self.app.workbench_host == 'local' else 'native-subagent','total':len(positions)}
 
     def for_task(self,ident):
         return [x for x in self.data()['items'] if x.get('taskId')==ident and x['kind']=='video']
@@ -110,7 +112,7 @@ class JobQueue:
         with self.app.transaction():
             data=self.data();head=self.head(data)
             if not head or head['kind']!=kind or head['status']!='queued':return None
-            if kind in ('video','planning') and bool(local)!=self.app.models.enabled():return None
+            if kind in ('video','planning') and bool(local) != (self.app.workbench_host == 'local'):return None
             if kind=='video' and self.app.task(head['taskId']).get('planningRequired'):
                 self.app.planning.verify(self.app.task(head['taskId']))
             if head.get('answer') and 'answerQuestion' not in head:

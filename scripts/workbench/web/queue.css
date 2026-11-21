@@ -79,3 +79,7 @@
 .batch-cover-operations{margin-top:24px;padding-top:24px;border-top:1px solid var(--line)}.batch-cover-operations>.section-heading{margin-bottom:8px}.batch-cover-operations h3{font-size:16px;font-weight:600;margin:0}.batch-cover-operations>.form-help{margin:0 0 14px;line-height:1.8}.batch-cover-item .queue-number svg{width:20px;height:20px}.batch-cover-item .queue-item-title{font-size:14px}
 
 .batch-planning-summary{margin-bottom:28px}.batch-planning-summary>.form-help{margin:10px 0 0;line-height:1.8}.queue-connection>.text-button{margin:0 10px}
+
+.queue-preparation{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 20px;background:var(--soft);border-radius:8px;padding:14px 16px;margin-bottom:16px}
+.queue-preparation strong{margin-right:8px}
+.queue-preparation p{margin:8px 0 4px;color:var(--muted);overflow-wrap:anywhere}

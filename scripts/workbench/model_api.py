@@ -186,9 +186,6 @@ class ModelSettings:
     def stored(self):
         return self.read(self.path, {})
 
-    def enabled(self):
-        return self.stored().get('enabled') is True
-
     def production_timeout(self):
         return self.stored().get('productionTimeoutMinutes', 60)
 
@@ -215,9 +212,9 @@ class ModelSettings:
                                'model': saved.get('models', {}).get(name, config['model']),
                                'configured': bool(self.key(name, base_url))}
         providers['custom']['outputMode'] = saved.get('customOutputMode', 'json')
-        return {'enabled': self.enabled(), 'provider': saved.get('provider', 'ark'),
-                'productionTimeoutMinutes': self.production_timeout(),
-                'canEnable': self.app.service_mode == 'standalone', 'providers': providers}
+        selected = saved.get('provider', 'ark')
+        return {'provider': selected, 'configured': providers[selected]['configured'],
+                'productionTimeoutMinutes': self.production_timeout(), 'providers': providers}
 
     def inputs(self, values):
         if not isinstance(values, dict):
@@ -253,20 +250,13 @@ class ModelSettings:
             timeout = values.get('productionTimeoutMinutes', self.production_timeout())
             if type(timeout) is not int or timeout < 1:
                 raise ValueError('单条制作时限请填写大于 0 的整数分钟。')
-            enabled = values.get('enabled') is True
-            if enabled and self.app.service_mode != 'standalone':
-                raise ValueError('请用项目独立启动器打开工作台，再启用独立制作。')
-            head = self.app.queue.head()
-            if enabled != self.enabled() and head and not head.get('settled'):
-                raise ValueError('当前制作尚未结束，请在本条结束后切换接单方式。')
-            if enabled and not (supplied or self.key(name, base_url)):
-                raise ValueError('请先填写当前地址对应的模型 API Key。')
             if supplied:
                 secrets = self.read(self.secrets_path, {})
                 secrets[name] = {'baseUrl': base_url, 'key': supplied} if name == 'custom' else supplied
                 self.write(self.secrets_path, secrets)
             saved = self.stored()
-            saved.update(enabled=enabled, provider=name, productionTimeoutMinutes=timeout,
+            saved.pop('enabled', None)
+            saved.update(provider=name, productionTimeoutMinutes=timeout,
                          models={**saved.get('models', {}), name: model})
             if name == 'custom':
                 saved.update(customBaseUrl=base_url, customOutputMode=output_mode)

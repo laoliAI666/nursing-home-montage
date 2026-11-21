@@ -21,7 +21,7 @@ class LocalCoordinator:
         self.thread = None
 
     def tick(self):
-        if self.app.service_mode != 'standalone':
+        if self.app.workbench_host != 'local':
             return
         if self.thread and self.thread.is_alive():
             return
@@ -32,8 +32,7 @@ class LocalCoordinator:
                 return
             evidence = '独立工作台进程和本阶段子进程均已退出，按已有检查点恢复'
             self.app.queue.recover(head['id'], head['lease'], evidence, local=owner)
-        config = self.app.models.public()
-        if not config['enabled'] or not config['providers'][config['provider']]['configured']:
+        if not self.app.models.public()['configured']:
             return
         owner = {'id': uuid.uuid4().hex, 'pid': os.getpid()}
         row = self.app.queue.claim_next(local=owner)

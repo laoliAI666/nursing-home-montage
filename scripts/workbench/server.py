@@ -85,7 +85,7 @@ def find_skill(project, explicit=None):
 class App:
     ensure_dir=staticmethod(ensure_dir)
     python_command=staticmethod(python_command)
-    def __init__(self, project, skill=None, recover=True):
+    def __init__(self, project, skill=None, recover=True, *, workbench_host='codex'):
         self.project = Path(project).resolve()
         self.skill = find_skill(self.project, skill)
         if not self.skill:
@@ -104,7 +104,7 @@ class App:
         self.lock_state = threading.local()
         self.processes = {}
         self.service_mode = 'standalone'
-        self.workbench_host = 'local'
+        self.workbench_host = workbench_host
         for t in self.tasks() if recover else []:
             if t["status"] in ("running", "queued") and t.get("executor") == "cli":
                 self.update(t["id"], status="interrupted", message="工作台已重新启动。可以从已有阶段继续。")
@@ -258,14 +258,13 @@ class App:
         return {"project": str(self.project), "workspace": str(self.workspace()), "workspaceDefault": str(self.workspace_default()), "workspaceSetting": read(self.data/'workspace.json', {}).get('directory', ''), "version": (self.skill / "VERSION").read_text().strip(), "people": people, "defaultPerson": cfg.get("default_person"), "voice": voice_public, "connection": {"speech": bool(keys[0]), "ak": bool(keys[1]), "sk": bool(keys[2]), "storage": storage, "cloneMode": c.get("clone_mode") or self.voice_training.default_mode, "speakerPool": c.get("speaker_pool", [])}, "preferences": {"music": cfg.get("settings", {}).get("music", {}).get("enabled", True), "coverHeader": cfg.get("settings", {}).get("cover", {}).get("header_text", "")}, "agent": self.agent_state(), "model": self.models.public(), "phases": PHASES, "onboarded": read(self.data / "preferences.json", {}).get("onboarded", False)}
 
     def agent_state(self):
-        if self.models.enabled() or self.workbench_host == 'local':
-            settings = self.models.public()
-            ready = settings['enabled'] and settings['canEnable'] and settings['providers'][settings['provider']]['configured']
+        if self.workbench_host == 'local':
+            ready = self.models.public()['configured']
             head = self.queue.head() or {}
-            return {'host': 'local', 'label': '独立制作', 'installed': True, 'mode': 'local',
+            return {'host': 'local', 'label': '本地制作', 'installed': True, 'mode': 'local',
                     'state': 'connected' if ready else 'unchecked', 'canDispatch': ready,
                     'workerActive': bool(head.get('localExecution') and not head.get('settled')),
-                    'message': '本机程序自动接单' if ready else '请在设置中保存模型 Key 并启用独立制作'}
+                    'message': '本机程序自动接单' if ready else '请在设置中保存模型 API Key'}
         host=read(self.data/'agent-connection.json',{});age=time.time()-host.get('seen',0)
         channel=self.channel.state()
         label='Codex'
@@ -461,7 +460,7 @@ class App:
                 if not isinstance(selection,dict):raise ValueError('人物选择格式错误')
                 person_id=selection.get('id');quantity=int(selection.get('count',1))
                 p=next((p for p in cfg['people'] if p['id']==person_id),None)
-                if not p or not p['hasPortrait'] or not p['social_media_name']:raise ValueError('请先补齐所选人物的照片和社媒署名')
+                if not p:raise ValueError('所选数字人不存在，请重新选择')
                 if person_id in seen or not 1<=quantity<=20:raise ValueError('人物不能重复，每人一次可制作1–20条')
                 seen.add(person_id)
                 specs.extend({'person':person_id,'personName':p['name'],'number':i+1} for i in range(quantity))
@@ -474,10 +473,21 @@ class App:
         if music_enabled and not original_music:
             self.music.track(v.get('musicTrackId') or self.music.data()['defaultId'],active=True)
         person = next((p for p in cfg["people"] if p["id"] == v.get("person")), None)
-        if not person or not person["hasPortrait"] or not person["social_media_name"]:
-            raise ValueError("请先补齐数字人的照片和社媒署名")
-        if not all(cfg["connection"][k] for k in ("speech", "ak", "sk")):
-            raise ValueError("请先在服务设置中补齐语音 Key 和视频 AK / SK")
+        person_ids = {spec['person'] for spec in specs} if specs else {v.get('person')}
+        people = [p for p in cfg['people'] if p['id'] in person_ids]
+        if not person or any(not p['hasPortrait'] or not p['social_media_name'] for p in people):
+            raise ValueError('请先补齐所选数字人的照片和社媒署名')
+        if self.workbench_host == 'local':
+            if not cfg['model']['configured']:
+                raise ValueError('请先在设置中填写所选平台的模型 API Key')
+            if any(not p['ready'] for p in people):
+                raise ValueError('请先补齐所选数字人的照片、署名和绑定音色')
+        voice_keys = {'volcengine': cfg['connection']['speech'], 'minimax': cfg['voice']['minimaxConfigured'],
+                      'aliyun': cfg['voice']['aliyunConfigured']}
+        if not all(voice_keys.get(p.get('voice_provider') or 'volcengine') for p in people):
+            raise ValueError('请先在设置中补齐所选数字人绑定的语音服务配置')
+        if not all(cfg['connection'][key] for key in ('ak', 'sk')):
+            raise ValueError('请先在设置中补齐视频 AK / SK')
         ident = uuid.uuid4().hex[:12]
         institution = v.get("institutionId")
         snapshot = self.library.snapshot(institution, ident) if institution else None
@@ -875,7 +885,11 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/check-agent" and self.app.workbench_host == 'codex':
                 return self.reply(200, self.app.check_agent())
             if url.path == "/api/tasks":
-                return self.reply(201, self.app.public_task(self.app.create(v)))
+                with self.app.transaction():
+                    task = self.app.create(v)
+                    if v.get('start') is True:
+                        task = self.app.start(task['id'])
+                return self.reply(201, self.app.public_task(task))
             match = re.fullmatch(r"/api/tasks/([a-f0-9]{12})/(start|cancel|answer)", url.path)
             if match:
                 ident, action = match.groups()
@@ -1134,8 +1148,7 @@ def main():
 
 
 def serve(args):
-    app = App(args.project, args.skill)
-    app.workbench_host = args.host
+    app = App(args.project, args.skill, workbench_host=args.host)
     from auto_worker import LocalCoordinator
     coordinator = LocalCoordinator(app, read, write)
     try:

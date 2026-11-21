@@ -52,6 +52,7 @@ def main():
     if args.mode == 'workbench':
         result.update(launch(project, args.no_open, host=args.host))
     app = App(project, SKILL)
+    app.workbench_host = result.get('workbenchHost', host)
     if args.request:
         request = args.request.resolve()
         if request.stat().st_size > 100_000:
@@ -94,7 +95,7 @@ def main():
         return result
     if result.get('workbenchHost', host) == 'local':
         result['settingsUrl'] = result['url'] + '#settings'
-        result['instruction'] = '在设置里配置并测试模型、语音和数字人，启用独立制作并保存。'
+        result['instruction'] = '在设置里配置模型、语音和数字人。配置齐全后，本机工作台自动接单。'
         return result
     result['coordinatorGuide'] = str(BUNDLE / 'AGENT.md')
     result['instruction'] = '当前宿主主对话按 coordinatorGuide 协调队列；只有队列下发的单视频子 Agent 进入制作，不重复启动工作台。' if args.mode == 'workbench' else 'HTTP 未启动；当前宿主按同一协调协议派发队首，完成后报告待验收；验收前不清理中间资产。'

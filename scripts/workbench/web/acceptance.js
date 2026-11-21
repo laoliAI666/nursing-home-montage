@@ -136,7 +136,7 @@ function productionDiagnosticHtml(current){
 function renderLiveProgress(){
   if(route!=='task'){liveSignature='';delete main.dataset.productionUnified;return;}
   const t=state.tasks.find(x=>x.id===selectedTask);if(!t)return;
-  const rows=t.queueItems||[],covers=batchCoverItems(t),planning=t.planning,current=(planning?.position?planning:null)||rows.find(x=>x.position)||rows.find(x=>!['completed','cancelled'].includes(x.status))||covers.find(x=>x.position);
+  const rows=t.queueItems||[],covers=batchCoverItems(t),planning=t.planning,current=(planning?.id===t.activeItemId?planning:null)||rows.find(x=>x.position)||rows.find(x=>!['completed','cancelled'].includes(x.status))||covers.find(x=>x.position);
   const running=t.status==='running'||['assigned','running','stopping'].includes(current?.status),queued=t.status==='queued'||current?.status==='queued',percent=Math.max(0,Math.min(100,Number(t.progress)||0)),d=managementState.diagnostics?.[current?.id];
   const key=JSON.stringify([t.id,t.status,percent,t.message,rows,covers,planning,t.results,d,diagnosticOpen,state.config.agent,state.queue?.headId]);let panel=main.querySelector('#live-production');
   if(panel&&liveSignature===key)return;liveSignature=key;main.dataset.productionUnified='true';

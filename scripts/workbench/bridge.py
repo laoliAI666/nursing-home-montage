@@ -85,7 +85,11 @@ def main():
     if args.action == "wait":
         deadline = time.monotonic() + min(max(args.seconds, 1), 600)
         stop_sequence=read(app.data/'agent-control.json',{}).get('stopSequence',0)
+        from launch import service_running
         while time.monotonic() < deadline:
+            if service_running(app.project) and read(app.data / 'server.json', {}).get('workbenchHost') == 'local':
+                print('此项目的本地工作台正在运行，由本机程序接单。')
+                return
             if read(app.data/'agent-control.json',{}).get('stopSequence',0)!=stop_sequence:
                 write(host_file,{'state':'disconnected','seen':0})
                 print('已按明确断开请求结束监听。不要自动重新 wait；等待用户再次连接。')

@@ -76,7 +76,7 @@ function updateChrome() {
   $('#setup-dot').hidden = allConfigured();
   const a = c.agent;
   $('#agent-dot').className = 'status-dot' + (a.uncertain ? ' muted' : a.state === 'connected' ? '' : a.state === 'error' ? ' error' : ' muted');
-  $('#agent-status').textContent = a.mode==='local' ? (a.canDispatch?'独立制作已启用':'独立制作待启用') : a.uncertain ? '等待进度回传' : a.state === 'connected' ? a.label+' 已连接' : a.state === 'checking' ? '正在连接 Agent…' : a.state === 'error' ? 'Agent 待连接' : '连接 '+a.label;
+  $('#agent-status').textContent = a.mode==='local' ? (a.canDispatch?'本地制作已就绪':'模型待配置') : a.uncertain ? '等待进度回传' : a.state === 'connected' ? a.label+' 已连接' : a.state === 'checking' ? '正在连接 Agent…' : a.state === 'error' ? 'Agent 待连接' : '连接 '+a.label;
   document.querySelectorAll('[data-nav]').forEach(a => { if (a.dataset.nav === (route==='task'?'tasks':['preview','video'].includes(route)?'works':['institution','asset','institution-new'].includes(route)?'library':route)) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
   $('#page-label').textContent = route==='settings'&&location.hash==='#settings/music'?'配乐管理':labels[route] || labels.create;
 }
@@ -177,8 +177,8 @@ function modelSettings() {
   const custom = model.providers.custom;
   const isCustom = model.provider==='custom';
   return `<section class="panel">
-    <div class="settings-section-heading"><span>${icon('spark')}</span><div><h2>模型与独立制作</h2>
-    <p>用于策划、选片和视觉复核。启用后，本机工作台直接接单。</p></div></div>
+    <div class="settings-section-heading"><span>${icon('spark')}</span><div><h2>制作模型</h2>
+    <p>用于策划、选片和视觉复核。</p></div></div>
     <div class="form-row">
       <div class="form-group"><label class="field-label" for="model-provider">模型平台</label>
       <select id="model-provider" name="model_provider">${Object.entries(model.providers).map(([id,p])=>`<option value="${E(id)}" ${id===model.provider?'selected':''}>${E(p.label)}</option>`).join('')}</select></div>
@@ -203,14 +203,12 @@ function modelSettings() {
         <label><input type="radio" name="model_output_mode" value="prompt" ${custom?.outputMode==='prompt'?'checked':''}> 用提示词要求 JSON</label>
       </fieldset>
     </details>
-    <div class="switch-row"><label for="model-enabled">启用独立制作</label><input id="model-enabled" name="model_enabled" class="switch" type="checkbox" ${model.enabled?'checked':''} ${model.canEnable?'':'disabled'}></div>
     <div class="form-group">
       <label class="field-label" for="production-timeout">单条制作时限（分钟）</label>
       <input class="input" id="production-timeout" name="production_timeout" type="number" min="1" step="1" required value="${E(model.productionTimeoutMinutes)}">
       <p class="form-help">从接单开始计时，超时停止该条并保留已有文件。</p>
     </div>
-    ${model.canEnable?'':'<p class="form-help">启用前请用项目启动器独立打开工作台。</p>'}
-    <p class="form-help">独立制作会向所选平台发送必要的机构说明和审核抽帧。连接测试只发送一张合成色块图。</p>
+    <p class="form-help">制作时会向所选平台发送必要的机构说明和审核抽帧。连接测试只发送一张合成色块图。</p>
     ${serviceTestControl('model','测试模型连接')}
   </section>`;
 }
@@ -331,7 +329,7 @@ function productionServiceSettings(config) {
 function modelFields(form) {
   return {provider:form.elements.model_provider.value,model:form.elements.model_id.value,
           baseUrl:form.elements.model_base_url.value,outputMode:form.elements.model_output_mode.value,
-          apiKey:form.elements.model_key.value,enabled:form.elements.model_enabled.checked,
+          apiKey:form.elements.model_key.value,
           productionTimeoutMinutes:form.elements.production_timeout.valueAsNumber};
 }
 function bindModelSettings(form) {
@@ -447,6 +445,14 @@ function renderSettings() {
     ${c.agent.mode === 'desktop' ? `<section class="panel"><div class="settings-section-heading"><span>${icon('clapper')}</span><div><h2>用 Codex 接手制作</h2></div></div><div id="agent-config-status">${agentStatusBlock()}</div></section>` : ''}
     <section class="panel"><div class="settings-section-heading"><span>${icon('settings')}</span><div><h2>你的制作偏好</h2><p>这些设置将用于之后创建的新任务。</p></div></div><div class="form-group"><label class="field-label" for="cover-header" style="margin-bottom:10px">封面固定头标</label><input class="input" name="coverHeader" id="cover-header" value="${E(c.preferences.coverHeader)}" placeholder="例如：重庆养老院探访"></div><div class="switch-row"><label for="default-music">${icon('music')} 默认添加背景音乐</label><input type="checkbox" class="switch" id="default-music" name="music" ${c.preferences.music ? 'checked' : ''}></div></section><div class="sticky-actions"><button class="primary" type="submit">${icon('save')} 保存本地设置</button><button class="secondary" type="submit" data-next="people">下一步：配置数字人 ${icon('arrow-right')}</button><span id="settings-error" class="inline-error error-slot" role="alert"></span></div></form><aside class="settings-guide"><h3>第一次使用，跟着做就好。</h3><ol><li><strong>配置制作服务</strong>在本页配置模型、语音和数字人服务。</li><li><strong>添加你自己的数字人</strong>准备一张正面照片。绑定已有音色，或先用录音单独复刻。</li><li><strong>选择机构素材，开始制作</strong>放入实拍视频和真实介绍，写下这条视频的想法。</li></ol><p>留空的 Key 会保留原配置。保存后输入框自动清空，页面只显示是否已配置。</p><div class="path-note">当前项目<br>${E(c.project)}<p style="margin-top:10px">配置位于项目的 .montage 目录，更新 skill 后仍会保留。</p></div><section class="panel"><h3>本地工作台</h3><p class="form-help">空闲时可退出并停止本地服务。</p><button type="button" class="secondary" data-action="exit-workbench">退出工作台</button></section></aside></div>`;
   bindServiceSettings($('#settings-form'));
+  const setupTarget = {'create-model':'#key-model_key', 'create-speech':'#voice-provider', 'create-video':'#key-ak'}[location.hash.split('/')[1]];
+  if (setupTarget) {
+    const form = $('#settings-form');
+    form.querySelector('.sticky-actions [type=submit]:not([data-next])').dataset.next = 'create';
+    form.querySelector('[data-next="create"]').textContent = '保存并返回新建制作';
+    form.querySelector('[data-next="people"]').hidden = true;
+    requestAnimationFrame(() => $(setupTarget)?.focus());
+  }
   $('#settings-form').addEventListener('submit', async e => {
     e.preventDefault(); const next = e.submitter?.dataset.next; const form = e.target, data = Object.fromEntries(new FormData(form)); $('#settings-error').textContent = '';
     await busy(form.querySelector('[type=submit]'), async () => {
@@ -836,7 +842,7 @@ function taskControls(t) {
   if (['running','queued'].includes(t.status)) return `<button class="danger-button" data-action="cancel-task" data-id="${t.id}">${icon('stop')} 请求停止制作</button><p class="form-help">已提交的云端任务会保留，恢复时先查询已有结果。</p>`;
   if (!['completed','awaiting_acceptance','accepted'].includes(t.status)) {
     const local = state.config.agent.mode === 'local';
-    return state.config.agent.state === 'connected' ? `<button class="primary" data-action="start-task" data-id="${t.id}">${icon(t.status === 'draft' ? 'spark' : 'retry')}${t.status === 'draft' ? '开始制作' : '从已有阶段继续'}</button>` : `<p class="inline-note">任务已保存在本地。${local ? '配置模型并启用独立制作后即可继续。' : '连接 Codex 后即可继续。'}</p><a href="#settings" class="primary">${local ? '配置模型' : '连接 Codex'} ${icon('arrow-right')}</a>`;
+    return state.config.agent.state === 'connected' ? `<button class="primary" data-action="start-task" data-id="${t.id}">${icon(t.status === 'draft' ? 'spark' : 'retry')}${t.status === 'draft' ? '开始制作' : '从已有阶段继续'}</button>` : `<p class="inline-note">任务已保存在本地。${local ? '配置模型后即可继续。' : '连接 Codex 后即可继续。'}</p><a href="#settings" class="primary">${local ? '配置模型' : '连接 Codex'} ${icon('arrow-right')}</a>`;
   }
   return '';
 }
@@ -851,7 +857,7 @@ function renderOnboarding() {
   const local = state.config.agent.mode === 'local';
   const steps = [
     {done:hasServices() && (!local || state.config.agent.canDispatch), name:'配置制作服务',
-      text:local ? '填写模型 API Key，启用独立制作，再配置语音和数字人服务。' : '在设置中准备语音 API Key 和数字人 AK / SK。',
+      text:local ? '填写模型 API Key，再配置语音和数字人服务。' : '在设置中准备语音 API Key 和数字人 AK / SK。',
       link:'settings', button:'配置服务'},
     {done:hasPerson(), name:'添加你的数字人', text:'准备人物照片，填好社媒署名，绑定已有音色或提供声音样本。',
       link:'people', button:'配置数字人'},

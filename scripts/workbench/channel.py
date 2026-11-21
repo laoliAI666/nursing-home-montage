@@ -62,8 +62,8 @@ class AgentChannel:
         if op=='connect': return self.connect(request)
         if op=='poll':
             self.authorize(request)
-            if self.app.models.enabled():
-                return {'state':'waiting','instruction':'此工作台已启用独立制作，由本机程序接单。'}
+            if self.app.workbench_host == 'local':
+                return {'state':'waiting','instruction':'此工作台由本机程序接单。'}
             self.write(self.app.data/'agent-connection.json',{'state':'waiting','seen':time.time(),'transport':'native-files'})
             self.write(self.app.data/'connection-request.json',{'status':'connected','updated':time.time()})
             head=self.app.queue.head()
