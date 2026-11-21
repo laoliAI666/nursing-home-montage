@@ -273,6 +273,43 @@ class Editor:
     def short_label(value):
         return isinstance(value, str) and bool(value.strip()) and len(value) <= 12 and not any(c in value for c in '\r\n')
 
+    def complete_common_facts(self, sentences, facts, missing, media):
+        needed = {row['id']: row for row in facts if row['id'] in missing}
+        response = self.ask(
+            '只补齐 missing 中没有在口播覆盖的共同要点，保留其他句子。'
+            '已有句子说清这个要点时，可填现有句号并保持该句原字，仅补原文编号。'
+            '需要补新句时，sentence 填 null，text 用一句口语完整表达这个要点，'
+            '保留原文的数值、适用条件和范围，不加其他细节。path 从素材清单选一个直接画面或相关院内背景。'
+            '返回 JSON {"edits":{"共同事实编号":{"sentence":null,"text":"口播句","path":"素材路径"}}}。'
+            '句号从 1 开始，首句及结尾不得修改。',
+            {'missing': needed, 'sentences': {str(i): row['text'] for i, row in enumerate(sentences, 1)},
+             'media': {path: info['description'] for path, info in media.items()}},
+            max_tokens=2400)
+        edits = response.get('edits')
+        edits = edits if isinstance(edits, dict) else {}
+        background = next(row['shots'][0] for row in sentences if row.get('shots'))
+        additions = []
+        for ident, fact in needed.items():
+            edit = edits.get(ident)
+            edit = edit if isinstance(edit, dict) else {}
+            index = edit.get('sentence')
+            text = edit.get('text')
+            text = text.strip() if isinstance(text, str) else ''
+            if type(index) is int and 1 < index < len(sentences) and text == sentences[index - 1]['text']:
+                row = sentences[index - 1]
+                row['factIds'] = list(dict.fromkeys([*row.get('factIds', []), ident]))
+                continue
+            path = edit.get('path')
+            if not isinstance(path, str) or path not in media:
+                path = next((p for p in fact.get('mediaPaths', []) if p in media), None)
+            shot = ({'path': path, 'sourceStart': 0, 'weight': 1,
+                     'description': media[path]['description']} if path else dict(background))
+            additions.append({'text': (text or fact['text']).rstrip('。！？') + '。',
+                              'kind': 'fact', 'factIds': [ident], 'shots': [shot]})
+        # A real CTA stays last; other flows append to the end.
+        insertion = len(sentences) - (sentences[-1].get('kind') == 'cta')
+        sentences[insertion:insertion] = additions
+
     def plan(self, task, index, context, facts, previous, feedback='', *, evidence=None, candidate=None):
         prefs = (task.get('videoPreferences') or [''] * task['count'])[index]
         person = (task.get('videoSpecs') or [{'person': task['person']}] * task['count'])[index]['person']
@@ -358,7 +395,6 @@ class Editor:
             task['count'] == 1 or common_ids.issubset(cited_ids)
         )
         self.rebind_fact_references(sentences,references,result,editable=not revised,omit_unsupported=omit_unsupported)
-        used={ident:None for sentence in sentences for ident in sentence.get('factIds',[])}
         authorization = result.get('topicAuthorization') or ''
         if authorization and (not isinstance(authorization, str) or authorization not in task.get('requirements', '') + '\n' + prefs):
             raise PlanError('专题需能引用用户明确提出的要求。')
@@ -367,6 +403,10 @@ class Editor:
         if missing_angles:
             raise PlanError('请补齐顶层策划角度字段 ' + '、'.join(missing_angles) + '。', result)
         expected = common_ids
+        used = {ident: None for sentence in sentences for ident in sentence.get('factIds', [])}
+        if expected - used.keys() and not (authorization or revised):
+            self.complete_common_facts(sentences, facts, expected - used.keys(), selected)
+            used = {ident: None for sentence in sentences for ident in sentence.get('factIds', [])}
         unknown = sorted(set(used) - references.keys())
         missing = sorted(expected - set(used)) if not authorization else []
         issues = []
