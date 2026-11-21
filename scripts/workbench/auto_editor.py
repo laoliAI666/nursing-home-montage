@@ -1,4 +1,5 @@
 """Structured editing and vision calls. The model cannot execute local tools."""
+import math
 from pathlib import Path
 import re
 import subprocess
@@ -295,7 +296,9 @@ class Editor:
             index = edit.get('sentence')
             text = edit.get('text')
             text = text.strip() if isinstance(text, str) else ''
-            if type(index) is int and 1 < index < len(sentences) and text == sentences[index - 1]['text']:
+            if type(index) is int and 1 < index < len(sentences) and (
+                not text or text == sentences[index - 1]['text']
+            ):
                 row = sentences[index - 1]
                 row['factIds'] = list(dict.fromkeys([*row.get('factIds', []), ident]))
                 continue
@@ -309,6 +312,45 @@ class Editor:
         # A real CTA stays last; other flows append to the end.
         insertion = len(sentences) - (sentences[-1].get('kind') == 'cta')
         sentences[insertion:insertion] = additions
+
+    @staticmethod
+    def repair_shots(sentence, selected, fact_media, *, moving=False):
+        available = {path: row for path, row in selected.items() if not moving or row['motion']}
+        if not available:
+            raise PlanError('开头和结尾需要已核验的实拍移动镜头。')
+        preferred = [path for ident in sentence.get('factIds', []) if isinstance(ident, str)
+                     for path in fact_media.get(ident, []) if path in available]
+        entrances = [path for path, row in available.items()
+                     if any(word in row['description'] for word in ('门头', '门牌', '入口', '外立面'))]
+        fallback = next(iter(preferred or entrances or available))
+        shots = sentence['shots'] or [{}]
+        repaired = []
+        for shot in shots:
+            path = shot.get('path') if isinstance(shot, dict) else None
+            if isinstance(path, str):
+                path = path.strip()
+                if path not in available:
+                    name = path.replace('\\', '/').rsplit('/', 1)[-1]
+                    matches = [key for key in available if key.rsplit('/', 1)[-1] == name]
+                    if len(matches) == 1:
+                        path = matches[0]
+            if not isinstance(path, str) or path not in available:
+                chosen = available[fallback]
+                repaired.append({'path': fallback, 'sourceStart': 0, 'weight': 1, 'match': 'context',
+                                 'description': chosen['description']})
+                continue
+            source_start = shot.get('sourceStart', 0)
+            try:
+                start = float(source_start)
+            except (ValueError, TypeError, OverflowError):
+                start = 0
+            if available[path]['kind'] != 'video' or not 0 <= start < available[path]['duration']:
+                start = 0
+            weight = shot.get('weight', 1)
+            if type(weight) not in (int, float) or not math.isfinite(weight) or weight <= 0:
+                weight = 1
+            repaired.append({**shot, 'path': path, 'sourceStart': start, 'weight': weight})
+        sentence['shots'] = repaired
 
     def plan(self, task, index, context, facts, previous, feedback='', *, evidence=None, candidate=None):
         prefs = (task.get('videoPreferences') or [''] * task['count'])[index]
@@ -359,6 +401,7 @@ class Editor:
             plan['institution']['name'] = context['institutionName']
         self.fit_institution_labels(plan['institution'], context, result)
         selected = {x['path']: x for x in context['media']}
+        fact_media = {fact['id']: fact.get('mediaPaths', []) for fact in facts}
         sentences = plan.get('sentences', [])
         if not isinstance(sentences, list) or not 1 <= len(sentences) <= 100:
             raise PlanError('plan.sentences 必须是包含口播句子和分镜的数组。')
@@ -367,15 +410,10 @@ class Editor:
                 raise PlanError(f'第 {i + 1} 句须包含口播 text 和 shots 数组。')
             # Layout uses the measured speech and glyph geometry in the render engine.
             sentence.pop('captions', None)
-            for shot in sentence['shots']:
-                path = shot.get('path') if isinstance(shot, dict) else None
-                media = selected.get(path) if isinstance(path, str) else None
-                start = shot.get('sourceStart', 0) if media else None
-                if not media or (media['kind'] == 'video' and
-                                 (not isinstance(start, (int, float)) or not 0 <= start < media['duration'])):
-                    raise PlanError(f'第 {i + 1} 句选片超出了实际素材或有效时间，请核对 path 和 sourceStart。')
-                if (i == 0 or sentence.get('kind') == 'cta') and not media['motion']:
-                    raise PlanError('开头及片尾需选实际观察到运动的视频。')
+            ids = sentence.get('factIds', [])
+            if not isinstance(ids, list) or any(not isinstance(f, str) for f in ids):
+                raise PlanError(f'第 {i + 1} 句的 factIds 必须是编号字符串数组，如 ["f1","f2"]。', result)
+            self.repair_shots(sentence, selected, fact_media, moving=i == 0 or sentence.get('kind') == 'cta')
         if revised:
             text = ''.join(s['text'] for s in sentences)
             if ''.join(revised.split()) != ''.join(text.split()):
@@ -385,10 +423,6 @@ class Editor:
                 if not isinstance(plan.get('publication'), dict):
                     raise PlanError('plan.publication 必须填写为对象，以保留用户的发布文案。')
                 plan['publication'][k] = value
-        for number, sentence in enumerate(sentences, 1):
-            ids = sentence.get('factIds', [])
-            if not isinstance(ids, list) or any(not isinstance(f, str) for f in ids):
-                raise PlanError(f'第 {number} 句的 factIds 必须是编号字符串数组，如 ["f1","f2"]。', result)
         common_ids = {fact['id'] for fact in facts}
         cited_ids = {ident for sentence in sentences for ident in sentence.get('factIds', [])}
         omit_unsupported = not (revised or task.get('requirements') or prefs) and (
