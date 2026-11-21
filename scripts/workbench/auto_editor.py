@@ -1,4 +1,5 @@
 """Structured editing and vision calls. The model cannot execute local tools."""
+from copy import deepcopy
 import math
 from pathlib import Path
 import re
@@ -352,7 +353,36 @@ class Editor:
             repaired.append({**shot, 'path': path, 'sourceStart': start, 'weight': weight})
         sentence['shots'] = repaired
 
-    def plan(self, task, index, context, facts, previous, feedback='', *, evidence=None, candidate=None):
+    def rebuild_narration(self, reference_plan, context, facts, evidence, previous, index, preference):
+        result = self.ask(
+            '上一轮完整策划缺少口播结构，本轮只重写口播并选择真实镜头。'
+            + NARRATION_OUTLINE +
+            '使用实际 facts 和 evidence 的编号，每个共同事实一定写进正文并在对应句标明 f 编号。'
+            'preference 是本条要求。开头和结尾选观察到运动的视频，各句也可填写一个相关背景的 path。'
+            '写成与 previous 切入和叙述顺序有区别的完整版本。'
+            '返回 JSON {"openingAngle":"切入","structure":"顺序","coverAngle":"主题","title":"本条标题",'
+            '"sentences":[{"text":"口播句","kind":"hook|fact|cta","factIds":["f1"],"path":"素材路径"}]}。',
+            {'institutionName': context['institutionName'], 'facts': facts, 'evidence': evidence,
+             'media': context['media'], 'previous': previous, 'index': index + 1, 'preference': preference},
+            max_tokens=4500)
+        if not isinstance(result.get('sentences'), list) or not result['sentences']:
+            raise PlanError('模型的独立口播补稿没有返回句子，请重新生成。')
+        plan = deepcopy(reference_plan)
+        sentences = []
+        for item in result['sentences']:
+            if not isinstance(item, dict):
+                raise PlanError('独立口播补稿中的句子需要文字和事实引用。')
+            sentence = {key: item[key] for key in ('text', 'kind', 'factIds') if key in item}
+            sentence['shots'] = [{'path': item.get('path'), 'sourceStart': 0, 'weight': 1}]
+            sentences.append(sentence)
+        plan['sentences'] = sentences
+        title = result.get('title')
+        if isinstance(title, str) and title.strip() and not any(char.isdigit() for char in title):
+            plan['publication']['title'] = title.strip()
+        return {**result, 'plan': plan}
+
+    def plan(self, task, index, context, facts, previous, feedback='', *, evidence=None, candidate=None,
+             reference_plan=None):
         prefs = (task.get('videoPreferences') or [''] * task['count'])[index]
         person = (task.get('videoSpecs') or [{'person': task['person']}] * task['count'])[index]['person']
         revised = task.get('revisedNarration', '')
@@ -385,6 +415,12 @@ class Editor:
              'revisedNarration': revised, 'publicationOverride': task.get('publicationOverride', {})},
             max_tokens=12000)
         raw = result.get('plan')
+        if reference_plan and not revised and not prefs and not task.get('requirements') and (
+            not isinstance(raw, dict) or not isinstance(raw.get('sentences'), list)
+            or not 1 <= len(raw['sentences']) <= 100
+        ):
+            result = self.rebuild_narration(reference_plan, context, facts, evidence, previous, index, prefs)
+            raw = result['plan']
         if not isinstance(raw, dict):
             question(result)
             raise PlanError('模型必须在顶层 plan 字段返回完整的单条制作计划。')

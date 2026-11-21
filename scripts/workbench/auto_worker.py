@@ -180,10 +180,12 @@ class Production:
                 cache['plans'] = cache['plans'][:index]
             self.progress(f'整批策划：正在编排第 {index + 1}/{task["count"]} 条')
             feedback, candidate = '', None
+            reference_plan = self.read(folder / items[-1]['plan']) if items else None
             for attempt in range(4):
                 try:
                     plan, angles = self.editor.plan(task, index, context, facts, items[-12:],
-                                                   feedback, evidence=evidence, candidate=candidate)
+                                                   feedback, evidence=evidence, candidate=candidate,
+                                                   reference_plan=reference_plan)
                     candidate = {**angles, 'plan': {k: v for k, v in plan.items() if k != 'facts'}}
                     plan = self.app.planning.validate_item(task, folder, index, plan,
                                                            lambda job: self.review_candidate(job, context, facts))
