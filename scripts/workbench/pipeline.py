@@ -193,7 +193,7 @@ class Pipeline:
                 duration = measured_duration(job, self.read)
                 if not within_target(duration, target):
                     return {'state':'revise_duration','duration':duration,'target':target}
-            if step == 'package' and target is not None:
+            if step in ('final-review', 'package') and target is not None:
                 rendered = self.read(job/'verification.json', {}).get('duration')
                 if rendered is not None and not within_target(rendered, target):
                     raise ValueError(f'成片实测 {rendered:.1f} 秒，超出 {target} 秒前后 5 秒的范围。')
