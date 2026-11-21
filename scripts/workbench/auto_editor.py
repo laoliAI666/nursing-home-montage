@@ -13,6 +13,17 @@ NARRATOR_CONTEXT = (
 )
 
 
+NARRATION_OUTLINE = (
+    '先照着共同提纲写口播，综合稿每条都要实际讲全共同要点。'
+    'show 是可以展开的重点，只展开确认能直接呈现的细节或具体例子。'
+    'brief 是重要但缺少直接画面的内容，一句话带过，相关院内场景只作背景。'
+    '展柜不能当作照护方案的实拍，缺少画面时省去该方案的工具、操作和效果细节。'
+    '区位可紧随院名简短交代。地铁线路、地址等补充细节按各条切入取舍，'
+    '对家属探望有用时可在一句内说具体，不套用同一句。'
+    '同批各条通过开头、叙述顺序、句式和少量例子区分。'
+)
+
+
 class NeedsInput(ValueError):
     pass
 
@@ -131,32 +142,74 @@ class Editor:
 
     def batch_outline(self, context, evidence):
         data = {k: v for k, v in context.items() if k not in ('sources', 'media')}
+        observed = {f'M{i}': {k: shot[k] for k in ('path', 'kind', 'description')}
+                    for i, shot in enumerate(context['media'], 1)}
+        schema = ('返回 JSON {"facts":[{"text":"一个共同要点","evidenceId":"e1",'
+                  '"treatment":"show","mediaIds":["M1"],"visibleDetail":"从观察记录照抄的字句"}],"question":null}。')
+        constraints = (
+            '共同提纲涵盖照护、居住和院内生活。原文明确区分照护分区时，先把分区和本院的特色照护纳入共同提纲。'
+            '逐项写成一个简短要点，综合稿每条都要讲全。'
+            'show 只写画面直接呈现且原文支持的细节，列出对应素材编号，并从其中一份 description 原样复制一段 visibleDetail。'
+            '画面只支持一部分时，show 必须删去没拍到的并列内容。比如步道镜头可讲院内步道，不能带出未确认的空中花园。'
+            '缺少直接画面但重要的事实标 brief，只用一句交代，少列细节。背景素材可以留空。'
+            '服务方案、分区安排、服务时长和就医保障通常只在文字中有依据。'
+            '普通展柜和相框不能确定是怀旧展区或记忆工具箱，普通房间不能确定属于某个照护分区，'
+            '康复器械不能证明有医务室或绿色就医通道。'
+            '地点只引出机构，不列为展开点。开业年份、规模、交通和数字清单通常不作为共同重点，由逐条按切入取舍。'
+            '有辨识度的照护方案属于可简述的核心；没有方案画面时，只录名称和照护类型，省去工具、方法和效果。'
+            '从 evidence 选择实际原文编号，不自造原文；每条避免堆砌无法在一分钟内讲清的事实。'
+        )
+        data.update(evidence=evidence, observedMedia=observed)
         feedback = ''
         for _ in range(3):
             result = self.ask(
-                NARRATOR_CONTEXT + '为每条约一分钟的养老机构综合探访选出家属最关心的两到三组核心特点，通常只需三到五条简短事实。'
-                '每项只写一个能在正文里讲清的要点。除非用户特别要求，详细门牌和交通线路留在发布文案，'
-                '背景年份、规模数字和设施清单'
-                '无需列为每条都必须重复的共同事实。每条事实必须完全受其对应原文段落支持，并保留限定词。'
-                '从 evidence 中选择对应编号（如 e1），由程序取原文。如果已有 feedback，按提示修正。'
-                '事实不足时给出具体问题。JSON {"facts":[{"text":"简短事实","evidenceId":"e1"}],"question":null}。',
-                {**data, 'evidence': evidence, 'feedback': feedback})
-            facts = result.get('facts')
-            if not isinstance(facts, list) or not 1 <= len(facts) <= 24:
-                feedback = '请在 facts 数组中给出实际可核对的共同事实。'
-                continue
-            output = []
-            for i, fact in enumerate(facts, 1):
-                text = fact.get('text') if isinstance(fact, dict) else None
-                key = fact.get('evidenceId') if isinstance(fact, dict) else None
-                if not isinstance(text, str) or not text.strip() or not isinstance(key, str) or key not in evidence:
-                    feedback = f'第 {i} 项必须包含非空的事实内容和 evidence 中实际存在的 evidenceId。'
-                    break
-                output.append({'id': f'f{i}', 'text': text.strip(), **evidence[key]})
-            if len(output) == len(facts):
-                return output
+                NARRATOR_CONTEXT + '先看 observedMedia 实际拍到了什么，再结合 evidence 选取三到六个共同要点。'
+                + constraints + '资料不足时说明具体缺项。' + schema,
+                {**data, 'feedback': feedback})
+            try:
+                self.validate_outline(result, evidence, observed)
+                checked = self.ask(
+                    '逐项核对 candidateFacts 对应的原文和实拍。若标为 show，审核素材观察文字是否真的能看到该要点，'
+                    '可只保留有画面的部分；必须交代但镜头不直接支持的事实改为 brief；'
+                    '次要、臃肿、重复或缺乏依据的条目删除。通常保留一篇能覆盖的三到六项共同核心，用户明确要求的要点照常保留。'
+                    + constraints + '输出修正后的完整列表。' + schema,
+                    {**data, 'candidateFacts': result['facts']})
+                return self.validate_outline(checked, evidence, observed)
+            except PlanError as exc:
+                feedback = str(exc)
         question(result)
-        raise ValueError('共同事实提炼未通过原文校验。' + feedback)
+        raise ValueError('共同事实提炼未通过原文及对应素材校验。' + feedback)
+
+    @staticmethod
+    def validate_outline(result, evidence, observed):
+        facts = result.get('facts')
+        if not isinstance(facts, list) or not 1 <= len(facts) <= 24:
+            raise PlanError('请在 facts 中列出实际可核对的共同事实。')
+        output = []
+        for i, fact in enumerate(facts, 1):
+            if not isinstance(fact, dict):
+                raise PlanError(f'第 {i} 项必须填写事实、原文编号和素材关系。')
+            text, key = fact.get('text'), fact.get('evidenceId')
+            if not isinstance(text, str) or not text.strip() or not isinstance(key, str) or key not in evidence:
+                raise PlanError(f'第 {i} 项必须包含非空的事实内容和 evidence 中实际存在的 evidenceId。')
+            treatment, media_ids = fact.get('treatment'), fact.get('mediaIds')
+            if (treatment not in ('show', 'brief') or not isinstance(media_ids, list)
+                    or any(not isinstance(ident, str) or ident not in observed for ident in media_ids)
+                    or (treatment == 'show' and not media_ids)):
+                raise PlanError(f'第 {i} 项需要标注 show 或 brief，并使用 observedMedia 的编号。'
+                                'show 至少要有一个直接相关的素材；缺少画面的重要事实用 brief，可留空素材。')
+            detail = ''
+            if treatment == 'show':
+                detail = fact.get('visibleDetail')
+                if not isinstance(detail, str) or not detail.strip() or not any(
+                    detail.strip() in observed[ident]['description'] for ident in media_ids
+                ):
+                    raise PlanError(f'第 {i} 项的 visibleDetail 需要从该项选定素材的观察描述中原样摘录。')
+                detail = detail.strip()
+            paths = list(dict.fromkeys(observed[ident]['path'] for ident in media_ids))
+            output.append({'id': f'f{i}', 'text': text.strip(), **evidence[key],
+                           'treatment': treatment, 'mediaPaths': paths, 'visibleDetail': detail})
+        return output
 
     def rebind_fact_references(self, sentences, references, candidate, *, editable=False, omit_unsupported=False):
         affected = {str(i):s for i,s in enumerate(sentences,1)
@@ -229,13 +282,13 @@ class Editor:
             NARRATOR_CONTEXT + '你负责写一条中文养老机构探访视频。按下列技能规则先写整篇口语稿并做语言润色，再分句选镜和定封面。'
             '仅使用真实素材，选片基于提供的实看结果。开头和结尾选有运动的源视频；在短片剩余时长足够的区间取镜，'
             '预计每秒 3.5 至 4 个汉字，给足分镜，sourceStart 使用秒数。不要指定资源路径、任何运行设置或关闭审核。'
-            '默认口播讲照护和生活场景，地点只需说到片区；除非用户明确要求口播地址或路线，'
-            '详细街道、门牌和地铁线路可以留到发布文案。院名按自然口语念出，用原文可对应的真实简称，避免反复念全称。'
+            '有原文依据的院名按自然口语念。'
             '无需生成 captions。工作台使用配音时间和字宽排字幕。'
             '各事实写进实际口播后，在对应句的 factIds 数组中逐项标明传入的编号，如 ["f1","f2"]。'
             '综合稿的 sentences 必须覆盖 facts 中全部 f 编号。额外细节可用 supportingEvidence 中支持该句的 e 编号，'
             '这些细节无需全部写入。句子有多个事实时可标多个编号。封面标签或 publication 写了数字时也提供 factIds。'
-            '默认优先讲 facts 的重点。没有确切出处的补充细节可以省略，避免在一句中合并多个来源各自未能支持的结论。'
+            + NARRATION_OUTLINE +
+            'show 优先配该项 mediaPaths，依据 visibleDetail 核对能够直接展示的具体内容。'
             '收到 feedback 时逐项修正。candidate 是待修订的上一个草稿，保留其中已符合要求的内容。'
             '用对应原文编号支持每个事实句，不用无关编号凑数。'
             '仅在用户偏好明确指定专题时返回 topicAuthorization 原话。'
@@ -299,7 +352,11 @@ class Editor:
             ids = sentence.get('factIds', [])
             if not isinstance(ids, list) or any(not isinstance(f, str) for f in ids):
                 raise PlanError(f'第 {number} 句的 factIds 必须是编号字符串数组，如 ["f1","f2"]。', result)
-        omit_unsupported = task['count']==1 and not (revised or task.get('requirements') or prefs)
+        common_ids = {fact['id'] for fact in facts}
+        cited_ids = {ident for sentence in sentences for ident in sentence.get('factIds', [])}
+        omit_unsupported = not (revised or task.get('requirements') or prefs) and (
+            task['count'] == 1 or common_ids.issubset(cited_ids)
+        )
         self.rebind_fact_references(sentences,references,result,editable=not revised,omit_unsupported=omit_unsupported)
         used={ident:None for sentence in sentences for ident in sentence.get('factIds',[])}
         authorization = result.get('topicAuthorization') or ''
@@ -309,7 +366,7 @@ class Editor:
         missing_angles = [k for k, v in angles.items() if not isinstance(v, str) or not v.strip()]
         if missing_angles:
             raise PlanError('请补齐顶层策划角度字段 ' + '、'.join(missing_angles) + '。', result)
-        expected = {x['id'] for x in facts}
+        expected = common_ids
         unknown = sorted(set(used) - references.keys())
         missing = sorted(expected - set(used)) if not authorization else []
         issues = []
@@ -322,17 +379,49 @@ class Editor:
         return plan, {**angles, 'factCoverage': [f for f in used if f in expected], 'mode': 'topic' if authorization else 'comprehensive',
                       'topicAuthorization': authorization}
 
+    def repair_numeric_references(self, plan, audit):
+        numeric_error = ' 的数字需要可核对的 factIds 原文引用。'
+        failing = {error.removesuffix(numeric_error) for error in audit.get('structuralErrors', [])
+                   if error.endswith(numeric_error)}
+        rows = {row['location']: row['text'] for row in audit.get('sourceMatrix', [])
+                if row['location'] in failing}
+        if not rows:
+            return False
+        refs = {row['id']: row['quote'] for row in plan['facts']}
+        response = self.ask(
+            '只补下面这些字段的数字引用。选择能支持该数字及其实际含义、对象、单位和限定范围的原文编号。'
+            '保留文案原字。没有合适原文就返回空数组，交回上一步改稿。返回 JSON'
+            ' {"references":{"字段名":["原文编号"]}}。',
+            {'fields': rows, 'evidence': refs})
+        bindings = response.get('references')
+        if not isinstance(bindings, dict) or bindings.keys() != rows.keys() or any(
+            not isinstance(ids, list) or not ids or any(not isinstance(ident, str) or ident not in refs
+                                                         for ident in ids)
+            for ids in bindings.values()
+        ):
+            return False
+        for location, ids in bindings.items():
+            if location.startswith('sentences['):
+                field = plan['sentences'][int(location.removeprefix('sentences[').removesuffix(']'))]
+            elif location.startswith('cover.labels['):
+                field = plan['cover']['labels'][int(location.removeprefix('cover.labels[').removesuffix(']'))]
+            else:
+                field = plan['publication']
+            field['factIds'] = list(dict.fromkeys([*field.get('factIds', []), *ids]))
+        return True
+
     def content_review(self, job, answer):
         plan = self.read(job / 'plan.json')
         context = self.context({'requirements': ''}, job, answer)
         return self.review_plan(context, plan, self.read(job / 'content-audit.json', {}))
 
-    def review_plan(self, context, plan, audit):
+    def review_plan(self, context, plan, audit, *, outline=()):
         response = self.ask(
             NARRATOR_CONTEXT + '核对每句口播与事实原文，核对语义及所有限定词。用已有实看素材描述核对文画关系及封面三槽。'
             '审核口语质量、覆盖范围、结尾咨询、封面及发布文案。材料未支持或文画明显不合时拒绝。'
+            '如有共同提纲，核对每条都在实际口播讲全，实拍可呈现的重点展开，缺少对应画面的重要内容一句带过。'
             'JSON {"ok":true,"note":"具体到口播、事实和素材的审核观察"}。\n' + self.rules('content-review'),
-            {**context, 'plan': plan, 'audit': audit})
+            {**context, 'plan': plan, 'audit': audit, 'outline': outline})
         return approved(response)
 
     def review_frames(self, job, paths, instructions, context=None, *, findings=None):

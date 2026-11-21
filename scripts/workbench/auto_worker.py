@@ -156,14 +156,15 @@ class Production:
             self.app.planning.verify(task)
             return
         self.inventory(task, folder)
-        self.progress('正在向模型提交机构资料及实拍检查帧')
+        self.progress('正在观察这批实拍素材')
         context = self.editor.context(task, folder, answer)
         cache_path = folder / 'independent-planning.json'
-        # Rebuild unfinished outlines written before the batch stopped treating source details as core facts.
         evidence = source_evidence(context['sources'])
-        identity = digest({'input': input_fingerprint, 'answer': answer, 'editorialVersion': 3})
+        identity = digest({'input': input_fingerprint, 'answer': answer, 'media': context['media'],
+                           'editorialVersion': 4})
         cache = self.read(cache_path, {})
         if cache.get('input') != identity:
+            self.progress('正在结合实拍与原文确定共同提纲')
             cache = {'input': identity, 'facts': self.editor.batch_outline(context, evidence), 'plans': []}
             self.write(cache_path, cache)
         facts = cache['facts']
@@ -185,7 +186,7 @@ class Production:
                                                    feedback, evidence=evidence, candidate=candidate)
                     candidate = {**angles, 'plan': {k: v for k, v in plan.items() if k != 'facts'}}
                     plan = self.app.planning.validate_item(task, folder, index, plan,
-                                                           lambda job: self.review_candidate(job, context))
+                                                           lambda job: self.review_candidate(job, context, facts))
                     break
                 except (PlanError, StageError) as exc:
                     if isinstance(exc, PlanError) and exc.candidate:
@@ -216,11 +217,17 @@ class Production:
             cache_path.unlink(missing_ok=True)
             raise
 
-    def review_candidate(self, job, context):
+    def review_candidate(self, job, context, outline=()):
         self.invoke('validate-plan', job=job)
+        plan = self.read(job / 'plan.json')
+        audit = self.read(job / 'content-audit.json', {})
+        if self.editor.repair_numeric_references(plan, audit):
+            self.write(job / 'plan.json', plan)
+            self.invoke('validate-plan', job=job)
+            plan = self.read(job / 'plan.json')
+            audit = self.read(job / 'content-audit.json', {})
         try:
-            note = self.editor.review_plan(context, self.read(job / 'plan.json'),
-                                           self.read(job / 'content-audit.json', {}))
+            note = self.editor.review_plan(context, plan, audit, outline=outline)
         except NeedsInput as exc:
             raise PlanError(str(exc)) from exc
         self.invoke('review-content', job=job, extra=['--note', note])
@@ -258,7 +265,7 @@ class Production:
                     self.write(plan_path, plan)
                     # Verify the complete plan before starting voice, so factual review
                     # can request another draft without invalidating paid assets.
-                    self.review_candidate(self.job,context)
+                    self.review_candidate(self.job, context, facts)
                     self.write(marker, {'validated': fingerprint(plan_path)})
                 if is_revision:self.invoke('validate-plan')
                 return
