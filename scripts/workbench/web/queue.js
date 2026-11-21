@@ -39,7 +39,16 @@ renderCreate=function(){
   if(!Object.keys(preferenceMap).length){let n=0;for(const p of selections)for(let i=0;i<p.count;i++)preferenceMap[p.id+':'+i]=createDraft.videoPreferences?.[n++]||'';}
   const label=oldPicker.closest('.form-group').querySelector('.label-row>label');if(label)label.outerHTML='<span class="field-label">出镜数字人与每人数量</span>';
   oldPicker.outerHTML=`<fieldset class="batch-people"><legend class="sr-only">选择出镜数字人与每人制作数量</legend>${people.map(p=>{const s=selections.find(x=>x.id===p.id);return `<div class="batch-person ${s?'is-selected':''}"><label class="batch-person-choice"><input type="checkbox" data-queue-person="${E(p.id)}" aria-label="选择${E(p.name)}" ${s?'checked':''}>${p.hasPortrait?`<img src="/media/person/${E(p.id)}" alt="">`:icon('person')}<span><strong>${E(p.name)}</strong><small>${E(p.social_media_name||'待补齐署名')}</small></span></label><div class="batch-person-count"><label class="sr-only" for="quantity-${E(p.id)}">${E(p.name)}制作数量</label><select data-search="false" id="quantity-${E(p.id)}" data-queue-count="${E(p.id)}" ${s?'':'disabled'}>${Array.from({length:20},(_,i)=>i+1).map(n=>`<option value="${n}" ${n===(s?.count||1)?'selected':''}>${n} 条</option>`).join('')}</select></div></div>`;}).join('')}</fieldset>`;
-  oldCount.closest('.form-group').hidden=true;oldCount.closest('.form-row').classList.add('batch-title-row');
+  const duration = oldCount.closest('.form-group');
+  if (state.config.agent.mode === 'local') {
+    duration.innerHTML = `<label class="field-label" for="target-duration">每条目标时长（秒）</label>
+      <input class="input" id="target-duration" name="targetDurationSeconds" type="number" min="10" max="290" step="1"
+        value="${E(createDraft.targetDurationSeconds ?? 60)}" aria-describedby="duration-help" required>
+      <p class="form-help" id="duration-help">每条成片允许前后 5 秒。</p>`;
+  } else {
+    duration.hidden = true;
+    duration.closest('.form-row').classList.add('batch-title-row');
+  }
   const capturePreferences=()=>f.querySelectorAll('[data-slot-key]').forEach(t=>preferenceMap[t.dataset.slotKey]=t.value);
   const chosen=()=>[...f.querySelectorAll('[data-queue-person]:checked')].map(x=>({id:x.dataset.queuePerson,count:Number(f.querySelector('[data-queue-count="'+CSS.escape(x.dataset.queuePerson)+'"]').value)}));
   const submit = f.querySelector('[type=submit]');
@@ -226,7 +235,7 @@ function batchPlanningHtml(t){
   return `<div class="batch-planning-summary"><div class="batch-item"><span class="queue-number">${icon('folder')}</span><strong class="queue-item-title">批次策划</strong><div class="batch-item-tools">${badge(queueStatusLabel(p),statusClass(p.status))}<div class="queue-actions">${queueButton(p,{inspect:false})}</div></div><p class="queue-item-description">${E(queueDisplayMessage(p))}</p></div><p class="form-help">确认整批的事实、文案与分镜后，依次制作下方视频。</p></div>`;
 }
 function batchItems(t) {
-  return `<section class="batch-items panel" aria-label="本批视频">${batchPlanningHtml(t)}<div class="section-heading"><h2>本批视频</h2><span>${t.completedCount||0}/${t.count} 条已完成</span></div>${t.queueItems.map(x=>{
+  return `<section class="batch-items panel" aria-label="本批视频">${batchPlanningHtml(t)}${t.targetDurationSeconds ? `<p class="form-help">每条目标 ${E(t.targetDurationSeconds)} 秒 · 允许前后 5 秒</p>` : ''}<div class="section-heading"><h2>本批视频</h2><span>${t.completedCount||0}/${t.count} 条已完成</span></div>${t.queueItems.map(x=>{
     const r=t.results.find(r=>r.index===x.index&&r.video);
     return `<div class="batch-item ${x.status==='running'?'is-active':''}"><span class="queue-number" aria-label="本批第 ${x.index+1} 条">${x.index+1}</span><strong class="queue-item-title">${queueItemTitle(x)}</strong><div class="batch-item-tools">${badge(queueStatusLabel(x),statusClass(x.status))}<div class="queue-actions">${r?`<a class="secondary" href="#preview/${t.id}/${x.index}">查看成品</a>${editActions(t.id,x.index)}${!x.settled?queueButton(x,{inspect:false}):''}`:queueButton(x,{inspect:false})}</div></div><p class="queue-item-description">${E(queueDisplayMessage(x))}</p></div>`;
   }).join('')}${batchCoverOperations(t)}</section>`;

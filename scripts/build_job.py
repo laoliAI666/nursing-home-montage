@@ -152,9 +152,14 @@ def build(job):
     if cfg['music'].get('enabled') and cfg['music'].get('resource'):
         music_path=cfg['music']['resource'];music_path=Path(music_path) if Path(music_path).is_absolute() else project_root()/music_path
         if not music_path.exists():raise RuntimeError('Configured music resource missing; select a local licensed track in settings.music.resource')
-        if float(probe(music_path)['format']['duration'])<total:raise RuntimeError('Music is shorter than narration; choose a longer local track')
+        music_duration=float(probe(music_path)['format']['duration'])
+        loop=[]
+        if music_duration<total:
+            if music_duration<=0 or not os.environ.get('MONTAGE_WORKBENCH_DELIVERY'):
+                raise RuntimeError('Music is shorter than narration; choose a longer local track')
+            loop=['-stream_loop','-1']
         (job/'assets/music').mkdir(exist_ok=True)
-        run(['ffmpeg','-y','-v','error','-i',music_path,'-t',total,'-af',f"volume={cfg['music']['static_gain_db']}dB",'-ar','48000','-ac','2','-c:a','pcm_s16le',job/'assets/music/bed.wav'])
+        run(['ffmpeg','-y','-v','error',*loop,'-i',music_path,'-t',total,'-af',f"volume={cfg['music']['static_gain_db']}dB",'-ar','48000','-ac','2','-c:a','pcm_s16le',job/'assets/music/bed.wav'])
         bgm={'enabled':True,'audio':'assets/music/bed.wav','duration':total,'data-fx-chain':{'version':1,'nodes':[{'type':'gain','id':'outro-lift','params':{'gain':0}}]},'data-fx-carve':{'enabled':True,'sources':['female-narration'],'strength':cfg['music']['carve_strength']},'data-automation':{'version':1,'lanes':[{'target':'volume','points':[{'t':0,'v':0},{'t':cfg['music']['fade_in'],'v':1},{'t':max(cfg['music']['fade_in'],total-cfg['music']['fade_out']),'v':1},{'t':total,'v':0}]},{'target':'fx.outro-lift.gain','points':[{'t':0,'v':cfg['music']['speech_gain_db']},{'t':total,'v':cfg['music']['speech_gain_db']}]}]}}
     else:bgm={'enabled':False}
     write(job/'bgm-timeline.json',bgm)

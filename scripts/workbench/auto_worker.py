@@ -10,6 +10,7 @@ from model_api import ModelClient, ModelResponseError
 from pipeline import Pipeline, PreparationTimeout, fingerprint
 from planning import digest
 from job_queue import BILLING_MESSAGE, is_minimax_balance_error
+from duration import DurationRevision, initial_budget, script_units
 
 
 class StageError(ValueError):
@@ -139,6 +140,8 @@ class Production:
             self.terminal('completed', '整批策划及逐条结构校验已通过')
             return
         self.prepare_video(task, answer)
+        duration = DurationRevision(self, task, answer)
+        duration.apply_pending()
         while True:
             result = self.pipe.advance(self.item, self.lease)
             state = result['state']
@@ -146,6 +149,8 @@ class Production:
                 return
             if state == 'needs_review':
                 self.review(result['gate'], answer)
+            elif state == 'revise_duration':
+                duration.revise(result['duration'], result['target'])
             elif state == 'failed':
                 detail = result.get('result', {})
                 if result['step'] == 'voice' and is_minimax_balance_error(detail.get('error')):
@@ -230,6 +235,14 @@ class Production:
                     nonlocal fallback
                     try:
                         self.review_candidate(job, context, facts)
+                        target = task.get('targetDurationSeconds')
+                        if target is not None and not task.get('revisedNarration'):
+                            length = initial_budget(target)
+                            units = script_units(self.read(job/'plan.json'))
+                            if not length['minUnits'] <= units <= length['maxUnits']:
+                                bounds = f"{length['minUnits']}–{length['maxUnits']}"
+                                raise EditorialFeedback(f'程序实数 {units} 字，目标口播约 {bounds} 字。'
+                                                        '请按此长度改写并保留共同要点。')
                     except EditorialFeedback as exc:
                         fallback = (self.read(job / 'plan.json'), angles, self.app.redact(str(exc))[:1000])
                         raise

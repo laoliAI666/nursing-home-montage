@@ -391,8 +391,13 @@ class Editor:
         person = (task.get('videoSpecs') or [{'person': task['person']}] * task['count'])[index]['person']
         revised = task.get('revisedNarration', '')
         evidence = evidence or {}
+        target = task.get('targetDurationSeconds')
+        from duration import initial_budget
+        length = initial_budget(target) if target is not None else {}
         result = self.ask(
-            NARRATOR_CONTEXT + '你负责写一条中文养老机构探访视频。按下列技能规则先写整篇口语稿并做语言润色，再分句选镜和定封面。'
+            NARRATOR_CONTEXT + '以 durationBudget 为本次长度目标，优先合并相关重点，舍弃次要例子。'
+            '它明确给出字数范围，优先于技能中默认的一分钟建议。若未给 durationBudget 则沿用默认。'
+            '你负责写一条中文养老机构探访视频。按下列技能规则先写整篇口语稿并做语言润色，再分句选镜和定封面。'
             '仅使用真实素材，选片基于提供的实看结果。开头和结尾选有运动的源视频；在短片剩余时长足够的区间取镜，'
             '预计每秒 3.5 至 4 个汉字，给足分镜，sourceStart 使用秒数。不要指定资源路径、任何运行设置或关闭审核。'
             '有原文依据的院名按自然口语念。'
@@ -416,6 +421,7 @@ class Editor:
             + self.rules('plan-schema', 'narration', 'narration-polish', 'covers'),
             {**context, 'facts': facts, 'supportingEvidence': evidence, 'person': person, 'index': index + 1, 'total': task['count'],
              'preference': prefs, 'previousAngles': previous, 'feedback': feedback, 'candidate': candidate,
+             'durationBudget': length,
              'revisedNarration': revised, 'publicationOverride': task.get('publicationOverride', {})},
             max_tokens=12000)
         raw = result.get('plan')
@@ -535,8 +541,13 @@ class Editor:
     def review_plan(self, context, plan, audit, *, outline=()):
         response = self.ask(
             NARRATOR_CONTEXT + '核对每句口播与事实原文，核对语义及所有限定词。用已有实看素材描述核对文画关系及封面三槽。'
+            '原文概括了同一卖点时，可以举一个已核对的实拍例子；镜头里的扶手或球桌可如实描述，'
+            '不能扩大成所有房间都配备、某种疗法或某种材质性能。纯画面封面标签允许用对应实拍作依据。'
+            '原文支持的重要服务可用一句简述，并明确是环境背景，勿把普通展柜或康复空间说成该服务的现场。'
+            '打回时在审核说明中用 audit 的 sentences[下标] 精确指明需要修改的句子。'
             '审核口语质量、覆盖范围、结尾咨询、封面及发布文案。材料未支持或文画明显不合时拒绝。'
-            '如有共同提纲，核对每条都在实际口播讲全，实拍可呈现的重点展开，缺少对应画面的重要内容一句带过。按人物语速估计时长，55～65 秒是默认目标；明显超长时建议合并重复句和省略非核心例子。'
+            '如有共同提纲，核对每条都在实际口播讲全，实拍可呈现的重点展开，缺少对应画面的重要内容一句带过。'
+            '成片时长由工作台按实际语音单独核验；不要凭稿件猜实测秒数。'
             '事实、原文限定、共同要点、用户要求、封面承诺和文画明显错配是必须修正的问题。'
             '只有这些均通过，才可将措辞、重复、段落节奏或目标时长单独记为风格问题。'
             'JSON {"ok":true,"hardChecksPassed":true,"note":"具体到口播、事实和素材的审核观察",'

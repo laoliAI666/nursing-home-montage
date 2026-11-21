@@ -119,7 +119,10 @@ def integer_zh(n):
     return out[1:] if out.startswith('一十') else out
 def clean(text):
     from opencc import OpenCC
-    text=OpenCC('t2s').convert(text).replace('〇','零')
+    return spoken_characters(OpenCC('t2s').convert(text))
+
+def spoken_characters(text):
+    text=text.replace('〇','零')
     digits='零一二三四五六七八九'
     text=re.sub(r'\d{4}(?=年)',lambda m:''.join(digits[int(c)] for c in m[0]),text)
     text=re.sub(r'\d+\.\d+',lambda m:integer_zh(m[0].split('.')[0])+'点'+''.join(digits[int(c)] for c in m[0].split('.')[1]),text)
@@ -339,6 +342,14 @@ def voice(job,reuse=None):
         r=engine(job,['resume',out,'--audio-only'])
     if r.returncode not in (0,3):raise RuntimeError(r.stdout[-2200:]+r.stderr[-1000:])
     s=read(out/'run.json');audio=Path(s['tts']['file'])
+    target=os.environ.get('MONTAGE_TARGET_DURATION_SECONDS')
+    if target and not reuse:
+        # Measure audio before the full word alignment. An out-of-range draft
+        # will be rewritten; its sound never drives an avatar.
+        fps=cfg['video']['fps']
+        duration=math.ceil((decoded_duration(audio)+cfg['voice']['start'])*fps)/fps
+        if abs(duration-int(target))>5:
+            return {'durationAdjustmentRequired':duration}
     try:
         alignment=align_audio(audio,text,out,cfg,plan.get('asrPrompt',''),retry_prompt=institution_asr_hint(plan))
     except SpeechAlignmentError:

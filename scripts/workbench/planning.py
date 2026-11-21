@@ -33,7 +33,8 @@ class BatchPlanning:
             if not path.is_file() or any(x.startswith('.') for x in path.relative_to(source).parts): continue
             if re.search(r'access.?key|secret|credential|凭据|密钥', path.name, re.I): continue
             files.append([str(path.relative_to(source)), file_digest(path)])
-        return {'source': str(source), 'files': files, 'facts': task.get('facts', ''),
+        settings = {'targetDurationSeconds': task['targetDurationSeconds']} if 'targetDurationSeconds' in task else {}
+        return {**settings, 'source': str(source), 'files': files, 'facts': task.get('facts', ''),
                 'requirements': task.get('requirements', ''), 'videoPreferences': task.get('videoPreferences', []),
                 'people': task.get('videoSpecs') or [{'person':task['person']}] * task['count'],
                 'music': task.get('musicTrack', {}), 'count': task['count']}
@@ -150,7 +151,15 @@ class BatchPlanning:
                 raise ValueError('逐条计划在复核后发生变化')
             from workspace import video_job
             job = video_job(task,row['index'])
-            if digest(self.read(job/'plan.json')) != row.get('planFingerprint',digest(self.read(expected))): raise ValueError('视频工程与批准计划不一致')
+            original = row.get('planFingerprint',digest(self.read(expected)))
+            current = digest(self.read(job/'plan.json'))
+            revision = self.read(job/'duration-revision.json', {})
+            accepted_revision = (task.get('targetDurationSeconds') is not None
+                                 and revision.get('target') == task['targetDurationSeconds']
+                                 and revision.get('approvedPlan') == original
+                                 and revision.get('replacement') == current)
+            if current != original and not accepted_revision:
+                raise ValueError('视频工程与批准计划不一致')
         return value
 
     def prompt(self, task, folder):

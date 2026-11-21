@@ -445,6 +445,8 @@ class App:
     def create(self, v, original_music=None):
         from management import Management
         Management(self,read,write).ensure_available(v)
+        from duration import parse_target
+        duration = parse_target(v.get('targetDurationSeconds', 60))
         count = max(1, min(20, int(v.get("count", 1))))
         preferences = v.get("videoPreferences", [])
         if not isinstance(preferences, list) or any(not isinstance(x, str) or len(x) > 10000 for x in preferences) or len(preferences) > (100 if v.get('people') else 20):
@@ -504,6 +506,8 @@ class App:
         write(job / '.workbench-batch.json', {'id': ident, 'project': str(self.project)})
         task = {"id": ident, "title": title, "person": person["id"], "personName": '、'.join(dict.fromkeys(x['personName'] for x in specs)) if specs else person["name"], "source": source["folder"], "requirements": str(v.get("requirements", ""))[:20000], "facts": str(v.get("facts", ""))[:40000], "music": music_enabled, "count": count, "status": "draft", "phase": 0, "created": time.time(), "updated": time.time(), "job": str(job), "events": [], "message": "制作要求已保存", "session": str(uuid.uuid4())}
         task["workspace"] = str(workspace)
+        if self.workbench_host == 'local':
+            task['targetDurationSeconds'] = duration
         task['planningRequired']=count>1
         if specs:task['videoSpecs']=specs
         if snapshot:
@@ -805,7 +809,7 @@ class Handler(BaseHTTPRequestHandler):
                 from management import Management
                 return self.reply(200,Management(self.app,read,write).dispatch(url.path.rsplit('/',1)[-1],v))
             if url.path == "/api/draft":
-                allowed = {"institutionId", "requirements", "title", "person", "people", "count", "music", "facts", "videoPreferences", "videoPreferenceMap", "musicTrackId"}
+                allowed = {"institutionId", "requirements", "title", "person", "people", "count", "music", "facts", "videoPreferences", "videoPreferenceMap", "musicTrackId", "targetDurationSeconds"}
                 write(self.app.data / "creation-draft.json", {k: v[k] for k in allowed if k in v})
                 return self.reply(200, {"saved": True})
             match=re.fullmatch(r'/api/queue/items/([a-f0-9]{12})/(retry|cancel|recover|answer)',url.path)
