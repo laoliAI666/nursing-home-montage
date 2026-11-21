@@ -30,6 +30,10 @@ class NeedsInput(ValueError):
     pass
 
 
+class EditorialFeedback(ValueError):
+    """The facts, requirements and visuals passed; the remaining issue is stylistic."""
+
+
 class PlanError(ValueError):
     def __init__(self, message, candidate=None):
         super().__init__(message)
@@ -446,6 +450,9 @@ class Editor:
                 raise PlanError(f'第 {i + 1} 句须包含口播 text 和 shots 数组。')
             # Layout uses the measured speech and glyph geometry in the render engine.
             sentence.pop('captions', None)
+            if not revised and sentence.get('kind') == 'cta' and not (prefs or task.get('requirements')):
+                # These interchangeable CTA forms avoid a known rhotic ASR boundary.
+                sentence['text'] = sentence['text'].replace('在这儿', '在这里').replace('来这儿', '来这里')
             ids = sentence.get('factIds', [])
             if not isinstance(ids, list) or any(not isinstance(f, str) for f in ids):
                 raise PlanError(f'第 {i + 1} 句的 factIds 必须是编号字符串数组，如 ["f1","f2"]。', result)
@@ -529,9 +536,21 @@ class Editor:
         response = self.ask(
             NARRATOR_CONTEXT + '核对每句口播与事实原文，核对语义及所有限定词。用已有实看素材描述核对文画关系及封面三槽。'
             '审核口语质量、覆盖范围、结尾咨询、封面及发布文案。材料未支持或文画明显不合时拒绝。'
-            '如有共同提纲，核对每条都在实际口播讲全，实拍可呈现的重点展开，缺少对应画面的重要内容一句带过。'
-            'JSON {"ok":true,"note":"具体到口播、事实和素材的审核观察"}。\n' + self.rules('content-review'),
+            '如有共同提纲，核对每条都在实际口播讲全，实拍可呈现的重点展开，缺少对应画面的重要内容一句带过。按人物语速估计时长，55～65 秒是默认目标；明显超长时建议合并重复句和省略非核心例子。'
+            '事实、原文限定、共同要点、用户要求、封面承诺和文画明显错配是必须修正的问题。'
+            '只有这些均通过，才可将措辞、重复、段落节奏或目标时长单独记为风格问题。'
+            'JSON {"ok":true,"hardChecksPassed":true,"note":"具体到口播、事实和素材的审核观察",'
+            '"styleIssues":[]}。有任何必须修正的问题，hardChecksPassed 填 false；'
+            '只有风格问题时 ok 填 false、hardChecksPassed 填 true、styleIssues 填具体修改建议。\n'
+            + self.rules('content-review'),
             {**context, 'plan': plan, 'audit': audit, 'outline': outline})
+        issues = response.get('styleIssues')
+        if (response.get('ok') is False and response.get('hardChecksPassed') is True
+                and isinstance(issues, list) and issues and all(isinstance(issue, str) and issue.strip() for issue in issues)
+                and isinstance(response.get('note'), str) and response['note'].strip()):
+            raise EditorialFeedback(response['note'][:600] + '。' + '；'.join(issues)[:400])
+        if response.get('ok') is True and response.get('hardChecksPassed') is False:
+            raise PlanError('复核发现必须修正的问题：' + str(response.get('note', ''))[:850])
         return approved(response)
 
     def review_frames(self, job, paths, instructions, context=None, *, findings=None):

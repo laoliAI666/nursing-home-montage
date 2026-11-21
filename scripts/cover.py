@@ -104,9 +104,14 @@ def prepare(job):
     payload={'header_text':cfg['cover']['header_text'],'title':title_text(plan),'highlights':highlights,'labels':[x['text'] for x in plan['cover']['labels']],
         'institution_name':plan['institution']['name'],'identity':{'person_id':person['id'],'person_name':person['name'],'social_media_name':person['socialMediaName']},
         'avatar':data_uri(avatar),'avatar_box':avbox,'font':data_uri(webfont),'photos':photos}
-    if cfg['cover'].get('image'):payload['provided_cover']=data_uri(cfg['cover']['image'])
+    if cfg['cover'].get('image'):
+        payload['provided_cover']=data_uri(cfg['cover']['image'])
+    elif os.environ.get('MONTAGE_WORKBENCH_DELIVERY'):
+        # Keep the entire main title by reflowing first; if it is too long,
+        # use the short, fact-checked video headline already in the plan.
+        payload['automaticTitleFallback'] = plan['institution']['headline']
     record={'template':'teal-adaptive','content':{k:v for k,v in payload.items() if k not in ('avatar','font','photos','provided_cover')},'sources':sources,'avatarSha256':sha(avatar),'fontSha256':sha(font),'imageGenerationUsed':False}
-    record['inputFingerprint']=digest({'plan':plan.get('cover'),'identity':payload['identity'],'avatarBox':avbox,'institution':plan['institution']['name'],'header':payload['header_text'],'sources':sources,'avatar':record['avatarSha256'],'font':record['fontSha256'],
+    record['inputFingerprint']=digest({'plan':plan.get('cover'),'identity':payload['identity'],'automaticTitleFallback':payload.get('automaticTitleFallback'),'avatarBox':avbox,'institution':plan['institution']['name'],'header':payload['header_text'],'sources':sources,'avatar':record['avatarSha256'],'font':record['fontSha256'],
         'provided':sha(cfg['cover']['image']) if cfg['cover'].get('image') else None,'layout':sha(SKILL/'assets/covers/teal-adaptive/layout.mjs'),'editor':sha(SKILL/'assets/covers/teal-adaptive/cover.html'),'renderer':sha(SKILL/'scripts/cover_renderer.mjs'),'browserRuntime':sha(SKILL/'scripts/browser_runtime.mjs')})
     return cfg,payload,record
 
@@ -126,6 +131,10 @@ def generate(job):
     import project_config as pc
     run(['node',SKILL/'scripts/cover_renderer.mjs',job/'cover-editor.html',out,temp,browser_package(cfg,job)],env=pc.render_env(job))
     record['layout']=read(temp)
+    title_adjustment = record['layout'].get('titleAdjustment')
+    if title_adjustment:
+        record['content']['title'] = record['layout']['title_text']
+        record['content']['highlights'] = record['layout']['title_highlights']
     if cfg['cover'].get('image'):
         image=Path(cfg['cover']['image']);meta=next(s for s in probe(image)['streams'] if s['codec_type']=='video')
         if (meta['width'],meta['height'])!=(1080,1920):raise ValueError('指定封面须为 1080×1920，避免擅自裁切')

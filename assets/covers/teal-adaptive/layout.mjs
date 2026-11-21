@@ -62,7 +62,16 @@ function footerFade(brand){const start=Math.round(brand.y-34),end=Math.round(bra
    if(!fit.fit)l.errors.push('固定头标过长，请调整项目头标。');
    canvas.dataset.ready=String(!l.errors.length);canvas.dataset.labelFontSizes=[l.tags.em,l.tags.em,l.tags.em].join(',');onchange(l);return l;
  }
+ const originalTitle = state.title;
+ let titleAdjustment;
+ if (input.automaticTitleFallback && titleLayout().error) {
+   state.title = originalTitle.replace(/\n/g, '');
+   if (titleLayout().error) state.highlights = '';
+   if (titleLayout().error) state.title = input.automaticTitleFallback;
+   if (titleLayout().error) state.title = '养老机构实地探访';
+   if (!titleLayout().error) titleAdjustment = {original:originalTitle, resolved:state.title};
+ }
  render();
- return {ready:true,report:()=>({...lastLayout,identity:{...input.identity},institution_name:state.brand,title_text:state.title,label_texts:[...state.tags],imageGenerationUsed:false}),png:()=>{if(lastLayout.errors.length)throw new Error(lastLayout.errors.join('; '));return canvas.toDataURL('image/png');},
+ return {ready:true,report:()=>({...lastLayout,identity:{...input.identity},institution_name:state.brand,title_text:state.title,title_highlights:words(),titleAdjustment,label_texts:[...state.tags],imageGenerationUsed:false}),png:()=>{if(lastLayout.errors.length)throw new Error(lastLayout.errors.join('; '));return canvas.toDataURL('image/png');},
  set:patch=>{Object.assign(state,patch);return render();},replacePhoto:async(i,url)=>{photos[i]=await image(url);input.photos[i]={data:url};return render();}};
 }

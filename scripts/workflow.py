@@ -238,6 +238,10 @@ def institution_asr_hint(plan):
     return '机构专名：'+name.translate(str.maketrans('','','（）()')) if name else ''
 
 
+class SpeechAlignmentError(RuntimeError):
+    pass
+
+
 def align_audio(audio,text,out,cfg,prompt='',*,retry_prompt=''):
     from faster_whisper import WhisperModel
     import difflib
@@ -290,7 +294,7 @@ def align_audio(audio,text,out,cfg,prompt='',*,retry_prompt=''):
         except ValueError as error:
             result['numericMapping']={'passed':False,'error':str(error)};result['passed']=False
     write(cached,result)
-    if not result['passed']:raise RuntimeError('Speech content or numeric timing needs review; see '+str(cached))
+    if not result['passed']:raise SpeechAlignmentError('Speech content or numeric timing needs review; see '+str(cached))
     return result
 def voice(job,reuse=None):
     plan,_=validate_plan(job);setup(job);cfg=settings(job);
@@ -335,7 +339,21 @@ def voice(job,reuse=None):
         r=engine(job,['resume',out,'--audio-only'])
     if r.returncode not in (0,3):raise RuntimeError(r.stdout[-2200:]+r.stderr[-1000:])
     s=read(out/'run.json');audio=Path(s['tts']['file'])
-    alignment=align_audio(audio,text,out,cfg,plan.get('asrPrompt',''),retry_prompt=institution_asr_hint(plan))
+    try:
+        alignment=align_audio(audio,text,out,cfg,plan.get('asrPrompt',''),retry_prompt=institution_asr_hint(plan))
+    except SpeechAlignmentError:
+        # Re-synthesize once only for a confirmed transcript mismatch. Preserve
+        # the original audio and QA; keep the approved wording and all gates.
+        failed_check = read(out/'alignment-check.json')
+        if (not os.environ.get('MONTAGE_WORKBENCH_DELIVERY') or reuse or s.get('task_id')
+                or s.get('revisions', 0) or s.get('tts', {}).get('reused_audio')
+                or not failed_check['differences']):
+            raise
+        write(out/'alignment-check-before-retry.json', failed_check)
+        r=engine(job,['revise',out])
+        if r.returncode not in (0,3):raise RuntimeError(r.stdout[-2200:]+r.stderr[-1000:])
+        s=read(out/'run.json');audio=Path(s['tts']['file'])
+        alignment=align_audio(audio,text,out,cfg,plan.get('asrPrompt',''),retry_prompt=institution_asr_hint(plan))
     if s.get('qa_status') not in ('passed','reviewed'):
         r=engine(job,['review',out,'--note','Independent medium model phoneme and word check passed; no human listening claimed.','--evidence',out/'alignment-check.json'])
         if r.returncode:raise RuntimeError(r.stdout)

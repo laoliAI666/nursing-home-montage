@@ -205,6 +205,12 @@ class Pipeline:
                         code = 0
                 if code:
                     return {'state':'failed','step':step,'result':result,'job':str(job)}
+                if step == 'cover':
+                    layout = self.read(job/'cover.json', {}).get('layout', {})
+                    if layout.get('titleAdjustment'):
+                        note = '原封面标题超出两行空间，已自动排入两行：' + layout['title_text'].replace('\n', ' ')
+                        self.save_notices(job, 'cover', [note])
+                        self.app.event(row['taskId'], note)
                 if step == 'package':
                     verified, _ = self.verified_render(job)
                     final = job / 'final.mp4'

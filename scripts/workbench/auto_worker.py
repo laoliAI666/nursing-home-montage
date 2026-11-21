@@ -5,10 +5,11 @@ import threading
 import time
 import uuid
 
-from auto_editor import Editor, NeedsInput, PlanError, approved, source_evidence
-from model_api import ModelClient
+from auto_editor import Editor, EditorialFeedback, NeedsInput, PlanError, approved, source_evidence
+from model_api import ModelClient, ModelResponseError
 from pipeline import Pipeline, PreparationTimeout, fingerprint
 from planning import digest
+from job_queue import BILLING_MESSAGE, is_minimax_balance_error
 
 
 class StageError(ValueError):
@@ -25,6 +26,7 @@ class LocalCoordinator:
             return
         if self.thread and self.thread.is_alive():
             return
+        self.app.queue.park_minimax_balance()
         head = self.app.queue.head() or {}
         owner = head.get('localExecution')
         if owner and not head.get('settled'):
@@ -146,6 +148,9 @@ class Production:
                 self.review(result['gate'], answer)
             elif state == 'failed':
                 detail = result.get('result', {})
+                if result['step'] == 'voice' and is_minimax_balance_error(detail.get('error')):
+                    self.terminal('billing_hold', BILLING_MESSAGE)
+                    return
                 raise ValueError(f"{result['step']} 阶段暂停：" + str(detail.get('error') or detail))
             elif state not in ('checkpoint', 'pending'):
                 raise ValueError('制作阶段返回了未知状态。')
@@ -179,31 +184,18 @@ class Production:
                     continue
                 cache['plans'] = cache['plans'][:index]
             self.progress(f'整批策划：正在编排第 {index + 1}/{task["count"]} 条')
-            feedback, candidate = '', None
-            reference_plan = self.read(folder / items[-1]['plan']) if items else None
-            for attempt in range(4):
-                try:
-                    plan, angles = self.editor.plan(task, index, context, facts, items[-12:],
-                                                   feedback, evidence=evidence, candidate=candidate,
-                                                   reference_plan=reference_plan)
-                    candidate = {**angles, 'plan': {k: v for k, v in plan.items() if k != 'facts'}}
-                    plan = self.app.planning.validate_item(task, folder, index, plan,
-                                                           lambda job: self.review_candidate(job, context, facts))
-                    break
-                except (PlanError, StageError) as exc:
-                    if isinstance(exc, PlanError) and exc.candidate:
-                        candidate = exc.candidate
-                    feedback = self.app.redact(str(exc))[:1000]
-                    if attempt == 3:
-                        raise ValueError(f'第 {index + 1} 条计划未通过校验。{feedback}') from exc
-                    self.progress(f'整批策划：正在修正第 {index + 1}/{task["count"]} 条的校验问题')
+            def validate(plan, review):
+                return self.app.planning.validate_item(task, folder, index, plan, review)
+            plan, angles = self.draft_with_feedback(task, index, context, facts, evidence, validate,
+                                                    items, folder)
             self.write(path, plan)
             item = {**angles, 'index': index, 'plan': str(path.relative_to(folder)), 'person': plan['person']}
             cache['plans'].append({'sha256': fingerprint(path), 'item': item})
             self.write(cache_path, cache)
             items.append(item)
         review = self.editor.ask(
-            '审核整批事实和切入差异是否符合当前任务范围。综合稿要求覆盖共同核心，专题需能引用用户授权。'
+            '审核整批事实和明确的用户要求。综合稿要求覆盖共同核心，专题需能引用用户授权。'
+            '完全重复由程序检查。措辞、切入差异程度或顺序的优化意见写入 differences，不能据此拒绝整批。'
             '按 JSON {"ok":true,"note":"真实判断","facts":"事实范围","differences":"差异检查","preferences":"偏好检查"}。'
             '逐条真实性与文画还将在每条付费前另行核验。',
             {'facts': facts, 'items': items, 'requirements': task.get('requirements', ''),
@@ -219,6 +211,48 @@ class Production:
             cache_path.unlink(missing_ok=True)
             raise
 
+    def draft_with_feedback(self, task, index, context, facts, evidence, validate, items=(), folder=None):
+        previous_plans = [self.read(folder / item['plan']) for item in items]
+        previous_scripts = {tuple(row['text'] for row in plan['sentences']) for plan in previous_plans}
+        angle_keys = ('openingAngle', 'structure', 'coverAngle')
+        previous_angles = {tuple(item[key] for key in angle_keys) for item in items}
+        feedback, candidate, fallback = '', None, None
+        for attempt in range(5):
+            try:
+                plan, angles = self.editor.plan(task, index, context, facts, items[-12:], feedback,
+                                                evidence=evidence, candidate=candidate,
+                                                reference_plan=previous_plans[-1] if items else None)
+                candidate = {**angles, 'plan': {key: val for key, val in plan.items() if key != 'facts'}}
+                if (tuple(row['text'] for row in plan['sentences']) in previous_scripts or
+                        tuple(angles[key] for key in angle_keys) in previous_angles):
+                    raise PlanError('这条与前序口播或切入完全重复。请保留所有核心事实，改换开场和顺序。')
+                def review(job):
+                    nonlocal fallback
+                    try:
+                        self.review_candidate(job, context, facts)
+                    except EditorialFeedback as exc:
+                        fallback = (self.read(job / 'plan.json'), angles, self.app.redact(str(exc))[:1000])
+                        raise
+                return validate(plan, review), angles
+            except (PlanError, StageError, ModelResponseError, EditorialFeedback, NeedsInput) as exc:
+                if isinstance(exc, PlanError) and exc.candidate:
+                    candidate = exc.candidate
+                feedback = self.app.redact(str(exc))[:1000]
+                if isinstance(exc, NeedsInput):
+                    feedback = '略过材料未提及的次要细节，按已核验的原文完成。' + feedback
+            if attempt < 4:
+                self.progress(f'正在修正第 {index + 1}/{task["count"]} 条的文案与分镜（{attempt + 1}/4）')
+        if fallback is None:
+            raise ValueError(f'第 {index + 1} 条已尝试 5 稿，事实、结构或分镜仍无法核验。{feedback}')
+        plan, angles, note = fallback
+        notice = '文案试写 5 轮后，采用最近一份通过事实和分镜核验的稿件。待验收建议：' + note
+        def record_fallback(job):
+            self.invoke('review-content', job=job, extra=['--note', notice])
+            self.pipe.save_notices(job, 'content', [notice])
+        validated = validate(plan, record_fallback)
+        self.progress(f'第 {index + 1} 条已保留文案优化提醒，继续制作')
+        return validated, angles
+
     def review_candidate(self, job, context, outline=()):
         self.invoke('validate-plan', job=job)
         plan = self.read(job / 'plan.json')
@@ -233,6 +267,7 @@ class Production:
         except NeedsInput as exc:
             raise PlanError(str(exc)) from exc
         self.invoke('review-content', job=job, extra=['--note', note])
+        self.pipe.save_notices(job, 'content', [])
 
     def prepare_video(self, task, answer):
         plan_path = self.job / 'plan.json'
@@ -251,38 +286,22 @@ class Production:
         context = self.editor.context(task, folder, answer)
         evidence = source_evidence(context['sources'])
         facts = self.editor.batch_outline(context,evidence)
-        feedback = '';candidate = None;requested_info = None
-        for _ in range(3):
-            try:
-                plan, _ = self.editor.plan(task, self.row['index'], context, facts, [], feedback,
-                                           evidence=evidence, candidate=candidate)
-                candidate = {'plan':plan}
-                if is_revision:
-                    revised = folder.parent / 'revised-plan.json'
-                    self.write(revised, plan)
-                    self.invoke('revise', cli_args=['revise', task['baseJob'], '--out', self.job, '--plan', revised])
-                    self.app.planning.append_facts(task, self.job)
-                else:
-                    self.write(marker, {'generated': True})
-                    self.write(plan_path, plan)
-                    # Verify the complete plan before starting voice, so factual review
-                    # can request another draft without invalidating paid assets.
-                    self.review_candidate(self.job, context, facts)
-                    self.write(marker, {'validated': fingerprint(plan_path)})
-                if is_revision:self.invoke('validate-plan')
-                return
-            except NeedsInput as exc:
-                if is_revision:raise
-                requested_info=exc
-                feedback='略过未提供的非必需细节，用已核验的机构资料完成原要求。上次问题：'+self.app.redact(str(exc))[:1000]
-            except (ValueError, KeyError, AttributeError, TypeError) as exc:
-                if is_revision:
-                    raise
-                requested_info=None
-                candidate=getattr(exc,'candidate',None) or candidate
-                feedback = self.app.redact(str(exc))[:1500]
-        if requested_info is not None:raise requested_info
-        raise ValueError('模型计划未能通过结构检查：' + feedback)
+        if is_revision:
+            plan, _ = self.editor.plan(task, self.row['index'], context, facts, [], evidence=evidence)
+            revised = folder.parent / 'revised-plan.json'
+            self.write(revised, plan)
+            self.invoke('revise', cli_args=['revise', task['baseJob'], '--out', self.job, '--plan', revised])
+            self.app.planning.append_facts(task, self.job)
+            self.invoke('validate-plan')
+            return
+
+        def validate(plan, review):
+            self.write(marker, {'generated': True})
+            self.write(plan_path, plan)
+            review(self.job)
+            return self.read(plan_path)
+        self.draft_with_feedback(task, self.row['index'], context, facts, evidence, validate)
+        self.write(marker, {'validated': fingerprint(plan_path)})
 
     def review(self, gate, answer):
         name = gate.removesuffix('-review')

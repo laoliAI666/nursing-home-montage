@@ -37,7 +37,7 @@ let createDraft = {};
 const main = $('#main');
 const labels = {create:'制作工作台', works:'我的作品', people:'我的数字人', settings:'服务设置', onboarding:'首次使用指南', task:'制作详情', preview:'成品预览'};
 const statusLabels = {draft:'待开始', queued:'等待接手', running:'制作中', needs_input:'需要补充', failed:'执行中断', interrupted:'可继续', cancelled:'已停止', timed_out:'制作超时', stopping:'正在停止', completed:'已完成'};
-function statusClass(status) { return status === 'completed' ? '' : ['needs_input','interrupted','queued','draft','stopping'].includes(status) ? 'warn' : ['failed','cancelled','timed_out'].includes(status) ? 'error' : 'neutral'; }
+function statusClass(status) { return status === 'completed' ? '' : ['needs_input','billing_hold','interrupted','queued','draft','stopping'].includes(status) ? 'warn' : ['failed','cancelled','timed_out'].includes(status) ? 'error' : 'neutral'; }
 function badge(text, cls = '') { return `<span class="badge ${cls}">${E(text)}</span>`; }
 function notify(message, error = false) { const el = $('#toast'); clearTimeout(toastTimer); el.textContent = message; el.classList.toggle('error', error); el.hidden = false; toastTimer = setTimeout(() => el.hidden = true, error ? 6500 : 3800); }
 async function api(path, data, options = {}) {
@@ -846,7 +846,11 @@ function taskControls(t) {
   }
   return '';
 }
-function eventLog(t) {return t.events.length ? t.events.slice().reverse().map(e => `<div class="event ${E(e.kind)}"><time>${new Date(e.time * 1000).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}</time><p>${E(e.message)}</p></div>`).join('') : '<p class="subtle">开始后，素材整理、写稿和制作进度会出现在这里。</p>';}
+function productionEventMessage(message) {
+  const legacy = message.match(/^(.*?：)?voice 阶段暂停：[\s\S]*MiniMax 拒绝了请求（代码 1008）。/);
+  return legacy ? (legacy[1] || '') + 'MiniMax 配音余额不足。充值后可继续配音。' : message;
+}
+function eventLog(t) {return t.events.length ? t.events.slice().reverse().map(e => `<div class="event ${E(e.kind)}"><time>${new Date(e.time * 1000).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}</time><p>${E(productionEventMessage(e.message))}</p></div>`).join('') : '<p class="subtle">开始后，素材整理、写稿和制作进度会出现在这里。</p>';}
 function refreshEventLog(log, task) {
   const {scrollTop, scrollHeight} = log;
   log.innerHTML = eventLog(task);
@@ -869,8 +873,8 @@ function renderOnboarding() {
 function previewReviewNotices(result) {
   const notices = result?.reviewNotices || [];
   if (!notices.length) return '';
-  const names = {provider:'数字人原片', layout:'排版', contrast:'对比度', final:'成片'};
-  return `<details class="panel preview-review-notices"><summary>画面复核提醒（${notices.length}）</summary><ul>${notices.map(({stage,text})=>`<li><strong>${E(names[stage] || '画面')}</strong> ${E(text)}</li>`).join('')}</ul></details>`;
+  const names = {content:'口播文案', cover:'封面', provider:'数字人原片', layout:'排版', contrast:'对比度', final:'成片'};
+  return `<details class="panel preview-review-notices"><summary>制作复核提醒（${notices.length}）</summary><ul>${notices.map(({stage,text})=>`<li><strong>${E(names[stage] || '画面')}</strong> ${E(text)}</li>`).join('')}</ul></details>`;
 }
 function renderPreview() {
   const hash = location.hash.slice(1).split('/');

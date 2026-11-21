@@ -1,5 +1,5 @@
 'use strict';
-Object.assign(statusLabels,{assigned:'正在派发',partial:'部分完成'});
+Object.assign(statusLabels,{assigned:'正在派发',partial:'部分完成',billing_hold:'等待 MiniMax 充值'});
 const inFlight=['queued','running','stopping'];
 function creationSetup(selected) {
   const config = state.config;
@@ -105,6 +105,7 @@ function queueButton(row,options={}){
     const confirm=atHead&&row.kind==='video'&&!row.settled?`<button class="text-button" data-action="queue-recover" data-id="${row.id}" ${pending?'disabled':''}>${pending?'已请求，等待 Agent 确认':'请求确认结束'}</button>`:'';
     return (cancelling?'<button class="text-button" disabled aria-label="取消已提交，等待执行者退出确认">取消中</button>':'<span class="subtle">制作完成，等待执行者退出</span>')+confirm+inspect;
   }
+  if(row.status==='billing_hold')return `<button class="secondary" data-action="queue-retry" data-id="${row.id}" ${row.settled?'':'disabled'}>充值后继续</button>`+cancel;
   if(['failed','interrupted'].includes(row.status))return `<button class="secondary" data-action="queue-retry" data-id="${row.id}" ${!row.settled||!atHead?'disabled':''}>${!row.settled?'等待当前制作结束':!atHead?'等待前序处理':planning?'重试策划':'重试当前条'}</button>`+cancel+inspect;
   if(row.answerPending)return '<span class="subtle">补充已保存，等待当前制作结束</span>'+inspect;
   if(row.status==='needs_input')return `<a class="secondary" href="#task/${row.taskId}">补充信息</a>`+cancel+inspect;
@@ -162,12 +163,15 @@ function queuePanel() {
   if (!q) return '';
   const active = q.items.find(row => row.id === q.headId);
   const planning = active?.kind === 'planning' ? active : null;
-  const pending = q.items.filter(row => row.position), head = pending[0];
-  if (!head && !planning) return '<div class="queue-idle">' + icon('check') + '<span>队列空闲，新任务会从这里按顺序开始。</span></div>';
+  const pending = q.items.filter(row => row.position).sort((a,b)=>a.position-b.position), head = pending[0];
+  const billing = q.items.filter(row=>row.status==='billing_hold');
+  const recharge = billing.length ? `<div class="queue-connection"><span>MiniMax 配音余额不足 · ${billing.length} 条等待充值</span> <a class="text-button" href="${queueItemLink(billing[0])}">查看待充值任务</a></div>` : '';
+  if (!head && !planning) return recharge || '<div class="queue-idle">' + icon('check') + '<span>队列空闲，新任务会从这里按顺序开始。</span></div>';
   const title = planning ? '制作队列' : q.paused ? '队首需要处理' : head.status === 'stopping' ? '正在停止当前制作' : ['completed','cancelled'].includes(head.status) && !head.settled ? '等待当前制作结束确认' : head.status === 'queued' ? '等待按顺序开始' : '正在执行队首';
   const label = planning ? '等待策划' : q.paused ? '队列暂停' : head.status === 'stopping' ? '等待停止' : ['completed','cancelled'].includes(head.status) && !head.settled ? '等待确认' : q.busy ? '执行中' : '已排队';
   return `<section class="queue-panel" aria-label="制作队列">
     <div class="queue-panel-heading"><div><h2>${title}</h2><p>当前队列 ${pending.length} 条 · 按提交顺序 · 同时运行 1 条</p></div>${badge(label,q.paused?'warn':'neutral')}</div>
+    ${recharge}
     ${planning ? queuePreparation(planning) : ''}
     ${head ? `<div class="queue-head">
       <span class="queue-number" aria-label="当前队列第 ${head.position} 位">第 ${head.position} 位</span>

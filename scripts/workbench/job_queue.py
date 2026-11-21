@@ -3,6 +3,7 @@ from pathlib import Path
 import hashlib
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -11,6 +12,12 @@ import uuid
 
 TERMINAL={'completed','cancelled','timed_out'}
 BLOCKED={'failed','needs_input','interrupted'}
+BILLING_MESSAGE='MiniMax 配音余额不足。充值后点「充值后继续」，工作台会从配音继续。'
+
+
+def is_minimax_balance_error(detail):
+    # The frozen voice engine emits this exact provider rejection in its stdout.
+    return bool(re.search(r'MiniMax 拒绝了请求（代码 1008）。', str(detail or '')))
 
 
 class JobQueue:
@@ -29,7 +36,46 @@ class JobQueue:
         self.write(self.path,data)
 
     def head(self,data=None):
-        return next((x for x in (data or self.data())['items'] if not(x['status'] in TERMINAL and x.get('settled'))),None)
+        rows = (data or self.data())['items']
+        active = next((row for row in rows if not row.get('settled')), None)
+        return active or next((row for row in rows if row['status'] not in TERMINAL | {'billing_hold'}), None)
+
+    def park_minimax_balance(self):
+        # Legacy frozen jobs can still return the original provider error.
+        data = self.data()
+        if not any(row['status'] == 'billing_hold' or
+                   (row['status'] == 'failed' and row.get('phase') == 2 and is_minimax_balance_error(row.get('message')))
+                   for row in data['items']):
+            return
+        with self.app.transaction():
+            data = self.data()
+            if any(not row.get('settled') for row in data['items']):
+                return
+            held = [row for row in data['items'] if row['status'] == 'billing_hold' or
+                    (row['status'] == 'failed' and row['kind'] == 'video' and row.get('phase') == 2
+                     and is_minimax_balance_error(row.get('message')))]
+            if not held:
+                return
+            retry_rejected = any(row.get('billingRetry') for row in held)
+            if retry_rejected:
+                for row in data['items']:
+                    row.pop('billingRetry', None)
+            # This installation uses a single MiniMax speech connection for all people.
+            people = self.app.pc.load()['people']
+            affected = [row for row in data['items'] if row['kind'] == 'video' and row['status'] == 'queued'
+                        and not row.get('billingRetry')
+                        and people.get(row.get('person'), {}).get('voice_provider') == 'minimax'
+                        and row.get('phase', 0) < 2]
+            changed = [row for row in held + affected if row['status'] != 'billing_hold']
+            for row in changed:
+                if row['status'] == 'failed':
+                    row['billingDiagnostic'] = row['message']
+                row.update(status='billing_hold', message=BILLING_MESSAGE, updated=time.time())
+            if changed or retry_rejected:
+                self.save(data)
+                for ident in dict.fromkeys(row['taskId'] for row in changed):
+                    self.sync_task(ident)
+                    self.app.event(ident, BILLING_MESSAGE)
 
     def item(self,ident,data=None):
         row=next((x for x in (data or self.data())['items'] if x['id']==ident),None)
@@ -68,7 +114,9 @@ class JobQueue:
 
     def public(self):
         data=self.data();head=self.head(data)
-        pending=[x for x in data['items'] if not(x['status'] in TERMINAL and x.get('settled'))]
+        pending=[x for x in data['items'] if not(x['status'] in TERMINAL | {'billing_hold'} and x.get('settled'))]
+        if head:
+            pending.sort(key=lambda row: row['id'] != head['id'])
         positions = {row['id']: i for i, row in enumerate(
             (row for row in pending if row['kind'] != 'planning'), start=1)}
         fields=('id','taskId','index','kind','sequence','personName','number','title','status','phase','message','created','updated','deadline','stopReason','platformAgentId','settled','recoveryRequested','answerPending','recoveryRequestedAt','recoveryDispatched','recoveryState','recoveryResult')
@@ -94,9 +142,13 @@ class JobQueue:
         if all(x['status'] in TERMINAL and x.get('settled') for x in rows):
             status='completed' if completed==len(rows) else 'partial' if completed else 'timed_out' if any(x['status']=='timed_out' for x in rows) else 'cancelled'
         else:
-            current=next((x for x in rows if not(x['status'] in TERMINAL and x.get('settled'))),rows[-1])
+            status=None
+        waiting = [x for x in rows if not (x['status'] in TERMINAL and x.get('settled'))]
+        current = next((x for x in waiting if not x.get('settled')), None)
+        current = current or next((x for x in waiting if x['status'] != 'billing_hold'), None)
+        current = current or (waiting or rows)[-1]
+        if status is None:
             status='running' if current['status'] in ('assigned','completed') else 'stopping' if current['status']=='cancelled' and not current.get('settled') else current['status']
-        current=next((x for x in rows if not(x['status'] in TERMINAL and x.get('settled'))),rows[-1])
         if status=='timed_out':
             current=next(x for x in reversed(rows) if x['status']=='timed_out')
         message=f"已完成 {completed}/{len(rows)} 条 · "+current['message']
@@ -257,6 +309,16 @@ class JobQueue:
                 if row['kind']=='cover':self.cover_state(row,row['status'],row['message'])
             elif action in ('retry','answer'):
                 self.app.archive.ensure_available(row['taskId'])
+                if action == 'retry' and row['status'] == 'billing_hold' and row.get('settled'):
+                    # Resume this batch's held MiniMax rows in their original FIFO order.
+                    for held in data['items']:
+                        if held['taskId'] == row['taskId'] and held['status'] == 'billing_hold' and held.get('settled'):
+                            held.update(status='queued', billingRetry=True, message='已请求继续 MiniMax 配音，等待制作', updated=time.time())
+                            for field in ('deadline','timeoutMinutes','stopReason'):
+                                held.pop(field,None)
+                    self.save(data)
+                    self.sync_task(row['taskId'])
+                    return row
                 if not head or head['id']!=ident:raise ValueError('只能处理队首，不能插队或越过更早的作业')
                 if row['status'] not in BLOCKED:raise ValueError('当前作业无需重试')
                 if action=='retry' and row['status']=='needs_input':raise ValueError('请先在页面答复当前问题，再继续这一条')
