@@ -159,42 +159,176 @@ function queueItemTitle(row) {
 function queueItemLink(row) {
   return row.kind === 'cover' ? '#video/' + row.taskId + '/' + row.index + '/cover' : '#task/' + row.taskId;
 }
-function queuePreparation(row) {
-  return `<div class="queue-preparation" aria-label="当前批次策划">
-    <div><strong>批次策划</strong> ${badge(queueStatusLabel(row), statusClass(row.status))}
-      <p>${E(queueDisplayMessage(row))}</p>
-      <a class="queue-batch-link" href="${queueItemLink(row)}">${E(row.title)} ${icon('arrow-right')}</a>
-    </div><div class="queue-actions">${queueButton(row)}</div>
-  </div>`;
+const overviewMetrics = [
+  ['working', '制作中'], ['all', '总任务'], ['queued', '排队中'], ['attention', '需处理'], ['review', '待验收']
+];
+const overviewIssueStatuses = ['failed', 'interrupted', 'needs_input', 'billing_hold', 'timed_out'];
+
+function overviewGroups() {
+  const groups = {all:state.tasks, working:[], queued:[], attention:[], review:[]};
+  for (const task of state.tasks) {
+    const status = task.status;
+    if (['running','assigned','stopping'].includes(status)) groups.working.push(task);
+    else if (status === 'queued') groups.queued.push(task);
+    else if (overviewIssueStatuses.includes(status)) groups.attention.push(task);
+    else if (status === 'awaiting_acceptance' && task.results.some(result=>result.video)) groups.review.push(task);
+  }
+  return groups;
 }
-function queuePanel() {
-  const q = state.queue;
-  if (!q) return '';
-  const active = q.items.find(row => row.id === q.headId);
-  const planning = active?.kind === 'planning' ? active : null;
-  const pending = q.items.filter(row => row.position).sort((a,b)=>a.position-b.position), head = pending[0];
-  const billing = q.items.filter(row=>row.status==='billing_hold');
-  const recharge = billing.length ? `<div class="queue-connection"><span>MiniMax 配音余额不足 · ${billing.length} 条等待充值</span> <a class="text-button" href="${queueItemLink(billing[0])}">查看待充值任务</a></div>` : '';
-  if (!head && !planning) return recharge || '<div class="queue-idle">' + icon('check') + '<span>队列空闲，新任务会从这里按顺序开始。</span></div>';
-  const title = planning ? '制作队列' : q.paused ? '队首需要处理' : head.status === 'stopping' ? '正在停止当前制作' : ['completed','cancelled'].includes(head.status) && !head.settled ? '等待当前制作结束确认' : head.status === 'queued' ? '等待按顺序开始' : '正在执行队首';
-  const label = planning ? '等待策划' : q.paused ? '队列暂停' : head.status === 'stopping' ? '等待停止' : ['completed','cancelled'].includes(head.status) && !head.settled ? '等待确认' : q.busy ? '执行中' : '已排队';
-  return `<section class="queue-panel" aria-label="制作队列">
-    <div class="queue-panel-heading"><div><h2>${title}</h2><p>当前队列 ${pending.length} 条 · 按提交顺序 · 同时运行 1 条</p></div>${badge(label,q.paused?'warn':'neutral')}</div>
-    ${recharge}
-    ${planning ? queuePreparation(planning) : ''}
-    ${head ? `<div class="queue-head">
-      <span class="queue-number" aria-label="当前队列第 ${head.position} 位">第 ${head.position} 位</span>
-      <strong class="queue-item-title">${queueItemTitle(head)}</strong>
-      <div class="queue-actions">${queueButton(head)}</div>
-      <div class="queue-item-description"><p>${E(queueDisplayMessage(head))}</p><a class="queue-batch-link" href="${queueItemLink(head)}">${E(head.title)} ${icon('arrow-right')}</a>${!head.settled?'<small>'+(head.kind==='cover'?'首帧更新结束后，会继续下一条。':'当前制作完全结束并确认后，会继续下一条。')+'</small>':''}</div>
-    </div>` : ''}
-    ${pending.length>1?`<details class="queue-next"><summary>查看后面的 ${pending.length-1} 条</summary>${pending.slice(1).map(x=>`<div class="queue-next-item"><span class="queue-number" aria-label="当前队列第 ${x.position} 位">第 ${x.position} 位</span><div class="queue-next-info"><a href="${queueItemLink(x)}">${queueItemTitle(x)}</a><span>${E(x.title)}</span></div><div class="queue-actions">${queueButton(x)}</div></div>`).join('')}</details>`:''}
-    ${typeof productionDiagnosticHtml==='function'?productionDiagnosticHtml(active || head):''}
-    ${connectionHelp(active || head)}
+
+function overviewWaitingRows() {
+  return (state.queue?.items || []).filter(row=>row.status==='queued').sort((a,b)=>a.sequence-b.sequence);
+}
+
+function overviewNotice(title, message, action, urgent=false) {
+  return `<div class="overview-notice ${urgent?'is-urgent':''}">${icon('help')}<div><strong>${E(title)}</strong><p>${E(message)}</p></div>${action}</div>`;
+}
+
+function overviewAlerts(queue, head, groups) {
+  const billing = queue.items.filter(row=>row.kind==='video'&&row.status==='billing_hold');
+  const alerts = [];
+  if (queue.paused && head) {
+    const title = head.status==='needs_input' ? '队首需要补充信息'
+      : head.kind==='planning' ? '批次策划中断' : '队首制作中断';
+    const message = queueDisplayMessage(head).split('\n',1)[0].trim();
+    const summary = message.length > 100 ? message.slice(0,100)+'…' : message;
+    alerts.push(overviewNotice(title,summary,
+      `<a class="text-button" href="${queueItemLink(head)}">查看并处理 ${icon('arrow-right')}</a>`,head.status==='failed'));
+  }
+  if (billing.length) {
+    alerts.push(overviewNotice(`MiniMax 余额不足 · ${billing.length} 条视频等待充值`,
+      '充值后可从配音阶段继续。', '<button class="text-button" data-action="overview-open" data-metric="billing">查看待充值</button>'));
+  }
+  const shownTask = queue.paused ? head?.taskId : null;
+  if (groups.attention.some(task=>task.id!==shownTask && task.status!=='billing_hold')) {
+    alerts.push(overviewNotice('还有批次需要处理','查看中断、超时或待补充信息的批次。',
+      '<button class="text-button" data-action="overview-open" data-metric="attention">查看待处理</button>'));
+  }
+  return alerts.join('');
+}
+
+function overviewActivity(head) {
+  const title = head.kind==='cover' ? '当前封面修改' : head.kind==='planning' ? '当前批次策划' : '当前制作';
+  const phases = state.config.phases || [];
+  const step = Math.min(Math.max(0, Number(head.phase) || 0), Math.max(0, phases.length-1));
+  const stage = head.kind==='video' && ['running','assigned'].includes(head.status) && phases[step]
+    ? `<div class="overview-stage"><span>${E(phases[step])} · 第 ${step+1} / ${phases.length} 阶段</span><progress aria-label="已完成阶段" value="${step}" max="${phases.length}"></progress></div>` : '';
+  const task = state.tasks.find(t=>t.id===head.taskId);
+  return `<section class="overview-status"><div class="overview-status-heading"><h3>${title}</h3>${badge(queueStatusLabel(head),statusClass(head.status))}</div>
+    <div class="overview-status-row"><div><strong>${E(task?.title || head.title)}</strong><p>${queueItemTitle(head)}${stage?'':` · ${E(queueDisplayMessage(head))}`}</p></div>
+      ${stage}<a class="secondary" href="${queueItemLink(head)}">制作详情</a>
+    </div></section>`;
+}
+
+function overviewResults() {
+  const products = new Map();
+  for (const task of state.archives || []) {
+    for (const r of task.results) products.set(`${task.id}/${r.index}`,{
+      title:r.title, url:`#preview/archive/${task.id}/${r.index}/${r.version}`, time:task.updated
+    });
+  }
+  for (const task of state.tasks) {
+    for (const r of task.results.filter(result=>result.video)) products.set(`${task.id}/${r.index}`,{
+      title:r.title, url:`#preview/${task.id}/${r.index}`, time:task.updated
+    });
+  }
+  return [...products.values()].sort((a,b)=>b.time-a.time).slice(0,2);
+}
+
+function overviewNext(queue, head, groups, hasAlerts) {
+  if (head && queue.busy) return overviewActivity(head);
+  if (groups.working.length) {
+    const task = groups.working[0];
+    return `<section class="overview-status"><h3>当前制作</h3><div class="overview-status-row"><div><strong>${E(task.title)}</strong><p>${E(task.message)}</p></div><a class="secondary" href="#task/${task.id}">制作详情</a></div></section>`;
+  }
+  const next = overviewWaitingRows()[0];
+  const nextTask = next ? state.tasks.find(t=>t.id===next.taskId) : groups.queued[0];
+  if (next || nextTask) {
+    const message = queue.paused ? '等待队首恢复' : next ? queueDisplayMessage(next) : nextTask.message;
+    return `<section class="overview-status"><h3>接下来</h3><div class="overview-status-row">
+      <div><strong>${E(nextTask?.title || next.title)}</strong><p>${E(message || '按提交顺序等待开始')}</p></div>
+      <a class="secondary" href="${next?queueItemLink(next):`#task/${nextTask.id}`}">查看进度</a>
+    </div>${head?.id===next?.id?connectionHelp(next):''}</section>`;
+  }
+  if (groups.review.length) {
+    return `<section class="overview-status"><h3>待验收成品</h3>${groups.review.slice(0,2).map(task=>
+      `<div class="overview-status-row"><strong>${E(task.title)}</strong><a class="secondary" href="#task/${task.id}">查看验收</a></div>`).join('')}</section>`;
+  }
+  if (hasAlerts) return '';
+  const recent = overviewResults();
+  return `<section class="overview-status"><h3>当前没有待处理任务</h3>${recent.length?
+    `<div class="overview-recent"><span>最近完成</span>${recent.map(r=>`<a class="text-button" href="${E(r.url)}">${E(r.title)} ${icon('arrow-right')}</a>`).join('')}</div>`:''}</section>`;
+}
+
+function projectOverview() {
+  const groups = overviewGroups();
+  const queue = state.queue || {items:[]};
+  const head = queue.items.find(row=>row.id===queue.headId);
+  const alerts = overviewAlerts(queue,head,groups);
+  return `<section class="project-overview" aria-labelledby="project-overview-title"><h2 id="project-overview-title">项目总览</h2>
+    <div class="overview-metrics" aria-label="批次统计">${overviewMetrics.map(([key,label])=>
+      `<button type="button" class="overview-metric" data-action="overview-open" data-metric="${key}" aria-haspopup="dialog">
+        <span>${label}</span><span class="overview-reading"><strong>${groups[key].length}</strong><small>批</small></span>${icon('arrow-up-right')}
+      </button>`).join('')}</div>
+    ${alerts}${overviewNext(queue,head,groups,Boolean(alerts))}
   </section>`;
 }
+
+function overviewDetail(metric, groups) {
+  const waiting = overviewWaitingRows();
+  const waitingOrder = new Map();
+  for (const row of waiting.filter(row=>row.kind!=='cover')) {
+    if (!waitingOrder.has(row.taskId)) waitingOrder.set(row.taskId,waitingOrder.size);
+  }
+  const billingRows = (state.queue?.items || []).filter(row=>row.kind==='video'&&row.status==='billing_hold');
+  const tasks = metric==='billing' ? groups.all.filter(task=>billingRows.some(row=>row.taskId===task.id))
+    : metric==='queued' ? [...groups.queued].sort((a,b)=>(waitingOrder.get(a.id)??waiting.length)-(waitingOrder.get(b.id)??waiting.length))
+    : groups[metric];
+  const taskIds = new Set(tasks.map(task=>task.id));
+  const extra = metric==='queued' ? waiting.filter(row=>!taskIds.has(row.taskId) || row.kind==='cover') : [];
+  const rows = tasks.map(task=>{
+    const count = (metric==='billing'?billingRows:waiting).filter(row=>row.taskId===task.id&&row.kind==='video').length;
+    const note = metric==='billing' ? ` · ${count} 条视频待充值`
+      : metric==='queued' && count ? ` · ${count} 条视频排队` : '';
+    return `<li><div><strong>${E(task.title)}</strong><p>${E(statusLabels[task.status] || task.status)}${note}</p></div><a class="secondary" href="#task/${task.id}">查看任务</a></li>`;
+  }).join('');
+  const extraRows = extra.map(row=>`<li><div><strong>${E(state.tasks.find(task=>task.id===row.taskId)?.title || row.title)}</strong>
+    <p>${queueItemTitle(row)}${row.position?` · 队列第 ${row.position} 位`:''}</p></div><a class="secondary" href="${queueItemLink(row)}">查看进度</a></li>`).join('');
+  return (rows ? `<ul class="overview-detail-list">${rows}</ul>` : '<p class="subtle">当前没有符合此状态的批次。</p>') +
+    (extraRows ? `<h3>同批后续与封面修改</h3><ul class="overview-detail-list">${extraRows}</ul>` : '');
+}
+
+function paintProjectOverview() {
+  const slot = $('#project-overview-area');
+  if (!slot) return;
+  const html = projectOverview();
+  if (slot.overviewHtml === html) return;
+  const focused = slot.contains(document.activeElement) && document.activeElement.dataset.metric;
+  slot.innerHTML = html;
+  slot.overviewHtml = html;
+  if (focused) slot.querySelector(`[data-metric="${focused}"]`)?.focus({preventScroll:true});
+}
+
 const tasksBeforeQueue=renderTasks;
-renderTasks=function(){tasksBeforeQueue();main.querySelector('.page-heading').insertAdjacentHTML('afterend','<div id="queue-panel-area">'+queuePanel()+'</div>');};
+renderTasks=function(){
+  tasksBeforeQueue();
+  main.querySelector('.page-heading').insertAdjacentHTML('afterend','<div id="project-overview-area"></div>');
+  paintProjectOverview();
+};
+document.addEventListener('click',e=>{
+  const button=e.target.closest('[data-action="overview-open"]');
+  if (!button) return;
+  const metric=button.dataset.metric;
+  const groups=overviewGroups();
+  const label=metric==='billing'?'待充值':overviewMetrics.find(([key])=>key===metric)[1]+` · ${groups[metric].length} 批`;
+  const dialog=managementDialog(label,button);
+  const body=dialog.querySelector('.management-dialog-content');
+  body.innerHTML=`<div class="overview-detail-scroll" tabindex="0" role="region" aria-label="批次明细">${overviewDetail(metric,groups)}</div>
+    <div class="acceptance-actions"><button type="button" class="secondary" data-close-overview>关闭</button></div>`;
+  body.querySelector('[data-close-overview]').onclick=()=>dialog.close();
+  body.addEventListener('click',event=>{if(event.target.closest('a[href^="#"]'))dialog.close();});
+  body.querySelector('.overview-detail-scroll').focus();
+});
 const taskControlsBeforeQueue=taskControls;
 function taskAnswerRow(t) {
   if(t.planning&&t.planning.id===t.activeItemId)return t.planning;
@@ -250,17 +384,14 @@ taskCurrent=function(t){if(t.queueItems?.length&&['queued','partial','cancelled'
 const taskBeforeQueue=renderTask;
 renderTask=function(){taskBeforeQueue();const t=state.tasks.find(x=>x.id===selectedTask);if(!t?.queueItems?.length)return;const stageArea=$('#task-stages');if(['partial','cancelled','timed_out'].includes(t.status))stageArea.hidden=true;else if(t.status==='queued'&&t.queueItems.every(x=>!x.phase))stageArea.innerHTML=stages(-1,false);stageArea.insertAdjacentHTML('afterend',batchItems(t));if(t.status==='needs_input'){const question=document.createElement('section');question.className='panel queue-question-panel';question.append($('#task-current'),$('#task-controls'));stageArea.before(question);}};
 const refreshBeforeQueue=refresh;
-refresh=async function(paint=true){
-  const oldQueue=state?.queue, oldAgent=state?.config.agent, open=$('.queue-next')?.open;
+refresh=async function(paint=true,force=false){
+  const oldQueue=state?.queue, oldAgent=state?.config.agent;
   const previous=state?.tasks.find(x=>x.id===selectedTask);
-  await refreshBeforeQueue(paint);
+  await refreshBeforeQueue(paint,force);
   if(!paint)return;
   const queueChanged=JSON.stringify(oldQueue)!==JSON.stringify(state.queue);
   const agentChanged=oldAgent?.canDispatch!==state.config.agent.canDispatch;
-  if((queueChanged||agentChanged)&&$('#queue-panel-area')){
-    $('#queue-panel-area').innerHTML=queuePanel();
-    if(open&&$('.queue-next'))$('.queue-next').open=true;
-  }
+  if(route==='tasks')paintProjectOverview();
   if(route!=='task')return;
   const t=state.tasks.find(x=>x.id===selectedTask);
   if(!t?.queueItems?.length)return;

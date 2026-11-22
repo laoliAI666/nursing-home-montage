@@ -106,7 +106,7 @@ function enhanceManagement(){
   if(!toolbar&&items.length&&main.querySelector('.page-heading,.detail-top')){
     toolbar=document.createElement('div');toolbar.className='management-toolbar';
     toolbar.innerHTML='<label class="manage-selection"><input type="checkbox" aria-label="全选当前列表"><span>全选当前列表</span></label><span class="management-count">已选 0 项</span><button type="button" class="danger-button" data-manage-bulk disabled>删除所选</button>';
-    main.querySelector('.page-heading,.detail-top').after(toolbar);
+    (main.querySelector('#project-overview-area') || main.querySelector('.page-heading,.detail-top')).after(toolbar);
     toolbar.querySelector('input').onchange=e=>{managementSelection.clear();for(const x of managementObjects()){const selected=e.target.checked;x.el.querySelector('.manage-selection input').checked=selected;if(selected)managementSelection.set(managementKey(x),x);}updateSelectionBar();};
     toolbar.querySelector('[data-manage-bulk]').onclick=e=>openDelete([...managementSelection.values()],e.currentTarget);
   }
