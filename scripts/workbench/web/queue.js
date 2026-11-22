@@ -1,6 +1,11 @@
 'use strict';
 Object.assign(statusLabels,{assigned:'正在派发',partial:'部分完成',billing_hold:'等待 MiniMax 充值'});
 const inFlight=['queued','running','stopping'];
+function durationHelp(value) {
+  return Number(value) === 60
+    ? '70 秒内按原速。超过时最多加速至 1.15 倍，仍超过就改稿。'
+    : '每条成片允许前后 5 秒。';
+}
 function creationSetup(selected) {
   const config = state.config;
   if (config.agent.mode !== 'local') return null;
@@ -44,7 +49,10 @@ renderCreate=function(){
     duration.innerHTML = `<label class="field-label" for="target-duration">每条目标时长（秒）</label>
       <input class="input" id="target-duration" name="targetDurationSeconds" type="number" min="10" max="290" step="1"
         value="${E(createDraft.targetDurationSeconds ?? 60)}" aria-describedby="duration-help" required>
-      <p class="form-help" id="duration-help">每条成片允许前后 5 秒。</p>`;
+      <p class="form-help" id="duration-help">${durationHelp(createDraft.targetDurationSeconds ?? 60)}</p>`;
+  $('#target-duration').addEventListener('input', e => {
+    $('#duration-help').textContent = durationHelp(e.target.value);
+  });
   } else {
     duration.hidden = true;
     duration.closest('.form-row').classList.add('batch-title-row');
@@ -369,7 +377,7 @@ function batchPlanningHtml(t){
   return `<div class="batch-planning-summary"><div class="batch-item"><span class="queue-number">${icon('folder')}</span><strong class="queue-item-title">批次策划</strong><div class="batch-item-tools">${badge(queueStatusLabel(p),statusClass(p.status))}<div class="queue-actions">${queueButton(p,{inspect:false})}</div></div><p class="queue-item-description">${E(queueDisplayMessage(p))}</p></div><p class="form-help">确认整批的事实、文案与分镜后，依次制作下方视频。</p></div>`;
 }
 function batchItems(t) {
-  return `<section class="batch-items panel" aria-label="本批视频">${batchPlanningHtml(t)}${t.targetDurationSeconds ? `<p class="form-help">每条目标 ${E(t.targetDurationSeconds)} 秒 · 允许前后 5 秒</p>` : ''}<div class="section-heading"><h2>本批视频</h2><span>${t.completedCount||0}/${t.count} 条已完成</span></div>${t.queueItems.map(x=>{
+  return `<section class="batch-items panel" aria-label="本批视频">${batchPlanningHtml(t)}${t.targetDurationSeconds ? `<p class="form-help">每条目标 ${E(t.targetDurationSeconds)} 秒。 ${durationHelp(t.targetDurationSeconds)}</p>` : ''}<div class="section-heading"><h2>本批视频</h2><span>${t.completedCount||0}/${t.count} 条已完成</span></div>${t.queueItems.map(x=>{
     const r=t.results.find(r=>r.index===x.index&&r.video);
     return `<div class="batch-item ${x.status==='running'?'is-active':''}"><span class="queue-number" aria-label="本批第 ${x.index+1} 条">${x.index+1}</span><strong class="queue-item-title">${queueItemTitle(x)}</strong><div class="batch-item-tools">${badge(queueStatusLabel(x),statusClass(x.status))}<div class="queue-actions">${r?`<a class="secondary" href="#preview/${t.id}/${x.index}">查看成品</a>${editActions(t.id,x.index)}${!x.settled?queueButton(x,{inspect:false}):''}`:queueButton(x,{inspect:false})}</div></div><p class="queue-item-description">${E(queueDisplayMessage(x))}</p></div>`;
   }).join('')}${batchCoverOperations(t)}</section>`;

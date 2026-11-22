@@ -5,8 +5,8 @@ import re
 import shutil
 
 from planning import digest, file_digest
+from narration_timing import MINUTE_TARGET, TOLERANCE, duration_rule, frame_duration
 
-TOLERANCE = 5
 MAX_REVISIONS = 3
 
 
@@ -18,21 +18,29 @@ def parse_target(value):
     return value
 
 
-def within_target(seconds, target):
-    return math.isfinite(seconds) and target - TOLERANCE <= seconds <= target + TOLERANCE
-
-
 def initial_budget(target):
     # Initial estimate only. Once speech exists we use the same person's measured pace.
-    return {'targetSeconds': target, 'minUnits': round((target - 4) * 3.8),
-            'maxUnits': round((target + 2) * 3.8)}
+    lower, upper = (205, 230) if target == MINUTE_TARGET else (
+        round((target - 4) * 3.8), round((target + 2) * 3.8))
+    opening, closing = round(upper * .12), round(upper * .09)
+    return {'targetSeconds': target, 'minUnits': lower, 'maxUnits': upper,
+            'sections': {'hook': opening, 'body': upper - opening - closing, 'cta': closing}}
+
+
+def budget_issue(units, budget):
+    lower, upper = budget['minUnits'], budget['maxUnits']
+    if units > upper:
+        return f'程序实数 {units} 字，超出 {upper} 字上限。请压短正文并保留共同要点。'
+    if units < lower and budget['targetSeconds'] != MINUTE_TARGET:
+        return f'程序实数 {units} 字，目标口播约 {lower}–{upper} 字。'
+    return ''
 
 
 def measured_duration(job, read):
     duration = read(job/'voice.json')['duration']
     settings = read(job/'runtime.json')['settings']
     fps = settings['video']['fps']
-    return math.ceil((settings['voice']['start'] + duration) * fps) / fps
+    return frame_duration(duration, settings['voice']['start'], fps)
 
 
 def script_units(plan):
@@ -114,15 +122,15 @@ class DurationRevision:
         self.write(self.receipt, {**receipt, 'applied':True})
 
     def revise(self, seconds, target):
-        from auto_editor import EditorialFeedback
+        from auto_editor import EditorialFeedback, NeedsInput
         from model_api import ModelConnectionError
 
         job, worker = self.job, self.worker
         prior = self.read(self.receipt, {})
         attempt = prior.get('attempt', 0) + 1
         if attempt > MAX_REVISIONS or self.task.get('revisedNarration'):
-            raise ValueError(f'实测 {seconds:.1f} 秒，目标 {target - TOLERANCE}–{target + TOLERANCE} 秒。'
-                             '请调整目标时长或提供可改写的文案。')
+            raise NeedsInput(f'配音实测 {seconds:.1f} 秒，本条要求 {duration_rule(target)}。'
+                             '请确认可删减的段落，或调整时长要求。')
 
         worker.progress(f'配音实测 {seconds:.1f} 秒，正在调整口播至 {target} 秒左右（{attempt}/{MAX_REVISIONS}）')
         current = self.read(job/'plan.json')
@@ -145,10 +153,12 @@ class DurationRevision:
         sizes = [script_units({'sentences': [row]}) for row in original_rows]
         rows = {i: {'index':i, 'label':row.get('label',''), 'original':row['text'],
                     'goal':max(3, round(size * estimated_units / planned)),
-                    'sources':[refs[key] for key in row.get('factIds',[])],
+                    'sources':[{'id':key,'quote':refs[key]} for key in row.get('factIds',[])],
+                    'core':[fact['text'] for fact in outline if fact['id'] in row.get('factIds',[])],
                     'shots':[shot.get('description','') for shot in row.get('shots',[])]}
                 for i,(row,size) in enumerate(zip(original_rows,sizes),1)}
-        texts = {i: row['original'] for i,row in rows.items()}
+        edits_by_index = {i: {'index':i,'text':row['original']} for i,row in rows.items()}
+        media = {row['path']: row for row in context.get('media', [])}
         requested = list(rows)
         feedback = ''
         preferences = self.task.get('videoPreferences') or [''] * self.task['count']
@@ -165,20 +175,28 @@ class DurationRevision:
                     '只按原文说临床服务和设施性能。没有能明确对应的画面时，机构方案只提名称，'
                     '普通步道、展柜和康复训练画面用作背景，不能添加防滑性质、展区用途或医务室等场所身份。'
                     '第 1 行交代机构与开场，最后一行只保留一个咨询动作。每行都应与自己的分镜相符。'
+                    '正文如需更换分镜，可以额外填写一个 media 中真实存在的 path；否则沿用原镜头并删掉镜头不能支持的承诺。'
                     '只输出请求的小节，每个 index 一次，格式 {"sentences":[{"index":1,"text":"简短口播。"}]}。',
                     {'actualSeconds':round(seconds,2),'targetSeconds':target,'minUnits':lower,'maxUnits':upper,
                      'required':self.task.get('requirements',''),'preference':preferences[worker.row['index']],
                      'coverTitle':current['cover']['main_title'], 'feedback':feedback,
-                     'lines':[dict(rows[index],previous=texts[index]) for index in requested]}, max_tokens=3000)
+                     'media':{path:shot['description'] for path,shot in media.items()},
+                     'lines':[dict(rows[index],previous=edits_by_index[index]['text']) for index in requested]}, max_tokens=3000)
                 edits = proposal.get('sentences')
                 if not isinstance(edits, list) or any(not isinstance(edit, dict) for edit in edits):
                     raise ValueError('每个指定小节都要返回新的 text。')
-                updates = {edit.get('index'):edit.get('text') for edit in edits if type(edit.get('index')) is int}
+                updates = {edit['index']:edit for edit in edits if type(edit.get('index')) is int}
                 if len(edits) != len(updates) or set(updates) != set(requested) or any(
-                        not isinstance(text,str) or not text.strip() for text in updates.values()):
+                        not isinstance(edit.get('text'),str) or not edit['text'].strip() for edit in updates.values()):
                     raise ValueError('按指定序号逐项改写，保留每一行。')
-                texts.update(updates)
-                plan = revised_plan(current,[{'index':i,'text':text} for i,text in texts.items()])
+                edits_by_index.update(updates)
+                plan = revised_plan(current,list(edits_by_index.values()))
+                for i, edit in edits_by_index.items():
+                    path = edit.get('path')
+                    if isinstance(path, str) and path in media and 1 < i < len(rows):
+                        plan['sentences'][i - 1]['shots'] = [{
+                            'path':path, 'sourceStart':0, 'weight':1,
+                            'description':media[path]['description']}]
                 counts = {i:script_units({'sentences':[row]}) for i,row in enumerate(plan['sentences'],1)}
                 units = sum(counts.values())
                 if not lower <= units <= upper:
@@ -217,7 +235,7 @@ class DurationRevision:
                 flagged = {int(index)+1 for index in re.findall(r'sentences\[(\d+)\]',feedback)}
                 requested = [i for i in rows if i in flagged] or list(rows)
         else:
-            raise ValueError(f'实测 {seconds:.1f} 秒，自动改稿仍未达到 {target} 秒的要求。{feedback}')
+            raise NeedsInput(f'配音实测 {seconds:.1f} 秒，本条要求 {duration_rule(target)}。自动改稿卡在以下复核问题，请确认可删减或替换的内容。{feedback}')
 
         worker.checkpoint()
         previous = digest(current)

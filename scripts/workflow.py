@@ -1,6 +1,7 @@
 """Project-scoped orchestration. All media and timings are job data, not skill constants."""
 from pathlib import Path
 import copy,hashlib,json,math,os,re,shutil,subprocess,sys,zipfile
+from narration_timing import MINUTE_TARGET, frame_duration, minute_tempo, within_target
 
 SKILL=Path(__file__).resolve().parent.parent
 ENGINE=SKILL/'modules/digital-human'
@@ -299,6 +300,31 @@ def align_audio(audio,text,out,cfg,prompt='',*,retry_prompt=''):
     write(cached,result)
     if not result['passed']:raise SpeechAlignmentError('Speech content or numeric timing needs review; see '+str(cached))
     return result
+def fit_voice_duration(audio, out, cfg, target):
+    if target is None:
+        return audio, {}
+    lead, fps = cfg['voice']['start'], cfg['video']['fps']
+    original = decoded_duration(audio)
+    duration = frame_duration(original, lead, fps)
+    if within_target(duration, target):
+        return audio, {}
+    rate = minute_tempo(original, lead, fps) if target == MINUTE_TARGET else None
+    if rate is None:
+        return audio, {'durationAdjustmentRequired':duration}
+
+    sped = out/'narration-tempo.mp3'
+    temp = out/'narration-tempo.tmp.mp3'
+    run(['ffmpeg','-y','-v','error','-i',audio,'-vn','-af',f'atempo={rate:.10f}',
+         '-c:a','libmp3lame','-q:a','2',temp])
+    fitted = frame_duration(decoded_duration(temp), lead, fps)
+    if not within_target(fitted, target):
+        temp.unlink()
+        return audio, {'durationAdjustmentRequired':duration}
+    temp.replace(sped)
+    return sped, {'tempoAdjustment':{'rate':rate,'beforeSeconds':duration,'afterSeconds':fitted,
+                                     'sourceSha256':sha(audio)}}
+
+
 def voice(job,reuse=None):
     plan,_=validate_plan(job);setup(job);cfg=settings(job);
     from preflight import require_preflight
@@ -306,7 +332,12 @@ def voice(job,reuse=None):
     require_preflight(job);require_review(job)
     if not cfg['voice'].get('speaker'):raise ValueError('请先选择已就绪的数字人，或为该人物完成音色复刻。')
     text=(job/'narration.txt').read_text(encoding='utf-8').strip();out=job/'runs/voice'
-    key=digest({'text':text,'tts':read(job/'avatar-engine.json')['tts'],'connection':cfg.get('person',{}).get('connection'),'project':str(project_root())})
+    target=os.environ.get('MONTAGE_TARGET_DURATION_SECONDS')
+    target=int(target) if target and not reuse else None
+    cache_inputs={'text':text,'tts':read(job/'avatar-engine.json')['tts'],'connection':cfg.get('person',{}).get('connection'),'project':str(project_root())}
+    if target == MINUTE_TARGET:
+        cache_inputs['durationPolicy']={'target':target,'lead':cfg['voice']['start'],'fps':cfg['video']['fps']}
+    key=digest(cache_inputs)
     cache=project_root()/'作品/.montage-cache/voice'/f'{key}.json'
     if (job/'voice.json').exists():
         existing=read(job/'voice.json')
@@ -323,6 +354,7 @@ def voice(job,reuse=None):
             audio=out/'narration.mp3';checked=read(out/'alignment-check.json')
             if checked.get('passed') and checked.get('sha256')==sha(audio) and checked.get('textSha256')==digest(text):
                 result={'audio':str(audio),'sha256':sha(audio),'duration':decoded_duration(audio),'alignment':str(out/'alignment-check.json'),'textSha256':digest(text),'cacheKey':key,'reusedVerifiedVoice':True}
+                if restored.get('tempoAdjustment'):result['tempoAdjustment']=restored['tempoAdjustment']
                 write(job/'voice.json',result);state(job,phase='voice_ready',next='build');return result
             raise RuntimeError('Cached voice alignment does not match its audio/text; refuse regeneration until reviewed')
     cached=read(cache) if cache.exists() else None
@@ -331,6 +363,7 @@ def voice(job,reuse=None):
         if checked.get('passed') and checked.get('sha256')==cached['sha256'] and checked.get('textSha256')==digest(text):
             out.mkdir(parents=True);audio=copy_asset(cached['audio'],out/'narration.mp3');copy_asset(cached['alignment'],out/'alignment-check.json')
             result={'audio':str(audio),'sha256':sha(audio),'duration':decoded_duration(audio),'alignment':str(out/'alignment-check.json'),'textSha256':digest(text),'cacheKey':key,'reusedVerifiedVoice':True}
+            if cached.get('tempoAdjustment'):result['tempoAdjustment']=cached['tempoAdjustment']
             write(job/'voice.json',result);state(job,phase='voice_ready',next='build');return result
     if not out.exists():
         args=['generate','--text-file',job/'narration.txt','--out',out,'--audio-only']
@@ -341,15 +374,9 @@ def voice(job,reuse=None):
         if s['text']!=text or s['config']['tts']!=read(job/'avatar-engine.json')['tts']:raise RuntimeError('Narration/config changed; use a new job version')
         r=engine(job,['resume',out,'--audio-only'])
     if r.returncode not in (0,3):raise RuntimeError(r.stdout[-2200:]+r.stderr[-1000:])
-    s=read(out/'run.json');audio=Path(s['tts']['file'])
-    target=os.environ.get('MONTAGE_TARGET_DURATION_SECONDS')
-    if target and not reuse:
-        # Measure audio before the full word alignment. An out-of-range draft
-        # will be rewritten; its sound never drives an avatar.
-        fps=cfg['video']['fps']
-        duration=math.ceil((decoded_duration(audio)+cfg['voice']['start'])*fps)/fps
-        if abs(duration-int(target))>5:
-            return {'durationAdjustmentRequired':duration}
+    s=read(out/'run.json');raw=Path(s['tts']['file'])
+    audio,timing=fit_voice_duration(raw,out,cfg,target)
+    if 'durationAdjustmentRequired' in timing:return timing
     try:
         alignment=align_audio(audio,text,out,cfg,plan.get('asrPrompt',''),retry_prompt=institution_asr_hint(plan))
     except SpeechAlignmentError:
@@ -363,16 +390,25 @@ def voice(job,reuse=None):
         write(out/'alignment-check-before-retry.json', failed_check)
         r=engine(job,['revise',out])
         if r.returncode not in (0,3):raise RuntimeError(r.stdout[-2200:]+r.stderr[-1000:])
-        s=read(out/'run.json');audio=Path(s['tts']['file'])
+        s=read(out/'run.json');raw=Path(s['tts']['file'])
+        audio,timing=fit_voice_duration(raw,out,cfg,target)
+        if 'durationAdjustmentRequired' in timing:return timing
         alignment=align_audio(audio,text,out,cfg,plan.get('asrPrompt',''),retry_prompt=institution_asr_hint(plan))
     if s.get('qa_status') not in ('passed','reviewed'):
-        r=engine(job,['review',out,'--note','Independent medium model phoneme and word check passed; no human listening claimed.','--evidence',out/'alignment-check.json'])
+        evidence=out/'alignment-check.json'
+        if audio != raw:
+            # The speech provider's original receipt and review keep their own audio hash.
+            original_check=out/'original-check'
+            original_check.mkdir(exist_ok=True)
+            align_audio(raw,text,original_check,cfg,plan.get('asrPrompt',''),retry_prompt=institution_asr_hint(plan))
+            evidence=original_check/'alignment-check.json'
+        r=engine(job,['review',out,'--note','Independent medium model phoneme and word check passed; no human listening claimed.','--evidence',evidence])
         if r.returncode:raise RuntimeError(r.stdout)
         r=engine(job,['resume',out,'--audio-only'])
         if r.returncode:raise RuntimeError(r.stdout)
-    write(job/'voice.json',{'audio':str(audio),'sha256':sha(audio),'duration':decoded_duration(audio),'alignment':str(out/'alignment-check.json'),'textSha256':digest(text),'cacheKey':key})
+    write(job/'voice.json',{'audio':str(audio),'sha256':sha(audio),'duration':decoded_duration(audio),'alignment':str(out/'alignment-check.json'),'textSha256':digest(text),'cacheKey':key,**timing})
     if not reuse:
-        write(cache,{'audio':str(audio),'sha256':sha(audio),'alignment':str(out/'alignment-check.json')})
-        shared.store_files('voice',key,{'audio':audio,'alignment':out/'alignment-check.json'},{'textSha256':digest(text)},owner=job)
+        write(cache,{'audio':str(audio),'sha256':sha(audio),'alignment':str(out/'alignment-check.json'),**timing})
+        shared.store_files('voice',key,{'audio':audio,'alignment':out/'alignment-check.json'},{'textSha256':digest(text),**timing},owner=job)
     state(job,phase='voice_ready',next='build')
     return read(job/'voice.json')

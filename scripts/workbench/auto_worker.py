@@ -10,7 +10,7 @@ from model_api import ModelClient, ModelResponseError
 from pipeline import Pipeline, PreparationTimeout, fingerprint
 from planning import digest
 from job_queue import BILLING_MESSAGE, is_minimax_balance_error
-from duration import DurationRevision, initial_budget, script_units
+from duration import DurationRevision, budget_issue, initial_budget, script_units
 
 
 class StageError(ValueError):
@@ -171,7 +171,7 @@ class Production:
         cache_path = folder / 'independent-planning.json'
         evidence = source_evidence(context['sources'])
         identity = digest({'input': input_fingerprint, 'answer': answer, 'media': context['media'],
-                           'editorialVersion': 4})
+                           'editorialVersion': 5})
         cache = self.read(cache_path, {})
         if cache.get('input') != identity:
             self.progress('正在结合实拍与原文确定共同提纲')
@@ -221,6 +221,9 @@ class Production:
         previous_scripts = {tuple(row['text'] for row in plan['sentences']) for plan in previous_plans}
         angle_keys = ('openingAngle', 'structure', 'coverAngle')
         previous_angles = {tuple(item[key] for key in angle_keys) for item in items}
+        target = task.get('targetDurationSeconds')
+        length = initial_budget(target) if target is not None and not task.get('revisedNarration') else None
+        preferences = task.get('videoPreferences') or [''] * task['count']
         feedback, candidate, fallback = '', None, None
         for attempt in range(5):
             try:
@@ -228,23 +231,34 @@ class Production:
                                                 evidence=evidence, candidate=candidate,
                                                 reference_plan=previous_plans[-1] if items else None)
                 candidate = {**angles, 'plan': {key: val for key, val in plan.items() if key != 'facts'}}
-                if (tuple(row['text'] for row in plan['sentences']) in previous_scripts or
-                        tuple(angles[key] for key in angle_keys) in previous_angles):
+                if tuple(angles[key] for key in angle_keys) in previous_angles:
                     raise PlanError('这条与前序口播或切入完全重复。请保留所有核心事实，改换开场和顺序。')
+
+                def prepare(job):
+                    nonlocal candidate
+                    current = self.read(job/'plan.json')
+                    if length:
+                        units = script_units(current)
+                        if units > length['maxUnits'] and self.editor.shorten_narration(
+                                current, length, facts, preferences[index]):
+                            self.write(job/'plan.json', current)
+                            self.invoke('validate-plan', job=job)
+                            current = self.read(job/'plan.json')
+                        candidate = {**angles, 'plan': {key: val for key, val in current.items() if key != 'facts'}}
+                        issue = budget_issue(script_units(current), length)
+                        if issue:
+                            raise PlanError(issue, candidate)
+                    if tuple(row['text'] for row in current['sentences']) in previous_scripts:
+                        raise PlanError('这条与前序口播重复，请在保留共同事实的前提下调整开场和叙述顺序。')
+
                 def review(job):
                     nonlocal fallback
                     try:
-                        self.review_candidate(job, context, facts)
-                        target = task.get('targetDurationSeconds')
-                        if target is not None and not task.get('revisedNarration'):
-                            length = initial_budget(target)
-                            units = script_units(self.read(job/'plan.json'))
-                            if not length['minUnits'] <= units <= length['maxUnits']:
-                                bounds = f"{length['minUnits']}–{length['maxUnits']}"
-                                raise EditorialFeedback(f'程序实数 {units} 字，目标口播约 {bounds} 字。'
-                                                        '请按此长度改写并保留共同要点。')
+                        self.review_candidate(job, context, facts, prepare=prepare)
                     except EditorialFeedback as exc:
-                        fallback = (self.read(job / 'plan.json'), angles, self.app.redact(str(exc))[:1000])
+                        checked = self.read(job/'plan.json')
+                        if not length or not budget_issue(script_units(checked), length):
+                            fallback = (checked, angles, self.app.redact(str(exc))[:1000])
                         raise
                 return validate(plan, review), angles
             except (PlanError, StageError, ModelResponseError, EditorialFeedback, NeedsInput) as exc:
@@ -256,7 +270,7 @@ class Production:
             if attempt < 4:
                 self.progress(f'正在修正第 {index + 1}/{task["count"]} 条的文案与分镜（{attempt + 1}/4）')
         if fallback is None:
-            raise ValueError(f'第 {index + 1} 条已尝试 5 稿，事实、结构或分镜仍无法核验。{feedback}')
+            raise ValueError(f'第 {index + 1} 条已尝试 5 稿，字数、事实或分镜仍未通过复核。{feedback}')
         plan, angles, note = fallback
         notice = '文案试写 5 轮后，采用最近一份通过事实和分镜核验的稿件。待验收建议：' + note
         def record_fallback(job):
@@ -266,8 +280,10 @@ class Production:
         self.progress(f'第 {index + 1} 条已保留文案优化提醒，继续制作')
         return validated, angles
 
-    def review_candidate(self, job, context, outline=()):
+    def review_candidate(self, job, context, outline=(), *, prepare=None):
         self.invoke('validate-plan', job=job)
+        if prepare:
+            prepare(job)
         plan = self.read(job / 'plan.json')
         audit = self.read(job / 'content-audit.json', {})
         if self.editor.repair_numeric_references(plan, audit):

@@ -6,6 +6,7 @@ import re
 import subprocess
 
 from model_api import ModelResponseError, image_part
+from duration import initial_budget, script_units
 
 
 NARRATOR_CONTEXT = (
@@ -140,10 +141,12 @@ class Editor:
     def context(self, task, folder, answer):
         inventory = self.read(folder / 'inventory.json')
         sources = {x['path']: x['text'] for x in inventory['files'] if x['kind'] == 'text'}
+        target = task.get('targetDurationSeconds')
         return {
             'sources': sources, 'media': self.media(folder, inventory),
             'institutionName': task.get('institutionName') or '',
             'requirements': task.get('requirements', ''), 'answer': answer,
+            'durationBudget': initial_budget(target) if target is not None else {},
         }
 
     def batch_outline(self, context, evidence):
@@ -163,7 +166,9 @@ class Editor:
             '康复器械不能证明有医务室或绿色就医通道。'
             '地点只引出机构，不列为展开点。开业年份、规模、交通和数字清单通常不作为共同重点，由逐条按切入取舍。'
             '有辨识度的照护方案属于可简述的核心；没有方案画面时，只录名称和照护类型，省去工具、方法和效果。'
-            '从 evidence 选择实际原文编号，不自造原文；每条避免堆砌无法在一分钟内讲清的事实。'
+            '从 evidence 选择实际原文编号，不自造原文。durationBudget.sections.body 是每条正文的可读字数。'
+            '先用两到三个短段分配正文容量，合并照护分区和特色照护等能同段交代的要点。'
+            '优先保留用户必讲和实拍能说明的事实，把次要例子留在 supportingEvidence，避免共同提纲越来越长。'
         )
         data.update(evidence=evidence, observedMedia=observed)
         feedback = ''
@@ -279,16 +284,18 @@ class Editor:
     def short_label(value):
         return isinstance(value, str) and bool(value.strip()) and len(value) <= 12 and not any(c in value for c in '\r\n')
 
-    def complete_common_facts(self, sentences, facts, missing, media):
+    def complete_common_facts(self, sentences, facts, missing, media, length):
         needed = {row['id']: row for row in facts if row['id'] in missing}
         response = self.ask(
             '只补齐 missing 中没有在口播覆盖的共同要点，保留其他句子。'
             '已有句子说清这个要点时，可填现有句号并保持该句原字，仅补原文编号。'
-            '需要补新句时，sentence 填 null，text 用一句口语完整表达这个要点，'
+            '优先用现有句子承载事实。需要补新句时，sentence 填 null，text 写最短的口语表达，'
             '保留原文的数值、适用条件和范围，不加其他细节。path 从素材清单选一个直接画面或相关院内背景。'
+            '各条合计须符合 durationBudget。空间不足时，把补句写短，后续会就地压缩其他正文。'
             '返回 JSON {"edits":{"共同事实编号":{"sentence":null,"text":"口播句","path":"素材路径"}}}。'
             '句号从 1 开始，首句及结尾不得修改。',
-            {'missing': needed, 'sentences': {str(i): row['text'] for i, row in enumerate(sentences, 1)},
+            {'missing': needed, 'durationBudget':length, 'spokenUnits':script_units({'sentences':sentences}),
+             'sentences': {str(i): row['text'] for i, row in enumerate(sentences, 1)},
              'media': {path: info['description'] for path, info in media.items()}},
             max_tokens=2400)
         edits = response.get('edits')
@@ -361,13 +368,15 @@ class Editor:
         result = self.ask(
             '上一轮完整策划缺少口播结构，本轮只重写口播并选择真实镜头。'
             + NARRATION_OUTLINE +
+            '完整口播受 durationBudget 限制。用 sections 分配开头、正文和咨询结尾，事例每段最多一个。'
             '使用实际 facts 和 evidence 的编号，每个共同事实一定写进正文并在对应句标明 f 编号。'
             'preference 是本条要求。开头和结尾选观察到运动的视频，各句也可填写一个相关背景的 path。'
             '写成与 previous 切入和叙述顺序有区别的完整版本。'
             '返回 JSON {"openingAngle":"切入","structure":"顺序","coverAngle":"主题","title":"本条标题",'
             '"sentences":[{"text":"口播句","kind":"hook|fact|cta","factIds":["f1"],"path":"素材路径"}]}。',
             {'institutionName': context['institutionName'], 'facts': facts, 'evidence': evidence,
-             'media': context['media'], 'previous': previous, 'index': index + 1, 'preference': preference},
+             'media': context['media'], 'previous': previous, 'index': index + 1, 'preference': preference,
+             'durationBudget':context.get('durationBudget', {})},
             max_tokens=4500)
         if not isinstance(result.get('sentences'), list) or not result['sentences']:
             raise PlanError('模型的独立口播补稿没有返回句子，请重新生成。')
@@ -392,11 +401,11 @@ class Editor:
         revised = task.get('revisedNarration', '')
         evidence = evidence or {}
         target = task.get('targetDurationSeconds')
-        from duration import initial_budget
         length = initial_budget(target) if target is not None else {}
         result = self.ask(
             NARRATOR_CONTEXT + '以 durationBudget 为本次长度目标，优先合并相关重点，舍弃次要例子。'
             '它明确给出字数范围，优先于技能中默认的一分钟建议。若未给 durationBudget 则沿用默认。'
+            '按 sections 的容量写开头、正文和结尾，各部分加起来不能超过 maxUnits。结尾预留约一短句。'
             '你负责写一条中文养老机构探访视频。按下列技能规则先写整篇口语稿并做语言润色，再分句选镜和定封面。'
             '仅使用真实素材，选片基于提供的实看结果。开头和结尾选有运动的源视频；在短片剩余时长足够的区间取镜，'
             '预计每秒 3.5 至 4 个汉字，给足分镜，sourceStart 使用秒数。不要指定资源路径、任何运行设置或关闭审核。'
@@ -488,7 +497,7 @@ class Editor:
         expected = common_ids
         used = {ident: None for sentence in sentences for ident in sentence.get('factIds', [])}
         if expected - used.keys() and not (authorization or revised):
-            self.complete_common_facts(sentences, facts, expected - used.keys(), selected)
+            self.complete_common_facts(sentences, facts, expected - used.keys(), selected, length)
             used = {ident: None for sentence in sentences for ident in sentence.get('factIds', [])}
         unknown = sorted(set(used) - references.keys())
         missing = sorted(expected - set(used)) if not authorization else []
@@ -501,6 +510,44 @@ class Editor:
             raise PlanError('。'.join(issues) + '。', result)
         return plan, {**angles, 'factCoverage': [f for f in used if f in expected], 'mode': 'topic' if authorization else 'comprehensive',
                       'topicAuthorization': authorization}
+
+    def shorten_narration(self, plan, budget, outline, preference):
+        rows = plan['sentences']
+        counts = [script_units({'sentences':[row]}) for row in rows]
+        total = sum(counts)
+        eligible = [i for i in range(1, len(rows) - 1) if rows[i].get('kind', 'fact') == 'fact']
+        excess = total - budget['maxUnits'] + 3
+        selected, capacity = [], 0
+        for i in sorted(eligible, key=counts.__getitem__, reverse=True):
+            selected.append(i)
+            capacity += counts[i]
+            if capacity >= excess * 2.5:
+                break
+        if not selected or capacity <= excess:
+            return False
+        limit = capacity - excess
+        evidence = {row['id']:row['quote'] for row in plan['facts']}
+        core = {row['id']:row['text'] for row in outline}
+        response = self.ask(
+            '只压缩列出的正文句，全部加起来至多 maxUnits 个读出的字。'
+            '删掉导语、重复总结、并列例子和未拍到的细节，每句保留对应的必讲事实、限定词及和当前镜头的对应。'
+            '只返回 {"sentences":[{"index":2,"text":"改写句"}]}，每个给定编号恰好出现一次。',
+            {'maxUnits':limit, 'preference':preference, 'lines':[
+                {'index':i + 1, 'text':rows[i]['text'], 'goal':max(1, round(counts[i] * limit / capacity)),
+                 'facts':[{'quote':evidence[key], 'mustSay':core.get(key)} for key in rows[i].get('factIds', [])],
+                 'shots':[shot.get('description','') for shot in rows[i].get('shots', [])]} for i in sorted(selected)]},
+            max_tokens=3000)
+        edits = response.get('sentences')
+        if not isinstance(edits, list) or any(not isinstance(edit, dict) for edit in edits):
+            return False
+        updates = {edit['index'] - 1:edit.get('text') for edit in edits if type(edit.get('index')) is int}
+        if len(updates) != len(edits) or set(updates) != set(selected) or any(
+                not isinstance(text, str) or not text.strip() for text in updates.values()):
+            return False
+        for i, text in updates.items():
+            rows[i]['text'] = text.strip()
+            rows[i].pop('captions', None)
+        return True
 
     def repair_numeric_references(self, plan, audit):
         numeric_error = ' 的数字需要可核对的 factIds 原文引用。'

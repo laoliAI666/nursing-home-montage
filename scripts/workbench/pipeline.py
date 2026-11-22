@@ -10,7 +10,8 @@ import os
 from pathlib import Path
 import re
 
-from duration import measured_duration, within_target
+from duration import measured_duration
+from narration_timing import duration_rule, within_target
 import shutil
 import signal
 import subprocess
@@ -197,7 +198,7 @@ class Pipeline:
             if step in ('final-review', 'package') and target is not None:
                 rendered = self.read(job/'verification.json', {}).get('duration')
                 if rendered is not None and not within_target(rendered, target):
-                    raise ValueError(f'成片实测 {rendered:.1f} 秒，超出 {target} 秒前后 5 秒的范围。')
+                    raise ValueError(f'成片实测 {rendered:.1f} 秒，本条要求 {duration_rule(target)}。')
             if step=='check' and journal.get('reviewedCheck') and (job/'check.json').is_file() and journal['reviewedCheck']==fingerprint(job/'check.json'):
                 journal.pop('reviewedCheck')
             elif step.endswith('-review'):
@@ -209,6 +210,9 @@ class Pipeline:
                 code,result=self.invoke(row,lease,step)
                 if not code and step == 'voice' and target is not None and 'durationAdjustmentRequired' in result:
                     return {'state':'revise_duration','duration':result['durationAdjustmentRequired'],'target':target}
+                if not code and step == 'voice' and (tempo := result.get('tempoAdjustment')):
+                    self.app.event(row['taskId'], f"配音实测 {tempo['beforeSeconds']:.2f} 秒，"
+                                   f"已按 {tempo['rate']:.3f} 倍微加速至 {tempo['afterSeconds']:.2f} 秒。")
                 while (code==2 or result.get('pending')) and time.monotonic()+10<deadline:
                     # Poll the same registered provider task; no model round trip.
                     time.sleep(max(0, min(10, current.get('deadline', float('inf')) - time.time())))
