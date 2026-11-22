@@ -171,7 +171,7 @@ class Production:
         cache_path = folder / 'independent-planning.json'
         evidence = source_evidence(context['sources'])
         identity = digest({'input': input_fingerprint, 'answer': answer, 'media': context['media'],
-                           'editorialVersion': 5})
+                           'editorialVersion': 6})
         cache = self.read(cache_path, {})
         if cache.get('input') != identity:
             self.progress('正在结合实拍与原文确定共同提纲')
@@ -254,7 +254,17 @@ class Production:
                 def review(job):
                     nonlocal fallback
                     try:
-                        self.review_candidate(job, context, facts, prepare=prepare)
+                        try:
+                            self.review_candidate(job, context, facts, prepare=prepare)
+                        except PlanError as exc:
+                            if not length:
+                                raise
+                            current = self.read(job/'plan.json')
+                            if not self.editor.repair_review_sentences(current, context, facts,
+                                                                       str(exc), preferences[index]):
+                                raise
+                            self.write(job/'plan.json', current)
+                            self.review_candidate(job, context, facts, prepare=prepare)
                     except EditorialFeedback as exc:
                         checked = self.read(job/'plan.json')
                         if not length or not budget_issue(script_units(checked), length):

@@ -7,6 +7,7 @@ import subprocess
 
 from model_api import ModelResponseError, image_part
 from duration import initial_budget, script_units
+from narration_timing import MINUTE_TARGET
 
 
 NARRATOR_CONTEXT = (
@@ -151,6 +152,8 @@ class Editor:
 
     def batch_outline(self, context, evidence):
         data = {k: v for k, v in context.items() if k not in ('sources', 'media')}
+        minute = context.get('durationBudget', {}).get('targetSeconds') == MINUTE_TARGET
+        compact = minute and not context.get('requirements')
         observed = {f'M{i}': {k: shot[k] for k in ('path', 'kind', 'description')}
                     for i, shot in enumerate(context['media'], 1)}
         schema = ('返回 JSON {"facts":[{"text":"一个共同要点","evidenceId":"e1",'
@@ -171,6 +174,11 @@ class Editor:
             '优先保留用户必讲和实拍能说明的事实，把次要例子留在 supportingEvidence，避免共同提纲越来越长。'
         )
         data.update(evidence=evidence, observedMedia=observed)
+        if compact:
+            constraints += (
+                '此批每篇至少 3 项、最多 5 项，每项只写一件事。共同事实要写成约 20 字的编辑提示，'
+                '保留三类照护分区、机构特色照护、居室和公共生活中最有依据的内容。'
+                '一句话里列两种以上设备、服务方法或设施性质的，一律改为有直接依据的一个例子。')
         feedback = ''
         for _ in range(3):
             result = self.ask(
@@ -185,7 +193,10 @@ class Editor:
                     '次要、臃肿、重复或缺乏依据的条目删除。通常保留一篇能覆盖的三到六项共同核心，用户明确要求的要点照常保留。'
                     + constraints + '输出修正后的完整列表。' + schema,
                     {**data, 'candidateFacts': result['facts']})
-                return self.validate_outline(checked, evidence, observed)
+                facts = self.validate_outline(checked, evidence, observed)
+                if compact and len(facts) > 5:
+                    raise PlanError('一分钟正文最多放 5 个共同事实。请合并最相关的项或删去次要项。')
+                return facts
             except PlanError as exc:
                 feedback = str(exc)
         question(result)
@@ -402,6 +413,10 @@ class Editor:
         evidence = evidence or {}
         target = task.get('targetDurationSeconds')
         length = initial_budget(target) if target is not None else {}
+        compact = ('一分钟默认稿以共同事实为主。只用直接拍到的细节举例。'
+                   '额外的就医安排、数字清单、工具、疗法与效果等细节，只有用户指定或已列为共同事实才写入。'
+                   '写设施时直接描述镜头里的物件和位置，写服务时沿用原文范围和条件。'
+                   if target == MINUTE_TARGET and not (revised or prefs or task.get('requirements')) else '')
         result = self.ask(
             NARRATOR_CONTEXT + '以 durationBudget 为本次长度目标，优先合并相关重点，舍弃次要例子。'
             '它明确给出字数范围，优先于技能中默认的一分钟建议。若未给 durationBudget 则沿用默认。'
@@ -414,7 +429,7 @@ class Editor:
             '各事实写进实际口播后，在对应句的 factIds 数组中逐项标明传入的编号，如 ["f1","f2"]。'
             '综合稿的 sentences 必须覆盖 facts 中全部 f 编号。额外细节可用 supportingEvidence 中支持该句的 e 编号，'
             '这些细节无需全部写入。句子有多个事实时可标多个编号。封面标签或 publication 写了数字时也提供 factIds。'
-            + NARRATION_OUTLINE +
+            + NARRATION_OUTLINE + compact +
             'show 优先配该项 mediaPaths，依据 visibleDetail 核对能够直接展示的具体内容。'
             '收到 feedback 时逐项修正。candidate 是待修订的上一个草稿，保留其中已符合要求的内容。'
             '用对应原文编号支持每个事实句，不用无关编号凑数。'
@@ -549,6 +564,52 @@ class Editor:
             rows[i].pop('captions', None)
         return True
 
+    def repair_review_sentences(self, plan, context, outline, feedback, preference):
+        rows = plan['sentences']
+        indexes = sorted({int(i) for i in re.findall(r'sentences\[(\d+)\]', feedback)
+                          if int(i) < len(rows)})
+        if not indexes:
+            return False
+        facts = {row['id']:row['quote'] for row in plan['facts']}
+        core = {row['id']:row['text'] for row in outline}
+        media = {row['path']:row for row in context.get('media', [])}
+        result = self.ask(
+            '按复核意见只修改列出的句子。保留所有 mustSay。省略没有原文或镜头支撑的可选细节，'
+            '保留原文的服务范围、限定和程度。选入新镜头时从 media 提供精确 path。'
+            '开头和咨询结尾沿用原镜头。每句控制在原长度内。'
+            '返回 {"sentences":[{"index":0,"text":"改写后的句子"}]}，只用给定的下标。'
+            '没有 mustSay 的正文若属可选细节且没有依据，可返回 text 为空字符串，随后删除该句。',
+            {'feedback':feedback, 'preference':preference, 'requirements':context.get('requirements', ''),
+             'media':{k:v['description'] for k,v in media.items()},
+             'lines':[{'index':i,'text':rows[i]['text'],'kind':rows[i].get('kind','fact'),
+                       'shots':rows[i]['shots'],'facts':[{'quote':facts[k], 'mustSay':core.get(k)}
+                           for k in rows[i].get('factIds', [])]} for i in indexes]},
+            max_tokens=3000)
+        edits = result.get('sentences')
+        if not isinstance(edits, list) or any(not isinstance(edit, dict) for edit in edits):
+            return False
+        updates = {edit['index']:edit for edit in edits if type(edit.get('index')) is int}
+        if set(updates) != set(indexes) or len(edits) != len(indexes) or any(
+                not isinstance(edit.get('text'), str) for edit in updates.values()):
+            return False
+        removed = []
+        for i, edit in updates.items():
+            row = rows[i]
+            replacement = edit['text'].strip()
+            if not replacement:
+                if (0 < i < len(rows) - 1 and row.get('kind','fact') == 'fact'
+                        and not (context.get('requirements') or preference or set(row.get('factIds', [])) & core.keys())):
+                    removed.append(i)
+                continue
+            row['text'] = replacement
+            row.pop('captions', None)
+            path = edit.get('path')
+            if isinstance(path, str) and path in media and 0 < i < len(rows) - 1 and row.get('kind','fact') == 'fact':
+                row['shots'] = [{'path':path,'sourceStart':0,'weight':1,'description':media[path]['description']}]
+        for i in sorted(removed, reverse=True):
+            del rows[i]
+        return True
+
     def repair_numeric_references(self, plan, audit):
         numeric_error = ' 的数字需要可核对的 factIds 原文引用。'
         failing = {error.removesuffix(numeric_error) for error in audit.get('structuralErrors', [])
@@ -596,6 +657,8 @@ class Editor:
             '如有共同提纲，核对每条都在实际口播讲全，实拍可呈现的重点展开，缺少对应画面的重要内容一句带过。'
             '成片时长由工作台按实际语音单独核验；不要凭稿件猜实测秒数。'
             '事实、原文限定、共同要点、用户要求、封面承诺和文画明显错配是必须修正的问题。'
+            '区分原文支持的可用设施与当前画面里正在发生的动作。只说可以使用已拍到的设施时，不要求画面有人使用。'
+            '需要修正时，开头先列必须修正的具体下标和原因，已通过的观察省略。'
             '只有这些均通过，才可将措辞、重复、段落节奏或目标时长单独记为风格问题。'
             'JSON {"ok":true,"hardChecksPassed":true,"note":"具体到口播、事实和素材的审核观察",'
             '"styleIssues":[]}。有任何必须修正的问题，hardChecksPassed 填 false；'
