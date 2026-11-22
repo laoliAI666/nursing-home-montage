@@ -9,7 +9,6 @@ import subprocess
 from model_api import ModelResponseError, image_part
 from duration import initial_budget, script_units
 from narration_timing import MINUTE_TARGET
-from narration_editor import VOICE_STYLE
 
 
 NARRATOR_CONTEXT = (
@@ -28,6 +27,26 @@ NARRATION_OUTLINE = (
     '对家属探望有用时可在一句内说具体，不套用同一句。'
     '同批各条通过开头、叙述顺序、句式和少量例子区分。'
 )
+
+
+NARRATION_SOURCE_RULES = (
+    '用机构原文核对事实，用 coreFacts 中已核对的实拍细节举例。'
+    'treatment 为 show 的要点可用 visibleDetail 展开，brief 的要点简述即可。'
+    '保留正式名称和原文的适用范围，一处配置只描述这一处。'
+    '直接向观众介绍，省去资料出处、宣传套话和未经核实的效果或承诺。'
+)
+
+
+def narration_material(context, facts):
+    return {
+        'institutionName': context['institutionName'],
+        'requirements': context['requirements'],
+        'original': context['sources'],
+        'coreFacts': [
+            {'text': row['text'], 'treatment': row['treatment'], 'visibleDetail': row['visibleDetail']}
+            for row in facts
+        ],
+    }
 
 
 def narration_length_instruction(budget):
@@ -420,42 +439,31 @@ class Editor:
     def draft_narration(self, context, facts, preference, budget, index, feedback=''):
         # A rotation changes the entry point while every script keeps the same facts.
         ordered = facts[index % len(facts):] + facts[:index % len(facts)]
-        goal = (budget['minUnits'] + budget['maxUnits']) // 2
-        per_topic = (goal - 45) // len(ordered)
         result = self.ask(
-            '写一篇养老院探访口播。'
-            + narration_length_instruction(budget) + '内容限于已核对清单里的事实与可见细节。'
-            + VOICE_STYLE +
-            f'开头交代院名，约 25 字。按清单顺序写 {len(ordered)} 个正文短段，每段约 {per_topic} 字，'
-            '一个重点说一两句。最后约 20 字，邀请留言了解参观。'
-            '每段先讲清一件事，再说明它对长辈日常有什么直接用途。保留正式名称。'
-            '正文只说清单中给出的事实，可自然改述，勿添加细节或承诺。'
-            '省略清单以外的开业年份、规模、疗法、就医、膳食、历史和宣传词。'
-            '局部画面只讲眼前能核实的细节，避免推断材质和功效。'
-            '只交口播正文。使用 JSON {"paragraphs":["开头","正文段","结尾"]}，每段是实际会读的话。'
-            '用户明确要求专题时可聚焦专题。', {
-                'institutionName':context['institutionName'],
-                'requirements':context['requirements'], 'preference':preference,
-                'coreFacts':[row['text'] for row in ordered],
-                # Full source is useful when the user specifies particular content.
-                **({'original':context['sources']} if preference or context['requirements'] else {}),
-                'feedback':feedback
-            }, max_tokens=2500)
+            '用客观自然的带看口吻，给长辈和家属写一篇养老机构探访口播。'
+            '开头尽早交代是哪家机构，可从一个具体特点切入。正文讲全 coreFacts，相关要点可合段。'
+            '用户明确要求专题时按专题写。结尾留一句留言咨询参观。'
+            + NARRATION_SOURCE_RULES + narration_length_instruction(budget) +
+            '篇幅偏短时，从原文和实拍里补充能把要点讲清楚的细节。通读去掉套话和重复。'
+            '输出 {"paragraphs":["开头","正文段","结尾"]}，正文可有多段，每段只填实际要念的话。',
+            {**narration_material(context, ordered), 'preference': preference, 'feedback': feedback},
+            max_tokens=2500)
         parts = result.get('paragraphs')
         if (not isinstance(parts, list) or not 3 <= len(parts) <= 12
                 or any(not isinstance(part, str) or not part.strip() for part in parts)):
             raise PlanError('口播需要以独立开头、正文和结尾段落返回。')
         return [part.strip() for part in parts]
 
-    def revise_narration(self, parts, targets, issues, context, facts, budget):
+    def revise_narration(self, parts, targets, issues, context, facts, budget, preference=''):
         result = self.ask(
-            '局部修订一篇养老院探访口播。' + narration_length_instruction(budget) + VOICE_STYLE +
-            '只改 targets 中编号的段落，优先解决 issues 列出的问题。'
-            '保留所有必讲事实、开头的机构语境和最后一个咨询动作。增加字数时补有依据的细节，'
+            '用客观自然的带看口吻局部修订养老机构探访口播。'
+            '只改 targets 中编号的段落，优先解决 issues。以下字数按替回后的全文计算。'
+            + narration_length_instruction(budget) + NARRATION_SOURCE_RULES +
+            '保留本条必讲事实、开头的机构语境和最后一个咨询动作。增加字数时补有依据的细节，'
             '减少时先压重复或次要细节。相似问题按原意重组句式与衔接。'
             '返回 {"edits":[{"index":2,"text":"修订后的段落"}]}，index 从 1 起，每个指定编号返回一次。',
-            {'paragraphs':parts,'targets':[i + 1 for i in targets],'issues':issues,
-             'requirements':context['requirements'],'facts':[row['text'] for row in facts]},
+            {**narration_material(context, facts), 'preference': preference,
+             'paragraphs': parts, 'targets': [i + 1 for i in targets], 'issues': issues},
             max_tokens=2600)
         edits = result.get('edits')
         if not isinstance(edits, list) or any(not isinstance(edit, dict) for edit in edits):

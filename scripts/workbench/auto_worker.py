@@ -308,13 +308,24 @@ class Production:
         prior = [paragraphs(self.read(folder/item['plan'])) for item in items]
         receipt = (folder or self.job)/f'narration-draft-{index + 1:04d}.json'
         log = self.read(receipt, {'firstReturn':None,'repairs':0})
+        log['coreFacts'] = facts
         feedback = ''
+
+        def paragraph_sizes(parts):
+            return [script_units({'sentences': [{'text': text}]}) for text in parts]
+
+        def record_attempt(stage, parts):
+            sizes = paragraph_sizes(parts)
+            log.setdefault('attempts', []).append({
+                'stage': stage, 'units': sum(sizes), 'paragraphUnits': sizes,
+            })
+            self.write(receipt, log)
 
         def issues_for(parts):
             style = narration_issues(parts)
             notes = list(style.values())
             positions = set(style)
-            sizes = [script_units({'sentences':[{'text':text}]}) for text in parts]
+            sizes = paragraph_sizes(parts)
             total = sum(sizes)
             if issue := budget_issue(total, budget):
                 goal = (budget['minUnits'] + budget['maxUnits']) // 2
@@ -341,7 +352,7 @@ class Production:
             if log['firstReturn'] is None:
                 issues, _ = issues_for(parts)
                 log['firstReturn'] = {'paragraphs':list(parts),'issues':issues,'passed':False}
-                self.write(receipt,log)
+            record_attempt('first_draft' if generation == 0 else 'regeneration', parts)
             repairs = 2 if generation == 0 else 0
             for repair in range(repairs + 1):
                 notes, targets = issues_for(parts)
@@ -388,12 +399,12 @@ class Production:
                     break
                 self.progress(f'第 {index + 1} 条正在定点返修口播（{repair + 1}/2）')
                 try:
-                    parts = self.editor.revise_narration(parts,targets,notes,context,facts,budget)
+                    parts = self.editor.revise_narration(parts, targets, notes, context, facts, budget, preference)
                 except (PlanError, ModelResponseError) as exc:
                     feedback = str(exc)
                     break
                 log['repairs'] += 1
-                self.write(receipt,log)
+                record_attempt('local_repair', parts)
         raise NeedsInput(f'第 {index + 1} 条口播仍有问题，请确认对应事实或可调整的内容。{feedback}')
 
     def review_candidate(self, job, context, outline=(), *, prepare=None):
