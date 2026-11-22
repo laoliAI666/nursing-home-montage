@@ -16,12 +16,14 @@ const taskCurrentBeforeAcceptance=taskCurrent;
 taskCurrent=function(t){
   if(!['accepted','awaiting_acceptance'].includes(t.status))return taskCurrentBeforeAcceptance(t);
   const accepted=t.status==='accepted',pending=cleanupBusy(t),failed=t.cleanupStatus==='failed';
-  const title=pending?'已验收，正在后台清理':failed?'已验收，清理尚未完成':accepted?'已验收，成品已归档':'制作完成，等待你验收';
-  const message=pending?'你可以继续查看或下载成品，清理完成后这里会自动更新。':failed?'成品已保留，可以重试清理。':accepted?'视频、封面和发布包已保留。已释放 '+storageText(t.acceptance?.releasedBytes||0)+' 中间文件空间。':'确认满意后点击验收，中间文件会在后台清理。';
+  const removed=Object.values(t.productDeletions||{}).includes('deleted')&&!t.results.some(r=>r.video||r.deletionPending);
+  const title=removed?'这批成品已删除':pending?'已验收，正在后台清理':failed?'已验收，清理尚未完成':accepted?'已验收，成品已归档':'制作完成，等待你验收';
+  const message=removed?'制作记录仍可查看。':pending?'你可以继续查看或下载成品，清理完成后这里会自动更新。':failed?'成品已保留，可以重试清理。':accepted?'视频、封面和发布包已保留。已释放 '+storageText(t.acceptance?.releasedBytes||0)+' 中间文件空间。':'确认满意后点击验收，中间文件会在后台清理。';
   return `<div class="current-step"><span>${pending?cleanupSpinner():icon(accepted?'check':'play')}</span><div><h2>${title}</h2><p>${message}</p></div></div>`;
 };
 const taskControlsBeforeAcceptance=taskControls;
 taskControls=function(t){
+  if(t.status==='accepted'&&Object.values(t.productDeletions||{}).includes('deleted')&&!t.results.some(r=>r.video))return '';
   if(t.status==='accepted')return `<div class="acceptance-entry" role="status">${acceptanceButton(t)}${cleanupBusy(t)?'<p class="form-help">成品可正常查看和下载，清理后可继续修改封面或发起重做。</p>':t.cleanupStatus==='failed'?'<p class="inline-error">'+E(t.cleanupError||'上次清理未完成，成品已保留。')+'</p>':'<p class="form-help">后续可以修改封面，或从单条成品发起新的重做任务。</p>'}</div>`;
   if(t.status==='awaiting_acceptance')return `<div class="acceptance-entry">${acceptanceButton(t)}<p class="form-help">${E(t.acceptanceBlockedReason||'点击即验收，自动后台清理中间文件，保留成品、封面和发布文案。')}</p></div>`;
   return taskControlsBeforeAcceptance(t);
@@ -199,8 +201,49 @@ const settingsBeforeCredentialReveal=renderSettings;
 renderSettings=function(){hideAllStoredCredentials();return settingsBeforeCredentialReveal();};
 
 function archivedCards(institution=''){
-  return (state.archives||[]).filter(t=>!institution||t.institutionId===institution).flatMap(t=>t.results.map(r=>`<article class="work-card"><a class="work-art" href="#preview/archive/${t.id}/${r.index}/${r.version}" aria-label="播放${E(r.title)}"><img src="${E(r.cover)}" alt="${E(r.title)}封面" loading="lazy"><span class="play-button">${icon('play')}</span></a><h2>${E(r.title)}</h2><p>${E(t.institutionName||'未关联机构')} · ${E(t.personName||'')} · ${E(r.label)}</p><p class="subtle">任务数据已清理，成品独立保留</p><div class="work-actions"><a href="#preview/archive/${t.id}/${r.index}/${r.version}" class="secondary">${icon('play')} 预览成品</a><a href="${E(r.package)}" class="primary" download>${icon('download')} 发布包</a></div></article>`)).join('');
+  return (state.archives||[]).filter(t=>!institution||t.institutionId===institution).flatMap(t=>t.results.map(r=>{
+    const preview = `#preview/archive/${t.id}/${r.index}/${r.version}`;
+    return `<article class="work-card"><a class="work-art" href="${preview}" aria-label="播放${E(r.title)}"><img src="${E(r.cover)}" alt="${E(r.title)}封面" loading="lazy"><span class="play-button">${icon('play')}</span></a><h2>${E(r.title)}</h2><p>${E(t.institutionName||'未关联机构')} · ${E(t.personName||'')} · ${E(r.label)}</p><div class="work-card-actions"><a href="${E(r.package)}" class="primary" download>${icon('download')} 下载发布包</a><a href="${preview}" class="secondary">${icon('play')} 预览成品</a>${deleteProductButton(t,r)}</div></article>`;
+  })).join('');
 }
+
+function deleteProductButton(task, product){
+  return `<button type="button" class="danger-button work-delete" data-action="delete-product" data-id="${task.id}" data-index="${product.index}" data-title="${E(product.title)}">${product.deletionPending?'重试删除':'删除成品'}</button>`;
+}
+
+document.addEventListener('click',e=>{
+  const button=e.target.closest('[data-action="delete-product"]');
+  if(!button)return;
+  const {id,index,title}=button.dataset;
+  const dialog=managementDialog('永久删除成品',button);
+  const body=dialog.querySelector('.management-dialog-content');
+  body.innerHTML=`<p><strong>${E(title)}</strong></p><p class="acceptance-note">这条视频的全部版本、封面、发布文案和发布包都将永久删除，无法恢复。</p><p class="inline-error" role="alert"></p><div class="acceptance-actions"><button type="button" class="secondary" data-close>取消</button><button type="button" class="danger-button" data-confirm>永久删除</button></div>`;
+  const cancel=body.querySelector('[data-close]'),confirm=body.querySelector('[data-confirm]');
+  dialog.addEventListener('cancel',event=>{if(confirm.disabled)event.preventDefault();});
+  cancel.onclick=()=>dialog.close();
+  cancel.focus();
+  confirm.onclick=()=>busy(confirm,async()=>{
+    body.querySelector('[role=alert]').textContent='';
+    cancel.disabled=true;
+    try{
+      await api(`/api/products/${id}/${index}/delete`,{confirm:true});
+    }catch(err){
+      body.querySelector('[role=alert]').textContent=err.message;
+      cancel.disabled=false;
+      return;
+    }
+    dialog.close();
+    try{
+      await refresh(false,true);
+      institutionCache.clear();
+      render();
+    }catch{
+      notify('成品已删除，列表将自动更新');
+      return;
+    }
+    notify('成品已永久删除');
+  });
+});
 const previewBeforeArchive=renderPreview;
 renderPreview=function(){
   const parts=location.hash.split('/');if(parts[1]!=='archive'){previewBeforeArchive();return;}

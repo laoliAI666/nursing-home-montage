@@ -16,6 +16,10 @@ def sha(path):
     return h.hexdigest()
 
 
+def product_deletion(task, index):
+    return task.get('productDeletions', {}).get(str(index))
+
+
 class ProductArchive:
     def __init__(self,app,read,write):
         self.app,self.read,self.write=app,read,write
@@ -89,7 +93,9 @@ class ProductArchive:
         if path.is_symlink() or not path.resolve().is_relative_to(self.root.resolve()):raise ValueError('成品路径无效')
         return path
 
-    def blocked(self,task):
+    def blocked(self,task,*,deleting_product=False):
+        if not deleting_product and 'pending' in task.get('productDeletions', {}).values():
+            return '请先在成品库完成这条视频的删除'
         if task.get('cleanupStatus') in ('queued','running'):return '正在验收清理，请等清理完成后再删除任务'
         for row in self.app.queue.data()['items']:
             if row['taskId']==task['id'] and (row['status'] in ('queued','assigned','running','stopping','needs_input') or not row.get('settled')):
@@ -97,6 +103,90 @@ class ProductArchive:
         if task['status'] in ('queued','running','stopping','needs_input'):
             return '任务尚未结束，请先结束该任务'
         return ''
+
+    def delete_product(self, ident, index):
+        from workspace import delivery_folder, owned_batch, video_job
+
+        with self.app.transaction():
+            self.ensure_available(ident)
+            task = self.read(self.app.task_path(ident), {})
+            manifest_path = self.root / ident / 'manifest.json'
+            archive_folder = manifest_path.parent / str(index)
+            if any(p.resolve() != p.absolute() for p in (manifest_path, archive_folder)):
+                raise ValueError('归档成品路径无效')
+            manifest = self.read(manifest_path, {})
+            versions = [p for p in manifest.get('products', []) if p['index'] == index]
+            if task:
+                if not 0 <= index < task['count']:
+                    raise ValueError('成品不存在')
+                status = product_deletion(task, index)
+                if status == 'deleted' and not versions:
+                    return
+                reason = self.blocked(task, deleting_product=True)
+                if reason:
+                    raise ValueError(reason)
+                rows = self.app.queue.for_task(ident)
+                ready = task['status'] == 'completed' or any(
+                    row['index'] == index and row['status'] == 'completed' for row in rows)
+                job = video_job(task, index)
+                if not versions and not status and not (ready and (job / 'final.mp4').is_file()):
+                    raise ValueError('成品不存在')
+                owned_batch(self.app, task)
+                from job_queue import TERMINAL
+                if any(other.get('revisionOf') == {'taskId': ident, 'index': index}
+                       and other['status'] not in TERMINAL | {'partial'} for other in self.app.tasks()):
+                    raise ValueError('这条视频还有关联的单条重做，请先结束重做任务')
+            elif not versions:
+                return
+
+            files = []
+            trees = [archive_folder]
+            if task:
+                trees.extend((self.app.edits.root / ident / str(index), job / 'delivery'))
+                files.extend(job / name for name in ('final.mp4', 'renders/final.mp4', 'cover.png',
+                                                     '发布文案.txt', 'delivery.json'))
+            for record in (task, manifest):
+                if not record.get('workspace'):
+                    continue
+                owned_batch(self.app, record)
+                folder = delivery_folder(record, index)
+                # A workbench output folder may also contain files added by the user.
+                editions = [p for p in folder.glob('封面版本_*')
+                            if re.fullmatch(r'封面版本_[a-f0-9]{12}', p.name)]
+                for output in (folder, *editions):
+                    if output.resolve() != output.absolute() or (output.exists() and not output.is_dir()):
+                        raise ValueError('工作区的交付目录无效')
+                    files.extend(output / name for name in ('final.mp4', 'cover.png', '发布文案.txt', '发布包.zip', '发布包.json'))
+
+            baseline = self.read(self.app.project / '项目状态.json', {})
+            protected = [Path(p).resolve() for p in (
+                baseline.get('activeEditableProject'), (baseline.get('latestApprovedDelivery') or {}).get('path')) if p]
+            for path in (*trees, *files):
+                if path.resolve() != path.absolute():
+                    raise ValueError('成品路径不能经过链接')
+                if any(p == path or p in path.parents or path in p.parents for p in protected):
+                    raise ValueError('已认可的样片或活动工程受保护')
+            if any(path.exists() and not path.is_file() for path in files):
+                raise ValueError('成品文件路径无效')
+            if any(path.exists() and not path.is_dir() for path in trees):
+                raise ValueError('成品目录路径无效')
+
+            if task:
+                deletions = {**task.get('productDeletions', {}), str(index): 'pending'}
+                self.app.update(ident, productDeletions=deletions)
+            for path in dict.fromkeys(files):
+                path.unlink(missing_ok=True)
+            for path in trees:
+                self.remove_tree(path)
+            if versions:
+                manifest['products'] = [p for p in manifest['products'] if p['index'] != index]
+                manifest.get('currentVersions', {}).pop(str(index), None)
+                if manifest['products']:
+                    self.write(manifest_path, manifest)
+                else:
+                    manifest_path.unlink()
+            if task:
+                self.app.update(ident, productDeletions={**deletions, str(index): 'deleted'})
 
     def roots(self,task):
         ident=task['id'];self.app.task_path(ident)
@@ -208,6 +298,7 @@ class ProductArchive:
             if edition.get('status')=='completed':jobs.append((int(file.parents[2].name),file.parent.name,edition.get('label','封面修改版'),file.parent))
         for index,version,label,job in jobs:
             key=(index,version)
+            if product_deletion(task,index):continue
             if not (job/'final.mp4').exists():continue
             if not re.fullmatch(r'original|[a-f0-9]{12}',version):raise ValueError('成品版本无效')
             if key in products:

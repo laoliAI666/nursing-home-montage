@@ -48,7 +48,10 @@ class VideoEdits:
             institution = next((x for x in self.app.library.records() if x.get('reference')), {})
             task.update(institutionId=institution.get('id'), institutionName=institution.get('name', plan.get('institution', {}).get('name', '')))
         else:
+            from product_archive import product_deletion
             task = self.app.task(ident)
+            if product_deletion(task, index):
+                raise ValueError('这条成品已删除或正在清理')
             ready=task['status']=='completed' or any(x['index']==index and x['status']=='completed' for x in self.app.queue.for_task(ident))
             if not ready or not 0 <= index < task['count']:
                 raise ValueError('请在视频制作完成后编辑')
@@ -135,7 +138,7 @@ class VideoEdits:
             html = (job / 'cover-editor.html').read_text(encoding='utf-8') if (job / 'cover-editor.html').is_file() else ''
             match = re.search(r'<script\b[^>]*id=[\"\']cover-data[\"\'][^>]*>(.*?)</script>', html, re.S)
             if not match:
-                raise ValueError('这个旧工程缺少封面编辑数据，请先用“修改内容 / 单条重做”生成新版本。')
+                raise ValueError('这个旧工程缺少封面编辑数据，请先用“单条重做”生成新版本。')
             payload = json.loads(match[1])
         payload = copy.deepcopy(payload)
         # Assets and identity remain server-owned; browsers select only same-institution photos.

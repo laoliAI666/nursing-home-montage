@@ -540,7 +540,7 @@ class App:
 配乐选择：music=false 时在 plan.settings.music 中显式 enabled=false，music=true 时将 enabled=true 和 request.musicTrack.resource 合并到 plan.settings.music，必须用该固定副本，不改用最新默认曲。没有 musicTrack 的旧任务沿用已有 runtime。保留音量、人声避让和淡入淡出参数；音乐时长不足或哈希不匹配时提问，不私换曲目。单条重做继承原配乐。
 内容偏好：requirements 是整批共同偏好；videoPreferences 数组第 i 项仅对应第 i+1 条。单条明确指定的部分优先；未指定的部分继承整批偏好，两者均未填写时才按默认规范制作。两者都只能使用已核验事实。应同时适配本条的封面标题、三枚标签及选图、发布标题和描述、完整口播、分镜。用户只说“重点突出”时保留综合介绍，明确专题时按专题制作，不机械套同一份封面。
 单条重做：revisionFromArchive=true 表示旧任务已验收且中间资产已清理，此时不要执行 revise。按 source 快照新建工程，basePlan 只用于读取原稿和封面主题，使用当前项目人物/服务配置，移除旧计划中指向已清理资产的运行设置；按完整流程重新生成必要配音和数字人。否则 kind=revision 时只做 count=1 的这一条，revisionOf 是原视频，baseJob 是原可编辑工程，basePlan 是选中版本计划，revisedNarration 是用户编辑后的完整口播，publicationOverride 是用户指定的发布字段。读取原工程和以上字段，按 skill 的另存与恢复规范执行 revise SOURCE --out NEW --plan NEW_PLAN；不能修改其他视频或覆盖原工程。非空 revisedNarration 保留用户表述，逐句核对事实和字幕；如不符合事实，在页面提出具体问题。不要把旧配音、旧数字人口型当成新文案资产复用；文案未变时复用匹配资产。新的封面与标题仍须适配修改后的正文和偏好，显式发布字段覆盖自动稿。
-工作台交付：仍执行 skill 的完整核验，封面编辑 HTML 只作为工程内部渲染数据，不额外交给用户。工作台会从实际 MP4、PNG、发布文案组装三个文件的下载包。成功后回到原视频的“修改内容 / 单条重做”页面可找到关联的新成品，原视频保留。
+工作台交付：仍执行 skill 的完整核验，封面编辑 HTML 只作为工程内部渲染数据，不额外交给用户。工作台会从实际 MP4、PNG、发布文案组装三个文件的下载包。成功后回到原视频的“单条重做”页面可找到关联的新成品，原视频保留。
 页面进度来自连续执行器及本条带租约 op=report 的真实记录。N 从 0 到 5：{json.dumps(PHASES,ensure_ascii=False)}。阶段进度仅代表已完成步骤，不虚构预计剩余时间。原生文件与无页面 CLI 的具体选择见本条派发说明。
 缺少关键资料时，report status=needs_input 并提供完整 question，然后退出子 Agent。工作台收集答案，主 Agent 继续接单并派发新的子 Agent 恢复本工程。已有供应商任务 ID 继续查询，不重复提交状态不明任务。所有正式付费生成前仍须完成 skill 要求的 preflight 和内容复核。
 用户补充问题：{json.dumps(t.get('answerQuestion'),ensure_ascii=False)}
@@ -607,15 +607,22 @@ class App:
             return t
 
     def public_task(self, t):
+        from product_archive import product_deletion
         from workspace import video_job
         jobs = [video_job(t, index) for index in range(t["count"])]
         results = []
         queue_rows=self.queue.for_task(t['id'])
         queue_by_index={x['index']:x for x in queue_rows}
         for i, job in enumerate(jobs):
+            deletion = product_deletion(t, i)
+            if deletion == 'deleted':
+                continue
             ready=t['status']=='completed' or queue_by_index.get(i,{}).get('status')=='completed'
             spec=(t.get('videoSpecs') or [{}]*t['count'])[i]
             result = {"index": i, "title": read(job / "plan.json", {}).get("publication", {}).get("title", t["title"]),'personName':spec.get('personName',t['personName'])}
+            if deletion == 'pending':
+                results.append({**result, 'deletionPending': True})
+                continue
             for kind, file in (("video", job / "final.mp4"), ("cover", job / "cover.png"), ("package", next(iter((job / "delivery").glob("*.zip")), job / "not-ready.zip"))):
                 if file.is_file() and (kind != "video" or ready):
                     result[kind] = f"/media/task/{t['id']}/{i}/{kind}"
@@ -808,6 +815,12 @@ class Handler(BaseHTTPRequestHandler):
             if url.path.startswith('/api/manage/'):
                 from management import Management
                 return self.reply(200,Management(self.app,read,write).dispatch(url.path.rsplit('/',1)[-1],v))
+            match = re.fullmatch(r'/api/products/([a-f0-9]{12})/(\d+)/delete', url.path)
+            if match:
+                if v.get('confirm') is not True:
+                    raise ValueError('请确认永久删除这条成品')
+                self.app.archive.delete_product(match[1], int(match[2]))
+                return self.reply(200, {'deleted': True})
             if url.path == "/api/draft":
                 allowed = {"institutionId", "requirements", "title", "person", "people", "count", "music", "facts", "videoPreferences", "videoPreferenceMap", "musicTrackId", "targetDurationSeconds"}
                 write(self.app.data / "creation-draft.json", {k: v[k] for k in allowed if k in v})
@@ -1054,9 +1067,10 @@ class Handler(BaseHTTPRequestHandler):
                     run_command(["ffmpeg", "-v", "error", "-y", "-i", str(video), "-frames:v", "1", "-vf", "scale=540:-1", str(cover)], capture_output=True, timeout=30)
                 return self.file(cover)
         if parts[2] == "task" and len(parts) == 6:
+            from product_archive import product_deletion
             t = self.app.task(parts[3])
             index = int(parts[4])
-            if not 0 <= index < t["count"]:
+            if not 0 <= index < t["count"] or product_deletion(t, index):
                 raise ValueError("作品不存在")
             from workspace import video_job
             job = video_job(t, index)

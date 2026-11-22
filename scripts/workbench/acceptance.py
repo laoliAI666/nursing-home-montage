@@ -8,6 +8,7 @@ import time
 import threading
 import uuid
 from job_queue import TERMINAL
+from product_archive import product_deletion
 
 
 def digest(path):
@@ -30,6 +31,13 @@ class Acceptance:
         rows = self.app.queue.for_task(task['id'])
         if task['status'] not in ('completed', 'partial'):
             return False, ''
+        if 'pending' in task.get('productDeletions', {}).values():
+            return False, '请先在成品库完成这条视频的删除'
+        if task.get('productDeletions') and not any(
+                not product_deletion(task, index)
+                for index in ([r['index'] for r in rows if r['status'] == 'completed']
+                              if rows else range(task['count']))):
+            return False, '这批成品已删除'
         if rows and not all(r['status'] in TERMINAL and r.get('settled') for r in rows):
             return False, '等待制作完全结束并确认后验收'
         busy = [r for r in self.app.queue.data()['items'] if r['taskId'] == task['id'] and not (r['status'] in TERMINAL and r.get('settled'))]
@@ -146,6 +154,7 @@ class Acceptance:
             if not indices:
                 raise ValueError('没有可以验收的成品')
             for index in indices:
+                if product_deletion(task,index):continue
                 job = video_job(task,index)
                 self.app.verify_job(job)
                 self._keep_product(ident, index, job, 'original', keep, products)

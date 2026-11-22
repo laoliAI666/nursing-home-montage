@@ -48,11 +48,17 @@ class Library:
         cover = next((a for a in enabled if a["id"] == value.get("coverAsset")), None) or next((a for a in enabled if a["kind"] == "image"), None) or next((a for a in enabled if a["kind"] == "video"), None)
         ident = value["id"]
         tasks = [t for t in self.app.tasks() if t.get("institutionId") == ident]
-        completed = [t for t in tasks if t["status"] == "completed"]
+        from product_archive import product_deletion
+        completed_count = 0
+        for task in tasks:
+            rows = self.app.queue.for_task(task['id'])
+            indices = [row['index'] for row in rows if row['status'] == 'completed'] if rows else (
+                range(task['count']) if task['status'] == 'completed' else ())
+            completed_count += sum(not product_deletion(task, index) for index in indices)
         result = {k: value.get(k) for k in ("id", "name", "address", "description", "created", "updated", "revision", "reference", "coverAsset")}
         result.update(counts={k: sum(a["kind"] == k for a in enabled) for k in ("video", "image", "text")},
                       fileCount=len(current), enabledCount=len(enabled), taskCount=len(tasks),
-                      completedCount=sum(sum(x['status']=='completed' for x in self.app.queue.for_task(t['id'])) if self.app.queue.for_task(t['id']) else t['count'] if t['status']=='completed' else 0 for t in tasks),
+                      completedCount=completed_count,
                       thumbnail=f"/media/library/{ident}/{cover['id']}/thumb" if cover else None)
         result['completedCount']+=sum(len(a['results']) for a in self.app.archive.public() if a.get('institutionId')==ident and not any(t['id']==a['id'] for t in tasks))
         if detail:
