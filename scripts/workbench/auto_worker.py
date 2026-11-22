@@ -320,7 +320,8 @@ class Production:
                 goal = (budget['minUnits'] + budget['maxUnits']) // 2
                 notes.append(f'{issue} 全稿目标约 {goal} 字，正文约{"补" if goal > total else "删"} {abs(goal-total)} 字。')
                 middle = range(1, len(parts) - 1)
-                positions.update(sorted(middle, key=sizes.__getitem__,reverse=total > goal)[:2])
+                count = len(middle) if abs(goal-total) > 28 else 2
+                positions.update(sorted(middle, key=sizes.__getitem__,reverse=total > goal)[:count])
             for previous in prior:
                 match = similarity_issue(parts[:-1], previous, context['institutionName'])
                 if match:

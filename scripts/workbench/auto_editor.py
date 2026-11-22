@@ -411,19 +411,26 @@ class Editor:
     def draft_narration(self, context, facts, preference, budget, index, feedback=''):
         # A rotation changes the entry point while every script keeps the same facts.
         ordered = facts[index % len(facts):] + facts[:index % len(facts)]
+        goal = (budget['minUnits'] + budget['maxUnits']) // 2
+        per_topic = (goal - 45) // len(ordered)
         result = self.ask(
-            '根据本院核对过的材料写一篇可直接配音的养老院探访口播。' + VOICE_STYLE +
-            '开头交代院名，从所列第一个重点起笔，核心事实都讲到；同类事实可相邻介绍。'
-            '把目标放在 targetUnits，全文应在 minUnits 到 maxUnits 之间。标点不计，数字按读法计。'
-            '包含一个自然开头、若干连贯正文段和最后一个咨询段。结尾留一个邀请家属留言的动作。'
+            f'写一篇约 {goal} 个可读字的养老院探访口播。内容限于已核对清单里的事实与可见细节。'
+            + VOICE_STYLE +
+            f'开头交代院名，约 25 字。按清单顺序写 {len(ordered)} 个正文短段，每段约 {per_topic} 字，'
+            '一个重点说一两句。最后约 20 字，邀请留言了解参观。全文在给定字数范围内。'
+            '每段先讲清一件事，再说明它对长辈日常有什么直接用途。保留正式名称。'
+            '正文只说清单中给出的事实，可自然改述，勿添加细节或承诺。'
+            '省略清单以外的开业年份、规模、疗法、就医、膳食、历史和宣传词。'
+            '局部画面只讲眼前能核实的细节，避免推断材质和功效。'
             '只交口播正文。使用 JSON {"paragraphs":["开头","正文段","结尾"]}，每段是实际会读的话。'
             '用户明确要求专题时可聚焦专题。', {
                 'institutionName':context['institutionName'],
-                'original':context['sources'], 'requirements':context['requirements'], 'preference':preference,
-                'factsInOrder':[{'fact':row['text'],'evidence':row['quote'],
-                                 'visibleExample':row.get('visibleDetail','')} for row in ordered],
+                'requirements':context['requirements'], 'preference':preference,
+                'coreFacts':[row['text'] for row in ordered],
+                # Full source is useful when the user specifies particular content.
+                **({'original':context['sources']} if preference or context['requirements'] else {}),
                 'minUnits':budget['minUnits'],'maxUnits':budget['maxUnits'],
-                'targetUnits':(budget['minUnits']+budget['maxUnits'])//2, 'feedback':feedback
+                'targetUnits':goal, 'feedback':feedback
             }, max_tokens=2500)
         parts = result.get('paragraphs')
         if (not isinstance(parts, list) or not 3 <= len(parts) <= 12
@@ -439,8 +446,7 @@ class Editor:
             '减少时先压重复或次要细节。相似问题按原意重组句式与衔接。整篇要落在给定字数范围。'
             '返回 {"edits":[{"index":2,"text":"修订后的段落"}]}，index 从 1 起，每个指定编号返回一次。',
             {'paragraphs':parts,'targets':[i + 1 for i in targets],'issues':issues,'budget':budget,
-             'original':context['sources'],'requirements':context['requirements'],
-             'facts':[{'text':row['text'],'quote':row['quote'],'example':row.get('visibleDetail','')} for row in facts]},
+             'requirements':context['requirements'],'facts':[row['text'] for row in facts]},
             max_tokens=2600)
         edits = result.get('edits')
         if not isinstance(edits, list) or any(not isinstance(edit, dict) for edit in edits):
