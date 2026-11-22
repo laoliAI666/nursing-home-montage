@@ -36,10 +36,10 @@ def initial_budget(target, person=None):
             'sections': {'hook': opening, 'body': upper - opening - closing, 'cta': closing}}
 
 
-def budget_issue(units, budget):
+def budget_issue(units, budget, *, section='正文'):
     lower, upper = budget['minUnits'], budget['maxUnits']
     if units > upper:
-        return f'程序实数 {units} 字，超出 {upper} 字上限。请压短正文并保留共同要点。'
+        return f'程序实数 {units} 字，超出 {upper} 字上限。请压短{section}并保留共同要点。'
     if units < lower:
         return f'程序实数 {units} 字，低于 {lower} 字下限。请补充有依据的内容。'
     return ''

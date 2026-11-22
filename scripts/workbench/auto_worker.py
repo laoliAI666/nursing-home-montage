@@ -369,9 +369,10 @@ class Production:
                         positions.add(0)
             sizes = paragraph_sizes(parts)
             total = sum(sizes)
-            if issue := budget_issue(total, budget):
+            section = '指定段落' if complete else '正文'
+            if issue := budget_issue(total, budget, section=section):
                 goal = (budget['minUnits'] + budget['maxUnits']) // 2
-                notes.append(f'{issue} 全稿目标约 {goal} 字，正文约{"补" if goal > total else "删"} {abs(goal-total)} 字。')
+                notes.append(f'{issue} 全稿目标约 {goal} 字，{section}合计约{"补" if goal > total else "删"} {abs(goal-total)} 字。')
                 middle = range(1, len(parts) - 1)
                 count = len(middle) if abs(goal-total) > 28 else 2
                 if complete and abs(total - goal) <= 24:

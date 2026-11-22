@@ -545,8 +545,14 @@ class Editor:
         if variation is not None:
             sizes = [script_units({'sentences': [{'text': text}]}) for text in parts]
             user = user_prompt(context, facts, budget, variation, preference, '')
+            protected = ['用户明确要求的内容，原文中的正式名称、适用对象和服务条件。']
+            if 0 in targets and (name := user['机构名称']):
+                protected.append(f'第 1 段自然说出完整机构名称「{name}」，全文只说一次。')
+            if len(parts) - 1 in targets:
+                protected.append(f'最后一段只保留一个咨询动作：{user["咨询引导"]}')
             user['返修信息'] = {
                 '上一稿': parts, '问题': issues, '只改段落': [i + 1 for i in targets],
+                '必须保留': protected,
                 '替换段落字数': edit_lengths(sizes, targets, budget),
             }
             if remember:
