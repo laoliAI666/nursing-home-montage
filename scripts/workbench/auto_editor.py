@@ -1,4 +1,5 @@
 """Structured editing and vision calls. The model cannot execute local tools."""
+from collections import Counter
 from copy import deepcopy
 import math
 from pathlib import Path
@@ -414,6 +415,8 @@ class Editor:
         target = task.get('targetDurationSeconds')
         length = initial_budget(target) if target is not None else {}
         compact = ('一分钟默认稿以共同事实为主。只用直接拍到的细节举例。'
+                   '先写 6 至 7 个口播小节，总计以 205 个可读字为起稿目标，留下润色和补句余量。'
+                   '每个正文小节只说一个主题，长度约 25–32 字，片尾只留一个咨询动作。'
                    '额外的就医安排、数字清单、工具、疗法与效果等细节，只有用户指定或已列为共同事实才写入。'
                    '写设施时直接描述镜头里的物件和位置，写服务时沿用原文范围和条件。'
                    if target == MINUTE_TARGET and not (revised or prefs or task.get('requirements')) else '')
@@ -442,7 +445,7 @@ class Editor:
             'institution.displayName 和 institution.headline 各最多 12 字，标点也计入。'
             '封面放在 plan.cover，包含 main_title 和三个 labels；发布文案放在 plan.publication，'
             '包含 title、description 和五个不同的 topics。两个字段都按同一条完整口播撰写。\n'
-            + self.rules('plan-schema', 'narration', 'narration-polish', 'covers'),
+            + self.rules('plan-schema', 'narration', 'narration-polish', 'covers') + '\n' + compact,
             {**context, 'facts': facts, 'supportingEvidence': evidence, 'person': person, 'index': index + 1, 'total': task['count'],
              'preference': prefs, 'previousAngles': previous, 'feedback': feedback, 'candidate': candidate,
              'durationBudget': length,
@@ -526,12 +529,30 @@ class Editor:
         return plan, {**angles, 'factCoverage': [f for f in used if f in expected], 'mode': 'topic' if authorization else 'comprehensive',
                       'topicAuthorization': authorization}
 
-    def shorten_narration(self, plan, budget, outline, preference):
+    def shorten_narration(self, plan, budget, outline, preference, *, may_drop_optional=False):
         rows = plan['sentences']
         counts = [script_units({'sentences':[row]}) for row in rows]
         total = sum(counts)
         eligible = [i for i in range(1, len(rows) - 1) if rows[i].get('kind', 'fact') == 'fact']
-        excess = total - budget['maxUnits'] + 3
+        removed = set()
+        if may_drop_optional:
+            must_say = {row['id'] for row in outline}
+            references = [must_say.intersection(row.get('factIds', [])) for row in rows]
+            uses = Counter(key for keys in references for key in keys)
+            for i in sorted(eligible, key=lambda i: (len(references[i]), -counts[i])):
+                if total <= budget['maxUnits']:
+                    break
+                if len(eligible) - len(removed) > 1 and all(uses[key] > 1 for key in references[i]):
+                    removed.add(i)
+                    uses.subtract(references[i])
+                    total -= counts[i]
+            if removed:
+                plan['sentences'] = rows = [row for i, row in enumerate(rows) if i not in removed]
+                if total <= budget['maxUnits']:
+                    return True
+                counts = [count for i, count in enumerate(counts) if i not in removed]
+                eligible = [i for i in range(1, len(rows) - 1) if rows[i].get('kind', 'fact') == 'fact']
+        excess = total - budget['maxUnits'] + 8
         selected, capacity = [], 0
         for i in sorted(eligible, key=counts.__getitem__, reverse=True):
             selected.append(i)
@@ -539,7 +560,7 @@ class Editor:
             if capacity >= excess * 2.5:
                 break
         if not selected or capacity <= excess:
-            return False
+            return bool(removed)
         limit = capacity - excess
         evidence = {row['id']:row['quote'] for row in plan['facts']}
         core = {row['id']:row['text'] for row in outline}
@@ -554,11 +575,11 @@ class Editor:
             max_tokens=3000)
         edits = response.get('sentences')
         if not isinstance(edits, list) or any(not isinstance(edit, dict) for edit in edits):
-            return False
+            return bool(removed)
         updates = {edit['index'] - 1:edit.get('text') for edit in edits if type(edit.get('index')) is int}
         if len(updates) != len(edits) or set(updates) != set(selected) or any(
                 not isinstance(text, str) or not text.strip() for text in updates.values()):
-            return False
+            return bool(removed)
         for i, text in updates.items():
             rows[i]['text'] = text.strip()
             rows[i].pop('captions', None)

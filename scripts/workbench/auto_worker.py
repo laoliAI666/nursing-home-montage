@@ -11,6 +11,7 @@ from pipeline import Pipeline, PreparationTimeout, fingerprint
 from planning import digest
 from job_queue import BILLING_MESSAGE, is_minimax_balance_error
 from duration import DurationRevision, budget_issue, initial_budget, script_units
+from narration_timing import MINUTE_TARGET
 
 
 class StageError(ValueError):
@@ -171,7 +172,7 @@ class Production:
         cache_path = folder / 'independent-planning.json'
         evidence = source_evidence(context['sources'])
         identity = digest({'input': input_fingerprint, 'answer': answer, 'media': context['media'],
-                           'editorialVersion': 6})
+                           'editorialVersion': 7})
         cache = self.read(cache_path, {})
         if cache.get('input') != identity:
             self.progress('正在结合实拍与原文确定共同提纲')
@@ -240,7 +241,8 @@ class Production:
                     if length:
                         units = script_units(current)
                         if units > length['maxUnits'] and self.editor.shorten_narration(
-                                current, length, facts, preferences[index]):
+                                current, length, facts, preferences[index],
+                                may_drop_optional=target == MINUTE_TARGET and not (task.get('requirements') or preferences[index])):
                             self.write(job/'plan.json', current)
                             self.invoke('validate-plan', job=job)
                             current = self.read(job/'plan.json')
