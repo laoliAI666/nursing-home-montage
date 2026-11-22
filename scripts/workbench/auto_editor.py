@@ -30,6 +30,15 @@ NARRATION_OUTLINE = (
 )
 
 
+def narration_length_instruction(budget):
+    lower, upper = budget['minUnits'], budget['maxUnits']
+    target = (lower + upper) // 2
+    return (
+        f'全文含开头、正文和结尾，必须在 {lower}–{upper} 个可读字之间，目标 {target} 字。'
+        '标点和空格不计，数字按实际读法计。'
+    )
+
+
 class NeedsInput(ValueError):
     pass
 
@@ -414,10 +423,11 @@ class Editor:
         goal = (budget['minUnits'] + budget['maxUnits']) // 2
         per_topic = (goal - 45) // len(ordered)
         result = self.ask(
-            f'写一篇约 {goal} 个可读字的养老院探访口播。内容限于已核对清单里的事实与可见细节。'
+            '写一篇养老院探访口播。'
+            + narration_length_instruction(budget) + '内容限于已核对清单里的事实与可见细节。'
             + VOICE_STYLE +
             f'开头交代院名，约 25 字。按清单顺序写 {len(ordered)} 个正文短段，每段约 {per_topic} 字，'
-            '一个重点说一两句。最后约 20 字，邀请留言了解参观。全文在给定字数范围内。'
+            '一个重点说一两句。最后约 20 字，邀请留言了解参观。'
             '每段先讲清一件事，再说明它对长辈日常有什么直接用途。保留正式名称。'
             '正文只说清单中给出的事实，可自然改述，勿添加细节或承诺。'
             '省略清单以外的开业年份、规模、疗法、就医、膳食、历史和宣传词。'
@@ -429,8 +439,7 @@ class Editor:
                 'coreFacts':[row['text'] for row in ordered],
                 # Full source is useful when the user specifies particular content.
                 **({'original':context['sources']} if preference or context['requirements'] else {}),
-                'minUnits':budget['minUnits'],'maxUnits':budget['maxUnits'],
-                'targetUnits':goal, 'feedback':feedback
+                'feedback':feedback
             }, max_tokens=2500)
         parts = result.get('paragraphs')
         if (not isinstance(parts, list) or not 3 <= len(parts) <= 12
@@ -440,12 +449,12 @@ class Editor:
 
     def revise_narration(self, parts, targets, issues, context, facts, budget):
         result = self.ask(
-            '局部修订一篇养老院探访口播。' + VOICE_STYLE +
+            '局部修订一篇养老院探访口播。' + narration_length_instruction(budget) + VOICE_STYLE +
             '只改 targets 中编号的段落，优先解决 issues 列出的问题。'
             '保留所有必讲事实、开头的机构语境和最后一个咨询动作。增加字数时补有依据的细节，'
-            '减少时先压重复或次要细节。相似问题按原意重组句式与衔接。整篇要落在给定字数范围。'
+            '减少时先压重复或次要细节。相似问题按原意重组句式与衔接。'
             '返回 {"edits":[{"index":2,"text":"修订后的段落"}]}，index 从 1 起，每个指定编号返回一次。',
-            {'paragraphs':parts,'targets':[i + 1 for i in targets],'issues':issues,'budget':budget,
+            {'paragraphs':parts,'targets':[i + 1 for i in targets],'issues':issues,
              'requirements':context['requirements'],'facts':[row['text'] for row in facts]},
             max_tokens=2600)
         edits = result.get('edits')
