@@ -6,6 +6,8 @@ import re
 import shutil
 import time
 
+from narration_prompts import outline_omission_limit
+
 
 def digest(value):
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
@@ -79,6 +81,8 @@ class BatchPlanning:
             if not isinstance(evidence,dict) or not evidence.get('quote') or evidence['quote'] not in sources.get(evidence.get('source'), ''):raise ValueError('共同事实须引用共享索引中的实际原文')
             ids.append(fact['id'])
         if len(set(ids)) != len(ids): raise ValueError('共同事实编号重复')
+        expected = set(ids)
+        omission_limit = outline_omission_limit(task.get('narrationPolicy'), len(expected))
         review = draft.get('review', {})
         if not all(isinstance(review.get(k), str) and review[k].strip() for k in ('facts', 'differences', 'preferences')):
             raise ValueError('策划子 Agent 须记录事实、差异和偏好的具体复核说明')
@@ -103,13 +107,14 @@ class BatchPlanning:
             if not all(direction) or (not task.get('narrationPolicy') and direction in angles):
                 raise ValueError('请填写各条的切入、结构与封面策划')
             angles.add(direction)
+            covered = set(row.get('factCoverage', []))
             if row.get('mode', 'comprehensive') != 'topic':
-                if set(row.get('factCoverage', [])) != set(ids): raise ValueError('综合介绍须覆盖共同事实，并逐项记录覆盖关系')
+                if not covered.issubset(expected) or len(expected - covered) > omission_limit:
+                    raise ValueError('综合介绍须覆盖要求的共同事实，并逐项记录覆盖关系')
             else:
                 quote = row.get('topicAuthorization', '')
                 user_text = task.get('requirements', '') + '\n' + (task.get('videoPreferences') or [''] * task['count'])[i]
                 if not quote or quote not in user_text: raise ValueError('专题制作须引用用户的明确要求')
-            covered=set(row.get('factCoverage',[]))
             used={f for sentence in plan.get('sentences',[]) for f in sentence.get('factIds',[])}
             if not covered.issubset(used):raise ValueError('共同事实覆盖关系未在本条口播的 factIds 中体现')
             parsed.append({'index': i, 'path': str(plan_path), 'sha256': file_digest(plan_path), 'plan': plan})

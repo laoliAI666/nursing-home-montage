@@ -6,6 +6,7 @@ import shutil
 
 from planning import digest, file_digest
 from narration_timing import MINUTE_TARGET, TOLERANCE, duration_rule, frame_duration
+from narration_prompts import outline_omission_limit
 
 MAX_REVISIONS = 3
 
@@ -236,7 +237,10 @@ class DurationRevision:
                         plan['cover']['main_title'] = {'text':plan['institution']['headline'],'highlights':[]}
                 self.write(draft/'plan.json',plan)
                 try:
-                    worker.review_candidate(draft, context, outline)
+                    omissions = outline_omission_limit(self.task.get('narrationPolicy'), len(outline))
+                    review_context = {**context, 'outlineOmissionsAllowed': omissions,
+                                      'preference': preferences[worker.row['index']]} if omissions else context
+                    worker.review_candidate(draft, review_context, outline)
                 except EditorialFeedback as exc:
                     worker.invoke('review-content',job=draft,extra=['--note',str(exc)])
                     worker.pipe.save_notices(draft,'content',[str(exc)])

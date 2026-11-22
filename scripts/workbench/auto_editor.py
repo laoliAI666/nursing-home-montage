@@ -11,7 +11,7 @@ from duration import initial_budget, script_units
 from narration_timing import MINUTE_TARGET
 from narration_prompts import (
     COMPACT_OUTLINE, COMPLETE_NARRATION_POLICY, NARRATION_REPAIR_SYSTEM, NARRATION_SYSTEM, OUTLINE_RULES,
-    edit_lengths, user_prompt,
+    edit_lengths, outline_omission_limit, user_prompt,
 )
 
 
@@ -717,13 +717,16 @@ class Editor:
             used = {ident: None for sentence in sentences for ident in sentence.get('factIds', [])}
         unknown = sorted(set(used) - references.keys())
         missing = sorted(expected - set(used)) if not authorization else []
+        omission_limit = outline_omission_limit(task.get('narrationPolicy'), len(facts)) if spoken is not None else 0
         issues = []
-        if missing:
+        if len(missing) > omission_limit:
             issues.append('口播缺少共同事实 ' + '、'.join(missing) + '，请在对应句写清事实并标注编号')
         if unknown:
             issues.append('factIds 使用了未提供的编号 ' + '、'.join(unknown))
         if issues:
             raise PlanError('。'.join(issues) + '。', result)
+        if missing:
+            angles['omittedCoreFacts'] = missing
         return plan, {**angles, 'factCoverage': [f for f in used if f in expected], 'mode': 'topic' if authorization else 'comprehensive',
                       'topicAuthorization': authorization}
 
@@ -941,6 +944,14 @@ class Editor:
         return self.review_plan(context, plan, self.read(job / 'content-audit.json', {}))
 
     def review_plan(self, context, plan, audit, *, outline=()):
+        omission_limit = context.get('outlineOmissionsAllowed', 0)
+        coverage_rule = (
+            f'对照实际口播逐项检查提纲，最多允许漏讲 {omission_limit} 个普通要点。'
+            '用户明确指定的内容、事实错误、原文限定、封面承诺和明显文画错配必须修正。'
+            '在 note 记录允许漏讲的主题。可用 omittedFacts 返回未讲到的已知提纲编号。'
+            if omission_limit else
+            '如有共同提纲，核对每条都在实际口播讲全。事实、原文限定、共同要点、用户要求、封面承诺和文画明显错配必须修正。'
+        )
         response = self.ask(
             NARRATOR_CONTEXT + '核对每句口播与事实原文，核对语义及所有限定词。用已有实看素材描述核对文画关系及封面三槽。'
             '原文概括了同一卖点时，可以举一个已核对的实拍例子；镜头里的扶手或球桌可如实描述，'
@@ -949,9 +960,8 @@ class Editor:
             '打回时在审核说明中用 audit 的 sentences[下标] 精确指明需要修改的句子。'
             '环境背景已在分镜备注标注，且口播未把镜头中的场所说成事实现场时，可直接通过，不要求口播念出处或画面说明。'
             '审核口语质量、覆盖范围、结尾咨询、封面及发布文案。材料未支持或文画明显不合时拒绝。'
-            '如有共同提纲，核对每条都在实际口播讲全，实拍可呈现的重点展开，缺少对应画面的重要内容一句带过。'
+            + coverage_rule + '实拍可呈现的重点展开，缺少对应画面的重要内容一句带过。'
             '成片时长由工作台按实际语音单独核验；不要凭稿件猜实测秒数。'
-            '事实、原文限定、共同要点、用户要求、封面承诺和文画明显错配是必须修正的问题。'
             '区分原文支持的可用设施与当前画面里正在发生的动作。只说可以使用已拍到的设施时，不要求画面有人使用。'
             '需要修正时，开头先列必须修正的具体下标和原因，已通过的观察省略。'
             '只有这些均通过，才可将措辞、重复、段落节奏或目标时长单独记为风格问题。'
@@ -960,6 +970,12 @@ class Editor:
             '只有风格问题时 ok 填 false、hardChecksPassed 填 true、styleIssues 填具体修改建议。\n'
             + self.rules('content-review'),
             {**context, 'plan': plan, 'audit': audit, 'outline': outline})
+        reported = response.get('omittedFacts')
+        if omission_limit and isinstance(reported, list):
+            known = {fact['id'] for fact in outline}
+            omitted = {ident for ident in reported if isinstance(ident, str) and ident in known}
+            if len(omitted) > omission_limit:
+                raise PlanError('口播缺少共同事实 ' + '、'.join(sorted(omitted)) + '，超过本条允许漏讲的数量。')
         issues = response.get('styleIssues')
         if (response.get('ok') is False and response.get('hardChecksPassed') is True
                 and isinstance(issues, list) and issues and all(isinstance(issue, str) and issue.strip() for issue in issues)

@@ -5,6 +5,11 @@ from random import Random
 COMPLETE_NARRATION_POLICY = 2
 DEFAULT_CTA = '邀请有意了解参观的家属留言。'
 
+
+def outline_omission_limit(policy, fact_count):
+    return min(2, max(0, fact_count - 1)) if policy == COMPLETE_NARRATION_POLICY else 0
+
+
 OUTLINE_RULES = (
     '根据机构原文全文，梳理每条综合介绍都要讲到的核心事实。逐段核对家属了解机构、照护或居住服务时有用的信息。'
     '优先保留明确的用户要求、机构定位与探望交通、照护方式和特色、居住和活动、日常生活服务、医护和就医等原文实际存在的核心主题。'

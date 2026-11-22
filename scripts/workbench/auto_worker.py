@@ -14,7 +14,7 @@ from job_queue import BILLING_MESSAGE, is_minimax_balance_error
 from duration import DurationRevision, budget_issue, initial_budget, script_units
 from narration_timing import MINUTE_TARGET
 from narration_editor import SIMILARITY_LIMIT, narration_issues, paragraphs, similarity_issue
-from narration_prompts import COMPLETE_NARRATION_POLICY, variations
+from narration_prompts import COMPLETE_NARRATION_POLICY, outline_omission_limit, variations
 from workflow import spoken_characters
 
 
@@ -217,8 +217,12 @@ class Production:
             cache['plans'].append({'sha256': fingerprint(path), 'item': item})
             self.write(cache_path, cache)
             items.append(item)
+        omission_limit = outline_omission_limit(task.get('narrationPolicy'), len(facts))
+        coverage_rule = (f'综合稿允许每条漏讲最多 {omission_limit} 个普通提纲要点。'
+                         '用户明确要求的内容必须保留，不能因为普通漏项在容差内而拒绝。'
+                         if omission_limit else '综合稿要求覆盖共同核心。')
         review = self.editor.ask(
-            '审核整批事实和明确的用户要求。综合稿要求覆盖共同核心，专题需能引用用户授权。'
+            '审核整批事实和明确的用户要求。' + coverage_rule + '专题需能引用用户授权。'
             '完全重复由程序检查。措辞、切入差异程度或顺序的优化意见写入 differences，不能据此拒绝整批。'
             '按 JSON {"ok":true,"note":"真实判断","facts":"事实范围","differences":"差异检查","preferences":"偏好检查"}。'
             '逐条真实性与文画还将在每条付费前另行核验。',
@@ -446,7 +450,12 @@ class Production:
                                     if errors:
                                         raise PlanError('。'.join(errors))
                                 try:
-                                    self.review_candidate(job,context,facts,prepare=verify_copy)
+                                    review_context = context
+                                    if complete:
+                                        review_context = {**context, 'preference': preference,
+                                                          'outlineOmissionsAllowed': outline_omission_limit(
+                                                              task.get('narrationPolicy'), len(facts))}
+                                    self.review_candidate(job,review_context,facts,prepare=verify_copy)
                                 except EditorialFeedback as exc:
                                     self.invoke('review-content',job=job,extra=['--note',str(exc)])
                                     self.pipe.save_notices(job,'content',[str(exc)])
