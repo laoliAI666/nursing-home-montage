@@ -200,10 +200,14 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden)hideAllStor
 const settingsBeforeCredentialReveal=renderSettings;
 renderSettings=function(){hideAllStoredCredentials();return settingsBeforeCredentialReveal();};
 
+function archivedTaskNotice(id){
+  return state.tasks.some(task=>task.id===id) ? '原制作任务已开始清理' : '原制作任务已删除';
+}
+
 function archivedCards(institution=''){
   return (state.archives||[]).filter(t=>!institution||t.institutionId===institution).flatMap(t=>t.results.map(r=>{
     const preview = `#preview/archive/${t.id}/${r.index}/${r.version}`;
-    return `<article class="work-card"><a class="work-art" href="${preview}" aria-label="播放${E(r.title)}"><img src="${E(r.cover)}" alt="${E(r.title)}封面" loading="lazy"><span class="play-button">${icon('play')}</span></a><h2>${E(r.title)}</h2><p>${E(t.institutionName||'未关联机构')} · ${E(t.personName||'')} · ${E(r.label)}</p><div class="work-card-actions"><a href="${E(r.package)}" class="primary" download>${icon('download')} 下载发布包</a><a href="${preview}" class="secondary">${icon('play')} 预览成品</a>${deleteProductButton(t,r)}</div></article>`;
+    return `<article class="work-card"><a class="work-art" href="${preview}" aria-label="播放${E(r.title)}"><img src="${E(r.cover)}" alt="${E(r.title)}封面" loading="lazy"><span class="play-button">${icon('play')}</span></a><h2>${E(r.title)}</h2><p>${E(t.institutionName||'未关联机构')} · ${E(t.personName||'')} · ${E(r.label)}</p><p>已归档 · ${archivedTaskNotice(t.id)}</p><div class="work-card-actions"><a href="${E(r.package)}" class="primary" download>${icon('download')} 下载发布包</a><a href="${preview}" class="secondary">${icon('play')} 预览成品</a>${deleteProductButton(t,r)}</div></article>`;
   })).join('');
 }
 
@@ -249,7 +253,7 @@ renderPreview=function(){
   const parts=location.hash.split('/');if(parts[1]!=='archive'){previewBeforeArchive();return;}
   const task=(state.archives||[]).find(t=>t.id===parts[2]),product=task?.results.flatMap(r=>r.versions||[r]).find(r=>r.index===Number(parts[3])&&r.version===parts[4]);
   if(!product){main.innerHTML=emptyState('没有找到这份成品','返回成品库查看已保留的作品。','<a href="#works" class="secondary">返回成品库</a>');return;}
-  main.innerHTML=`<a class="back-link" href="#works">${icon('arrow-right')} 返回成品库</a>${heading(E(product.title),'任务数据已清理，视频、封面和发布包独立保留。',`<a class="primary" href="${E(product.package)}" download>${icon('download')} 下载发布包</a>`)}<nav class="content-tabs" aria-label="已保留的成品版本">${(task.results.find(r=>r.index===product.index)?.versions||[product]).map(v=>`<a href="#preview/archive/${task.id}/${v.index}/${v.version}" ${v.version===product.version?'aria-current="page"':''}>${E(v.label)}</a>`).join('')}</nav><div class="video-view"><video controls playsinline preload="metadata" poster="${E(product.cover)}" src="${E(product.video)}"></video></div><div class="work-actions"><a class="secondary" href="${E(product.cover)}" download>下载封面</a><a class="secondary" href="${E(product.video)}?download=1" download>下载视频</a></div>`;
+  main.innerHTML=`<a class="back-link" href="#works">${icon('arrow-right')} 返回成品库</a>${heading(E(product.title),archivedTaskNotice(task.id)+'，视频、封面和发布包独立保留。',`<a class="primary" href="${E(product.package)}" download>${icon('download')} 下载发布包</a>`)}<nav class="content-tabs" aria-label="已保留的成品版本">${(task.results.find(r=>r.index===product.index)?.versions||[product]).map(v=>`<a href="#preview/archive/${task.id}/${v.index}/${v.version}" ${v.version===product.version?'aria-current="page"':''}>${E(v.label)}</a>`).join('')}</nav><div class="video-view"><video controls playsinline preload="metadata" poster="${E(product.cover)}" src="${E(product.video)}"></video></div><div class="work-actions"><a class="secondary" href="${E(product.cover)}" download>下载封面</a><a class="secondary" href="${E(product.video)}?download=1" download>下载视频</a></div>`;
 };
 function paintTaskDeletions(){
   if(route==='task'&&!state.tasks.some(t=>t.id===selectedTask)){setRoute('tasks');return;}
