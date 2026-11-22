@@ -9,6 +9,10 @@ import subprocess
 from model_api import ModelResponseError, image_part
 from duration import initial_budget, script_units
 from narration_timing import MINUTE_TARGET
+from narration_prompts import (
+    COMPACT_OUTLINE, COMPLETE_NARRATION_POLICY, NARRATION_REPAIR_SYSTEM, NARRATION_SYSTEM, OUTLINE_RULES,
+    edit_lengths, user_prompt,
+)
 
 
 NARRATOR_CONTEXT = (
@@ -80,9 +84,13 @@ def chunks(items, count):
 def source_evidence(sources):
     evidence = {}
     for source, text in sources.items():
-        for quote in re.findall(r'[^。！？\r\n]+[。！？]*', text):
-            if quote.strip():
-                evidence[f'e{len(evidence) + 1}'] = {'source': source, 'quote': quote.strip()}
+        paragraphs = (part for part in re.split(r'\n[ \t\r]*\n', text) if part.strip())
+        for number, paragraph in enumerate(paragraphs, 1):
+            for quote in re.findall(r'[^。！？\r\n]+[。！？]*', paragraph):
+                if quote.strip():
+                    evidence[f'e{len(evidence) + 1}'] = {
+                        'source': source, 'quote': quote.strip(), 'paragraph': number,
+                    }
     return evidence
 
 
@@ -169,12 +177,12 @@ class Editor:
             raise NeedsInput('当前素材观察未找到适合开头和结尾的移动视频，请补充实拍移动素材或说明哪段可用。')
         return result
 
-    def context(self, task, folder, answer):
+    def context(self, task, folder, answer, *, observe=True):
         inventory = self.read(folder / 'inventory.json')
         sources = {x['path']: x['text'] for x in inventory['files'] if x['kind'] == 'text'}
         target = task.get('targetDurationSeconds')
         return {
-            'sources': sources, 'media': self.media(folder, inventory),
+            'sources': sources, **({'media': self.media(folder, inventory)} if observe else {}),
             'institutionName': task.get('institutionName') or '',
             'requirements': task.get('requirements', ''), 'answer': answer,
             'durationBudget': initial_budget(target) if target is not None else {},
@@ -232,6 +240,74 @@ class Editor:
                 feedback = str(exc)
         question(result)
         raise ValueError('共同事实提炼未通过原文及对应素材校验。' + feedback)
+
+    def complete_outline(self, context, evidence):
+        body_units = context['durationBudget'].get('sections', {}).get('body')
+        # Leave space for a natural opening, links between facts, and the closing action.
+        outline_units = round(body_units * 0.80) if body_units else None
+        data = {
+            'institutionName': context['institutionName'], 'original': context['sources'],
+            'requirements': context['requirements'], 'answer': context['answer'],
+            'durationBudget': context['durationBudget'], 'outlineUnits': outline_units, 'evidence': evidence,
+        }
+        feedback = ''
+        for _ in range(3):
+            candidate = self.ask(OUTLINE_RULES, {**data, 'feedback': feedback})
+            question(candidate)
+            try:
+                self.validate_complete_outline(candidate, evidence)
+                checked = self.ask(
+                    '复核 candidateFacts。逐段扫原文，补回遗漏的核心主题和要点中的关键服务；'
+                    '核对每项实际引用的原句，删掉重复或依据不够的描述。' + OUTLINE_RULES,
+                    {**data, 'candidateFacts': candidate['facts']},
+                )
+                question(checked)
+                facts = self.validate_complete_outline(checked, evidence)
+                length = script_units({'sentences': facts})
+                if outline_units and length > outline_units:
+                    return self.compact_outline(checked['facts'], history=evidence, limit=outline_units,
+                                                requirements=context['requirements'])
+                return facts
+            except PlanError as exc:
+                feedback = str(exc)
+        raise PlanError('全文必讲提纲未通过原文核对。' + feedback)
+
+    def compact_outline(self, candidates, *, history, limit, requirements):
+        evidence = {row['evidenceId']: history[row['evidenceId']] for row in candidates}
+        sources = {(row['source'], row['paragraph']) for row in evidence.values()}
+        data = {'候选要点': candidates, '用户要求': requirements,
+                'targetUnits': round(limit * 0.82), 'maxUnits': limit}
+        feedback = ''
+        for _ in range(3):
+            compact = self.ask(COMPACT_OUTLINE, {**data, 'feedback': feedback})
+            try:
+                facts = self.validate_complete_outline(compact, evidence)
+                length = script_units({'sentences': facts})
+                if length > limit:
+                    raise PlanError(f'必讲短语实数 {length} 字，超过提纲预算 {limit} 字；去掉候选中的次要背景和长清单。')
+                used = {(row['source'], row['paragraph']) for row in facts}
+                if sources - used:
+                    missing = '、'.join(f'{file}第{paragraph}段' for file, paragraph in sorted(sources - used))
+                    raise PlanError(f'漏了已选核心内容的来源 {missing}，每个来源段保留一句最重要的信息。')
+                return facts
+            except PlanError as exc:
+                feedback = str(exc)
+        raise PlanError(feedback)
+
+    @staticmethod
+    def validate_complete_outline(result, evidence):
+        facts = result.get('facts')
+        if not isinstance(facts, list) or not facts:
+            raise PlanError('请返回至少一项有原文依据的必讲要点。')
+        output = []
+        for index, row in enumerate(facts, 1):
+            if not isinstance(row, dict):
+                raise PlanError(f'第 {index} 项需要主题、实际关键信息和原文编号。')
+            topic, text, key = (row.get(name) for name in ('topic', 'text', 'evidenceId'))
+            if not all(isinstance(value, str) and value.strip() for value in (topic, text, key)) or key not in evidence:
+                raise PlanError(f'第 {index} 项需要主题、实际关键信息和有效原文编号。')
+            output.append({'id': f'f{index}', 'topic': topic.strip(), 'text': text.strip(), **evidence[key]})
+        return output
 
     @staticmethod
     def validate_outline(result, evidence, observed):
@@ -436,7 +512,13 @@ class Editor:
             plan['publication']['title'] = title.strip()
         return {**result, 'plan': plan}
 
-    def draft_narration(self, context, facts, preference, budget, index, feedback=''):
+    def draft_narration(self, context, facts, preference, budget, index, feedback='', *, variation=None, remember=None):
+        if variation is not None:
+            user = user_prompt(context, facts, budget, variation, preference, feedback)
+            if remember:
+                remember(NARRATION_SYSTEM, user)
+            result = self.ask(NARRATION_SYSTEM, user, max_tokens=2500)
+            return self.narration_paragraphs(result)
         # A rotation changes the entry point while every script keeps the same facts.
         ordered = facts[index % len(facts):] + facts[:index % len(facts)]
         result = self.ask(
@@ -448,23 +530,39 @@ class Editor:
             '输出 {"paragraphs":["开头","正文段","结尾"]}，正文可有多段，每段只填实际要念的话。',
             {**narration_material(context, ordered), 'preference': preference, 'feedback': feedback},
             max_tokens=2500)
+        return self.narration_paragraphs(result)
+
+    @staticmethod
+    def narration_paragraphs(result):
         parts = result.get('paragraphs')
         if (not isinstance(parts, list) or not 3 <= len(parts) <= 12
                 or any(not isinstance(part, str) or not part.strip() for part in parts)):
             raise PlanError('口播需要以独立开头、正文和结尾段落返回。')
         return [part.strip() for part in parts]
 
-    def revise_narration(self, parts, targets, issues, context, facts, budget, preference=''):
-        result = self.ask(
-            '用客观自然的带看口吻局部修订养老机构探访口播。'
-            '只改 targets 中编号的段落，优先解决 issues。以下字数按替回后的全文计算。'
-            + narration_length_instruction(budget) + NARRATION_SOURCE_RULES +
-            '保留本条必讲事实、开头的机构语境和最后一个咨询动作。增加字数时补有依据的细节，'
-            '减少时先压重复或次要细节。相似问题按原意重组句式与衔接。'
-            '返回 {"edits":[{"index":2,"text":"修订后的段落"}]}，index 从 1 起，每个指定编号返回一次。',
-            {**narration_material(context, facts), 'preference': preference,
-             'paragraphs': parts, 'targets': [i + 1 for i in targets], 'issues': issues},
-            max_tokens=2600)
+    def revise_narration(self, parts, targets, issues, context, facts, budget, preference='', *,
+                         variation=None, remember=None):
+        if variation is not None:
+            sizes = [script_units({'sentences': [{'text': text}]}) for text in parts]
+            user = user_prompt(context, facts, budget, variation, preference, '')
+            user['返修信息'] = {
+                '上一稿': parts, '问题': issues, '只改段落': [i + 1 for i in targets],
+                '替换段落字数': edit_lengths(sizes, targets, budget),
+            }
+            if remember:
+                remember(NARRATION_REPAIR_SYSTEM, user)
+            result = self.ask(NARRATION_REPAIR_SYSTEM, user, max_tokens=2600)
+        else:
+            result = self.ask(
+                '用客观自然的带看口吻局部修订养老机构探访口播。'
+                '只改 targets 中编号的段落，优先解决 issues。以下字数按替回后的全文计算。'
+                + narration_length_instruction(budget) + NARRATION_SOURCE_RULES +
+                '保留本条必讲事实、开头的机构语境和最后一个咨询动作。增加字数时补有依据的细节，'
+                '减少时先压重复或次要细节。相似问题按原意重组句式与衔接。'
+                '返回 {"edits":[{"index":2,"text":"修订后的段落"}]}，index 从 1 起，每个指定编号返回一次。',
+                {**narration_material(context, facts), 'preference': preference,
+                 'paragraphs': parts, 'targets': [i + 1 for i in targets], 'issues': issues},
+                max_tokens=2600)
         edits = result.get('edits')
         if not isinstance(edits, list) or any(not isinstance(edit, dict) for edit in edits):
             raise PlanError('返修需返回指定段落。')
@@ -488,7 +586,10 @@ class Editor:
                    '额外的就医安排、数字清单、工具、疗法与效果等细节，只有用户指定或已列为共同事实才写入。'
                    '写设施时直接描述镜头里的物件和位置，写服务时沿用原文范围和条件。'
                    if target == MINUTE_TARGET and not (revised or prefs or task.get('requirements')) else '')
-        if spoken is not None:
+        if spoken is not None and task.get('narrationPolicy') == COMPLETE_NARRATION_POLICY:
+            result = self.bind_narration(spoken, context, facts, evidence, prefs, feedback, candidate,
+                                         task.get('publicationOverride', {}))
+        elif spoken is not None:
             result = self.ask(
                 '为已经写好的 paragraphs 配真实镜头、事实编号、封面和发布文案。'
                 'paragraphs 的每个段落对应 plan.sentences 的一项，顺序和数量一致。'
@@ -496,6 +597,7 @@ class Editor:
                 '首尾使用有运动的实拍视频。原文描述的分区或方案允许配院内环境。'
                 '配景必须在 shots 填 match 为 context，并在 description 说明仅作背景。'
                 '原文编号 f 必须对应原文所支持的段落。局部设施观察只说明该镜头拍到的一处配置。'
+                '若用户明确指定专题，可在 topicAuthorization 填对应要求原话。'
                 '封面和发布文案只使用已确认事实。按 {"plan":{"institution":{},"sentences":[],"cover":{},'
                 '"publication":{}},"openingAngle":"","structure":"","coverAngle":"","topicAuthorization":""} 输出。\n'
                 + self.rules('plan-schema', 'covers'),
@@ -558,6 +660,9 @@ class Editor:
         self.fit_institution_labels(plan['institution'], context, result)
         selected = {x['path']: x for x in context['media']}
         fact_media = {fact['id']: fact.get('mediaPaths', []) for fact in facts}
+        related = {fact['id']: [key for key, row in evidence.items()
+                                if row['source'] == fact['source'] and row.get('paragraph') == fact.get('paragraph')]
+                   for fact in facts} if spoken is not None and task.get('narrationPolicy') == COMPLETE_NARRATION_POLICY else {}
         sentences = plan.get('sentences', [])
         if not isinstance(sentences, list) or not 1 <= len(sentences) <= 100:
             raise PlanError('plan.sentences 必须是包含口播句子和分镜的数组。')
@@ -577,6 +682,8 @@ class Editor:
             ids = sentence.get('factIds', [])
             if not isinstance(ids, list) or any(not isinstance(f, str) for f in ids):
                 raise PlanError(f'第 {i + 1} 句的 factIds 必须是编号字符串数组，如 ["f1","f2"]。', result)
+            if related:
+                sentence['factIds'] = list(dict.fromkeys([*ids, *(key for fact in ids for key in related.get(fact, []))]))
             self.repair_shots(sentence, selected, fact_media, moving=i == 0 or sentence.get('kind') == 'cta')
         if revised:
             text = ''.join(s['text'] for s in sentences)
@@ -595,7 +702,10 @@ class Editor:
         self.rebind_fact_references(sentences,references,result,editable=not revised and spoken is None,omit_unsupported=omit_unsupported)
         authorization = result.get('topicAuthorization') or ''
         if authorization and (not isinstance(authorization, str) or authorization not in task.get('requirements', '') + '\n' + prefs):
-            raise PlanError('专题需能引用用户明确提出的要求。')
+            if spoken is None or task.get('narrationPolicy') != COMPLETE_NARRATION_POLICY:
+                raise PlanError('专题需能引用用户明确提出的要求。')
+            # The model cannot turn a comprehensive locked script into a topic by inventing authorization.
+            authorization = ''
         angles = {k: result.get(k) for k in ('openingAngle', 'structure', 'coverAngle')}
         missing_angles = [k for k, v in angles.items() if not isinstance(v, str) or not v.strip()]
         if missing_angles:
@@ -616,6 +726,81 @@ class Editor:
             raise PlanError('。'.join(issues) + '。', result)
         return plan, {**angles, 'factCoverage': [f for f in used if f in expected], 'mode': 'topic' if authorization else 'comprehensive',
                       'topicAuthorization': authorization}
+
+    def bind_narration(self, spoken, context, facts, evidence, preference, feedback, candidate, publication):
+        segments = {str(i + 1): text for i, text in enumerate(spoken)}
+        media = {f'M{i + 1}': shot for i, shot in enumerate(context.get('media', []))}
+        result = self.ask(
+            '给已经定稿的口播小节选镜头、绑定原文、编写封面和发布文案。spokenSegments 的每个编号恰好返回一次，'
+            '用 segments 对象相同的数字键，禁止合并、拆分或改写台词。每条记录含 label、factIds、shots；'
+            'factIds 根据实际台词匹配，核心事实优先用 f 编号，其他可用 e 编号。每个事实小节需有来源。'
+            '首尾只选有运动的真实视频。画面直接呈现台词事实时在 match 填 direct，否则填 context 并在 description 说明仅作背景。'
+            'shots 的 path 填 mediaById 里的 M 开头编号，另填原片起始秒 sourceStart、相对时长 weight 和 description。'
+            'plan.institution 填 name、displayName、headline，后两项最多 12 字。'
+            'plan.cover 填不带分行标记的 main_title 字符串和恰好三个 labels，每项含 text、source 和视频提帧秒 time。'
+            '封面 source 填能直接支持标签的 M 开头素材编号，不使用 f 或 e 开头的事实编号。'
+            '按锁定稿实际开场确定封面标题，综合稿用综合标题或忠实的开场切入，不能用次要事实重新指定整条主题。'
+            'plan.publication 填 title、description、五个不同的 topics，数字用 factIds 引用原文。'
+            '三项策划角度填具体语义。综合稿的 topicAuthorization 必须为空字符串；用户明确要求专题时才填对应原话。'
+            '返回 {"segments":{"1":{"label":"小节","factIds":["f1"],"shots":[]}},'
+            '"plan":{"institution":{},"cover":{},"publication":{}},"openingAngle":"","structure":"","coverAngle":"",'
+            '"topicAuthorization":""}。\n' + self.rules('covers'),
+            {**{key: value for key, value in context.items() if key != 'media'},
+             'mediaById': media, 'spokenSegments': segments, 'facts': facts, 'supportingEvidence': evidence,
+             'preference': preference, 'feedback': feedback, 'candidate': candidate,
+             'publicationOverride': publication}, max_tokens=6500)
+        bindings = result.get('segments')
+        plan = result.get('plan')
+        if (not isinstance(plan, dict) or not isinstance(bindings, dict) or bindings.keys() != segments.keys()
+                or any(not isinstance(value, dict) for value in bindings.values())):
+            question(result)
+            raise PlanError('请按 spokenSegments 的所有数字键逐一返回分镜对象，一条也不能缺。', result)
+        plan['sentences'] = [bindings[key] for key in segments]
+        for sentence in plan['sentences']:
+            shots = sentence.get('shots')
+            for shot in shots if isinstance(shots, list) else []:
+                if isinstance(shot, dict) and isinstance(shot.get('path'), str) and shot['path'] in media:
+                    shot['path'] = media[shot['path']]['path']
+                if isinstance(shot, dict) and shot.get('match') not in ('direct', 'context'):
+                    shot['match'] = 'context'
+                    shot['description'] = '仅作同机构环境背景。' + str(shot.get('description') or '')
+        if media:
+            self.bind_cover_media(plan, media, result)
+        return result
+
+    def bind_cover_media(self, plan, media, candidate):
+        cover = plan.get('cover')
+        if not isinstance(cover, dict):
+            raise PlanError('封面需要主标题和三个素材标签。', candidate)
+        title = cover.get('main_title')
+        if isinstance(title, dict) and isinstance(title.get('text'), str):
+            # Keep the model's title text and let the existing layout place the lines.
+            title.pop('lines', None)
+            words = title.get('highlights')
+            if isinstance(words, list):
+                title['highlights'] = [word for word in words if isinstance(word, str) and word and word in title['text']]
+        paths = {row['path'] for row in media.values()}
+
+        def resolve(labels):
+            if (not isinstance(labels, list) or len(labels) != 3
+                    or any(not isinstance(row, dict) or not isinstance(row.get('source'), str) for row in labels)):
+                return None
+            resolved = [{**row, 'source': media.get(row['source'], {}).get('path', row['source'])}
+                        for row in labels]
+            return resolved if all(row['source'] in paths for row in resolved) else None
+
+        labels = resolve(cover.get('labels'))
+        if labels is None:
+            result = self.ask(
+                '仅重选封面的三张实拍图和短标签。对照 mediaById 的观察描述，每个标签只描述图片能直接看到的空间或物件。'
+                '可换掉原先无直接画面可用的标签。source 只填 M 开头的素材编号，视频用有依据的提帧秒，缺省用 0。'
+                '返回 {"labels":[{"text":"短标签","source":"M1","time":0}]}，恰好三项。',
+                {'mainTitle': cover.get('main_title'), 'previousLabels': cover.get('labels'),
+                 'mediaById': media}, max_tokens=1200)
+            labels = resolve(result.get('labels'))
+        if labels is None:
+            raise PlanError('封面标签必须各自绑定本机构素材。', candidate)
+        cover['labels'] = labels
 
     def shorten_narration(self, plan, budget, outline, preference, *, may_drop_optional=False):
         rows = plan['sentences']

@@ -509,8 +509,9 @@ class App:
         if self.workbench_host == 'local':
             task['targetDurationSeconds'] = duration
             if duration == 60:
-                task['narrationPolicy'] = 1
                 from duration import initial_budget
+                from narration_prompts import COMPLETE_NARRATION_POLICY
+                task['narrationPolicy'] = COMPLETE_NARRATION_POLICY
                 profiles = self.pc.load()['people']
                 tasks = specs or [{'person':task['person']}] * count
                 task['narrationBudgets'] = [initial_budget(duration, profiles[row['person']]) for row in tasks]
