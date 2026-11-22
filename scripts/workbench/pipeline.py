@@ -185,7 +185,9 @@ class Pipeline:
         if journal.get('plan') and journal['plan']!=fingerprint(job/'plan.json'):
             raise ValueError('执行期间计划发生变化，请另存重做或先复核受影响资产')
         deadline=time.monotonic()+max_seconds
-        target = self.app.task(row['taskId']).get('targetDurationSeconds')
+        task = self.app.task(row['taskId'])
+        target = task.get('targetDurationSeconds')
+        legacy_minute = not task.get('narrationPolicy')
         for step in STEPS:
             current=self.row(ident,lease)
             if current['status']=='stopping':
@@ -193,11 +195,11 @@ class Pipeline:
             if step in journal['steps']: continue
             if step == 'build' and target is not None and (job/'voice.json').is_file():
                 duration = measured_duration(job, self.read)
-                if not within_target(duration, target):
+                if not within_target(duration, target, legacy_minute=legacy_minute):
                     return {'state':'revise_duration','duration':duration,'target':target}
             if step in ('final-review', 'package') and target is not None:
                 rendered = self.read(job/'verification.json', {}).get('duration')
-                if rendered is not None and not within_target(rendered, target):
+                if rendered is not None and not within_target(rendered, target, legacy_minute=legacy_minute):
                     raise ValueError(f'成片实测 {rendered:.1f} 秒，本条要求 {duration_rule(target)}。')
             if step=='check' and journal.get('reviewedCheck') and (job/'check.json').is_file() and journal['reviewedCheck']==fingerprint(job/'check.json'):
                 journal.pop('reviewedCheck')

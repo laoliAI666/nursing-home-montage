@@ -1,5 +1,6 @@
 """Independent FIFO coordinator for the existing production pipeline."""
 import os
+import re
 from pathlib import Path
 import threading
 import time
@@ -12,6 +13,7 @@ from planning import digest
 from job_queue import BILLING_MESSAGE, is_minimax_balance_error
 from duration import DurationRevision, budget_issue, initial_budget, script_units
 from narration_timing import MINUTE_TARGET
+from narration_editor import SIMILARITY_LIMIT, narration_issues, paragraphs, similarity_issue
 
 
 class StageError(ValueError):
@@ -143,6 +145,11 @@ class Production:
         self.prepare_video(task, answer)
         duration = DurationRevision(self, task, answer)
         duration.apply_pending()
+        if task.get('narrationPolicy') and not self.read(duration.receipt,{}).get('applied'):
+            try:
+                self.app.planning.check_narration(task,self.row['index'],self.read(self.job/'plan.json'))
+            except ValueError as exc:
+                raise NeedsInput(str(exc)) from exc
         while True:
             result = self.pipe.advance(self.item, self.lease)
             state = result['state']
@@ -172,7 +179,7 @@ class Production:
         cache_path = folder / 'independent-planning.json'
         evidence = source_evidence(context['sources'])
         identity = digest({'input': input_fingerprint, 'answer': answer, 'media': context['media'],
-                           'editorialVersion': 7})
+                           'editorialVersion': 8 if task.get('narrationPolicy') else 7})
         cache = self.read(cache_path, {})
         if cache.get('input') != identity:
             self.progress('正在结合实拍与原文确定共同提纲')
@@ -218,6 +225,9 @@ class Production:
             raise
 
     def draft_with_feedback(self, task, index, context, facts, evidence, validate, items=(), folder=None):
+        if task.get('narrationPolicy') and not task.get('revisedNarration'):
+            return self.draft_spoken_plan(task, index, context, facts, evidence, validate, items, folder)
+
         previous_plans = [self.read(folder / item['plan']) for item in items]
         previous_scripts = {tuple(row['text'] for row in plan['sentences']) for plan in previous_plans}
         angle_keys = ('openingAngle', 'structure', 'coverAngle')
@@ -291,6 +301,99 @@ class Production:
         validated = validate(plan, record_fallback)
         self.progress(f'第 {index + 1} 条已保留文案优化提醒，继续制作')
         return validated, angles
+
+    def draft_spoken_plan(self, task, index, context, facts, evidence, validate, items, folder):
+        preference = (task.get('videoPreferences') or [''] * task['count'])[index]
+        budget = self.app.planning.narration_budget(task, index)
+        prior = [paragraphs(self.read(folder/item['plan'])) for item in items]
+        receipt = (folder or self.job)/f'narration-draft-{index + 1:04d}.json'
+        log = self.read(receipt, {'firstReturn':None,'repairs':0})
+        feedback = ''
+
+        def issues_for(parts):
+            style = narration_issues(parts)
+            notes = list(style.values())
+            positions = set(style)
+            sizes = [script_units({'sentences':[{'text':text}]}) for text in parts]
+            total = sum(sizes)
+            if issue := budget_issue(total, budget):
+                goal = (budget['minUnits'] + budget['maxUnits']) // 2
+                notes.append(f'{issue} 全稿目标约 {goal} 字，正文约{"补" if goal > total else "删"} {abs(goal-total)} 字。')
+                middle = range(1, len(parts) - 1)
+                positions.update(sorted(middle, key=sizes.__getitem__,reverse=total > goal)[:2])
+            for previous in prior:
+                match = similarity_issue(parts[:-1], previous, context['institutionName'])
+                if match:
+                    similarity, repeated = match
+                    positions.update(repeated or range(0, len(parts) - 1))
+                    sections = '、'.join(str(i + 1) for i in repeated)
+                    notes.append(f'正文和本批已有稿的相似度为 {similarity:.1f}%，达到 {SIMILARITY_LIMIT}%。'
+                                 f'重新组织第 {sections or "已指定"} 段的句式和衔接，保持事实和顺序。')
+            return notes, sorted(positions)
+
+        for generation in range(2):
+            try:
+                parts = self.editor.draft_narration(context, facts, preference, budget, index, feedback)
+            except (PlanError, ModelResponseError) as exc:
+                feedback = str(exc)
+                continue
+            if log['firstReturn'] is None:
+                issues, _ = issues_for(parts)
+                log['firstReturn'] = {'paragraphs':list(parts),'issues':issues,'passed':False}
+                self.write(receipt,log)
+            repairs = 2 if generation == 0 else 0
+            for repair in range(repairs + 1):
+                notes, targets = issues_for(parts)
+                if not notes:
+                    candidate = None
+                    for _ in range(2):
+                        try:
+                            plan, angles = self.editor.plan(task,index,context,facts,[],feedback,
+                                                            evidence=evidence,candidate=candidate,spoken=parts)
+                            candidate = {'plan':plan,**angles}
+
+                            def review(job):
+                                nonlocal parts
+                                def verify_copy(prepared):
+                                    nonlocal parts
+                                    sealed = self.read(prepared/'plan.json')['sentences']
+                                    parts = [row['text'] for row in sealed]
+                                    errors, _ = issues_for(parts)
+                                    if errors:
+                                        raise PlanError('。'.join(errors))
+                                try:
+                                    self.review_candidate(job,context,facts,prepare=verify_copy)
+                                except EditorialFeedback as exc:
+                                    self.invoke('review-content',job=job,extra=['--note',str(exc)])
+                                    self.pipe.save_notices(job,'content',[str(exc)])
+
+                            accepted = validate(plan,review)
+                            log['firstReturn']['passed'] = not generation and not repair and not log['firstReturn']['issues']
+                            log['submittedUnits'] = script_units(accepted)
+                            self.write(receipt,log)
+                            return accepted, angles
+                        except (PlanError, StageError, ModelResponseError, NeedsInput) as exc:
+                            feedback = self.app.redact(str(exc))[:1100]
+                            notes, targets = issues_for(parts)
+                            if notes:
+                                break
+                    if not notes:
+                        flagged = sorted({int(n) for n in re.findall(r'sentences\[(\d+)\]',feedback)
+                                          if int(n) < len(parts)})
+                        if flagged:
+                            notes, targets = [feedback], flagged
+                feedback = '。'.join(notes) or feedback
+                if repair == repairs or not targets:
+                    break
+                self.progress(f'第 {index + 1} 条正在定点返修口播（{repair + 1}/2）')
+                try:
+                    parts = self.editor.revise_narration(parts,targets,notes,context,facts,budget)
+                except (PlanError, ModelResponseError) as exc:
+                    feedback = str(exc)
+                    break
+                log['repairs'] += 1
+                self.write(receipt,log)
+        raise NeedsInput(f'第 {index + 1} 条口播仍有问题，请确认对应事实或可调整的内容。{feedback}')
 
     def review_candidate(self, job, context, outline=(), *, prepare=None):
         self.invoke('validate-plan', job=job)

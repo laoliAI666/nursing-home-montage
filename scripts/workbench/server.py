@@ -508,6 +508,12 @@ class App:
         task["workspace"] = str(workspace)
         if self.workbench_host == 'local':
             task['targetDurationSeconds'] = duration
+            if duration == 60:
+                task['narrationPolicy'] = 1
+                from duration import initial_budget
+                profiles = self.pc.load()['people']
+                tasks = specs or [{'person':task['person']}] * count
+                task['narrationBudgets'] = [initial_budget(duration, profiles[row['person']]) for row in tasks]
         task['planningRequired']=count>1
         if specs:task['videoSpecs']=specs
         if snapshot:

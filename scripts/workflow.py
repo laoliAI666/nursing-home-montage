@@ -309,7 +309,7 @@ def fit_voice_duration(audio, out, cfg, target):
     if within_target(duration, target):
         return audio, {}
     rate = minute_tempo(original, lead, fps) if target == MINUTE_TARGET else None
-    if rate is None:
+    if rate is None or rate <= 1:
         return audio, {'durationAdjustmentRequired':duration}
 
     sped = out/'narration-tempo.mp3'
@@ -336,7 +336,7 @@ def voice(job,reuse=None):
     target=int(target) if target and not reuse else None
     cache_inputs={'text':text,'tts':read(job/'avatar-engine.json')['tts'],'connection':cfg.get('person',{}).get('connection'),'project':str(project_root())}
     if target == MINUTE_TARGET:
-        cache_inputs['durationPolicy']={'target':target,'lead':cfg['voice']['start'],'fps':cfg['video']['fps']}
+        cache_inputs['durationPolicy']={'target':target,'minimum':55,'lead':cfg['voice']['start'],'fps':cfg['video']['fps']}
     key=digest(cache_inputs)
     cache=project_root()/'作品/.montage-cache/voice'/f'{key}.json'
     if (job/'voice.json').exists():

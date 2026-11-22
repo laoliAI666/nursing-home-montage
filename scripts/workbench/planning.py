@@ -34,6 +34,8 @@ class BatchPlanning:
             if re.search(r'access.?key|secret|credential|凭据|密钥', path.name, re.I): continue
             files.append([str(path.relative_to(source)), file_digest(path)])
         settings = {'targetDurationSeconds': task['targetDurationSeconds']} if 'targetDurationSeconds' in task else {}
+        if task.get('narrationPolicy'):
+            settings.update(narrationPolicy=task['narrationPolicy'],narrationBudgets=task['narrationBudgets'])
         return {**settings, 'source': str(source), 'files': files, 'facts': task.get('facts', ''),
                 'requirements': task.get('requirements', ''), 'videoPreferences': task.get('videoPreferences', []),
                 'people': task.get('videoSpecs') or [{'person':task['person']}] * task['count'],
@@ -95,9 +97,11 @@ class BatchPlanning:
             if plan.get('person') != row['person']: raise ValueError('计划人物与批次身份不一致')
             text = '\n'.join(s.get('text', '') for s in plan.get('sentences', []))
             if not text.strip() or digest(text) in scripts: raise ValueError('口播为空或整篇完全重复')
+            self.check_narration(task,i,plan,[item['plan'] for item in parsed])
             scripts.add(digest(text))
             direction = tuple(str(row.get(k, '')).strip() for k in ('openingAngle', 'structure', 'coverAngle'))
-            if not all(direction) or direction in angles: raise ValueError('请明确区分各条的切入、结构与封面策划')
+            if not all(direction) or (not task.get('narrationPolicy') and direction in angles):
+                raise ValueError('请填写各条的切入、结构与封面策划')
             angles.add(direction)
             if row.get('mode', 'comprehensive') != 'topic':
                 if set(row.get('factCoverage', [])) != set(ids): raise ValueError('综合介绍须覆盖共同事实，并逐项记录覆盖关系')
@@ -110,6 +114,25 @@ class BatchPlanning:
             if not covered.issubset(used):raise ValueError('共同事实覆盖关系未在本条口播的 factIds 中体现')
             parsed.append({'index': i, 'path': str(plan_path), 'sha256': file_digest(plan_path), 'plan': plan})
         return draft, parsed, fingerprint
+
+    def narration_budget(self, task, index):
+        from duration import initial_budget
+        return (task.get('narrationBudgets') or [initial_budget(task['targetDurationSeconds'])] * task['count'])[index]
+
+    def check_narration(self, task, index, plan, previous=(), *, budget=None):
+        if not task.get('narrationPolicy') or task.get('revisedNarration'):
+            return
+        from duration import budget_issue, script_units
+        from narration_editor import narration_issues, paragraphs, similarity_issue
+        lines = [row.get('text','') for row in plan.get('sentences', [])]
+        size = budget_issue(script_units(plan), budget or self.narration_budget(task,index))
+        issues = list(narration_issues(lines).values())
+        if size or issues:
+            raise ValueError(f'第 {index+1} 条口播未通过。' + ' '.join(x for x in [size,*issues] if x))
+        for old in previous:
+            match = similarity_issue(paragraphs(plan),paragraphs(old),task.get('institutionName',''))
+            if match:
+                raise ValueError(f'第 {index+1} 条正文与本批已有稿相似度达到 {match[0]:.1f}%，请局部重写。')
 
     def validate_item(self, task, folder, index, plan, validate):
         from workspace import video_job

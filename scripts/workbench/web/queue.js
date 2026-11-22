@@ -3,7 +3,7 @@ Object.assign(statusLabels,{assigned:'正在派发',partial:'部分完成',billi
 const inFlight=['queued','running','stopping'];
 function durationHelp(value) {
   return Number(value) === 60
-    ? '70 秒内按原速。超过时最多加速至 1.15 倍，仍超过就改稿。'
+    ? '55–70 秒按原速。少于 55 秒补稿，超出 70 秒最多加速至 1.15 倍，仍超时则改稿。'
     : '每条成片允许前后 5 秒。';
 }
 function creationSetup(selected) {

@@ -9,6 +9,7 @@ import subprocess
 from model_api import ModelResponseError, image_part
 from duration import initial_budget, script_units
 from narration_timing import MINUTE_TARGET
+from narration_editor import VOICE_STYLE
 
 
 NARRATOR_CONTEXT = (
@@ -163,6 +164,7 @@ class Editor:
             '共同提纲涵盖照护、居住和院内生活。原文明确区分照护分区时，先把分区和本院的特色照护纳入共同提纲。'
             '逐项写成一个简短要点，综合稿每条都要讲全。'
             'show 只写画面直接呈现且原文支持的细节，列出对应素材编号，并从其中一份 description 原样复制一段 visibleDetail。'
+            'text 必须由 evidenceId 对应的原句支持。文字只说适老化设施时，具体扶手等实拍例子只写在 visibleDetail。'
             '画面只支持一部分时，show 必须删去没拍到的并列内容。比如步道镜头可讲院内步道，不能带出未确认的空中花园。'
             '缺少直接画面但重要的事实标 brief，只用一句交代，少列细节。背景素材可以留空。'
             '服务方案、分区安排、服务时长和就医保障通常只在文字中有依据。'
@@ -406,8 +408,51 @@ class Editor:
             plan['publication']['title'] = title.strip()
         return {**result, 'plan': plan}
 
+    def draft_narration(self, context, facts, preference, budget, index, feedback=''):
+        # A rotation changes the entry point while every script keeps the same facts.
+        ordered = facts[index % len(facts):] + facts[:index % len(facts)]
+        result = self.ask(
+            '根据本院核对过的材料写一篇可直接配音的养老院探访口播。' + VOICE_STYLE +
+            '开头交代院名，从所列第一个重点起笔，核心事实都讲到；同类事实可相邻介绍。'
+            '把目标放在 targetUnits，全文应在 minUnits 到 maxUnits 之间。标点不计，数字按读法计。'
+            '包含一个自然开头、若干连贯正文段和最后一个咨询段。结尾留一个邀请家属留言的动作。'
+            '只交口播正文。使用 JSON {"paragraphs":["开头","正文段","结尾"]}，每段是实际会读的话。'
+            '用户明确要求专题时可聚焦专题。', {
+                'institutionName':context['institutionName'],
+                'original':context['sources'], 'requirements':context['requirements'], 'preference':preference,
+                'factsInOrder':[{'fact':row['text'],'evidence':row['quote'],
+                                 'visibleExample':row.get('visibleDetail','')} for row in ordered],
+                'minUnits':budget['minUnits'],'maxUnits':budget['maxUnits'],
+                'targetUnits':(budget['minUnits']+budget['maxUnits'])//2, 'feedback':feedback
+            }, max_tokens=2500)
+        parts = result.get('paragraphs')
+        if (not isinstance(parts, list) or not 3 <= len(parts) <= 12
+                or any(not isinstance(part, str) or not part.strip() for part in parts)):
+            raise PlanError('口播需要以独立开头、正文和结尾段落返回。')
+        return [part.strip() for part in parts]
+
+    def revise_narration(self, parts, targets, issues, context, facts, budget):
+        result = self.ask(
+            '局部修订一篇养老院探访口播。' + VOICE_STYLE +
+            '只改 targets 中编号的段落，优先解决 issues 列出的问题。'
+            '保留所有必讲事实、开头的机构语境和最后一个咨询动作。增加字数时补有依据的细节，'
+            '减少时先压重复或次要细节。相似问题按原意重组句式与衔接。整篇要落在给定字数范围。'
+            '返回 {"edits":[{"index":2,"text":"修订后的段落"}]}，index 从 1 起，每个指定编号返回一次。',
+            {'paragraphs':parts,'targets':[i + 1 for i in targets],'issues':issues,'budget':budget,
+             'original':context['sources'],'requirements':context['requirements'],
+             'facts':[{'text':row['text'],'quote':row['quote'],'example':row.get('visibleDetail','')} for row in facts]},
+            max_tokens=2600)
+        edits = result.get('edits')
+        if not isinstance(edits, list) or any(not isinstance(edit, dict) for edit in edits):
+            raise PlanError('返修需返回指定段落。')
+        replacements = {edit['index'] - 1:edit.get('text') for edit in edits if type(edit.get('index')) is int}
+        if (len(edits) != len(replacements) or set(replacements) != set(targets)
+                or any(not isinstance(text, str) or not text.strip() for text in replacements.values())):
+            raise PlanError('返修需逐一修改指定段落并保留有效正文。')
+        return [replacements.get(i, part).strip() for i, part in enumerate(parts)]
+
     def plan(self, task, index, context, facts, previous, feedback='', *, evidence=None, candidate=None,
-             reference_plan=None):
+             reference_plan=None, spoken=None):
         prefs = (task.get('videoPreferences') or [''] * task['count'])[index]
         person = (task.get('videoSpecs') or [{'person': task['person']}] * task['count'])[index]['person']
         revised = task.get('revisedNarration', '')
@@ -420,7 +465,22 @@ class Editor:
                    '额外的就医安排、数字清单、工具、疗法与效果等细节，只有用户指定或已列为共同事实才写入。'
                    '写设施时直接描述镜头里的物件和位置，写服务时沿用原文范围和条件。'
                    if target == MINUTE_TARGET and not (revised or prefs or task.get('requirements')) else '')
-        result = self.ask(
+        if spoken is not None:
+            result = self.ask(
+                '为已经写好的 paragraphs 配真实镜头、事实编号、封面和发布文案。'
+                'paragraphs 的每个段落对应 plan.sentences 的一项，顺序和数量一致。'
+                '段落中的文字已经锁定，由工作台填入；这里只交段落 label、factIds 和 shots。'
+                '首尾使用有运动的实拍视频。原文描述的分区或方案允许配院内环境。'
+                '配景必须在 shots 填 match 为 context，并在 description 说明仅作背景。'
+                '原文编号 f 必须对应原文所支持的段落。局部设施观察只说明该镜头拍到的一处配置。'
+                '封面和发布文案只使用已确认事实。按 {"plan":{"institution":{},"sentences":[],"cover":{},'
+                '"publication":{}},"openingAngle":"","structure":"","coverAngle":"","topicAuthorization":""} 输出。\n'
+                + self.rules('plan-schema', 'covers'),
+                {**context,'paragraphs':spoken,'facts':facts,'supportingEvidence':evidence,'preference':prefs,
+                 'feedback':feedback,'candidate':candidate,'publicationOverride':task.get('publicationOverride',{})},
+                max_tokens=6500)
+        else:
+            result = self.ask(
             NARRATOR_CONTEXT + '以 durationBudget 为本次长度目标，优先合并相关重点，舍弃次要例子。'
             '它明确给出字数范围，优先于技能中默认的一分钟建议。若未给 durationBudget 则沿用默认。'
             '按 sections 的容量写开头、正文和结尾，各部分加起来不能超过 maxUnits。结尾预留约一短句。'
@@ -450,9 +510,9 @@ class Editor:
              'preference': prefs, 'previousAngles': previous, 'feedback': feedback, 'candidate': candidate,
              'durationBudget': length,
              'revisedNarration': revised, 'publicationOverride': task.get('publicationOverride', {})},
-            max_tokens=12000)
+                max_tokens=12000)
         raw = result.get('plan')
-        if reference_plan and not revised and not prefs and not task.get('requirements') and (
+        if spoken is None and reference_plan and not revised and not prefs and not task.get('requirements') and (
             not isinstance(raw, dict) or not isinstance(raw.get('sentences'), list)
             or not 1 <= len(raw['sentences']) <= 100
         ):
@@ -478,6 +538,11 @@ class Editor:
         sentences = plan.get('sentences', [])
         if not isinstance(sentences, list) or not 1 <= len(sentences) <= 100:
             raise PlanError('plan.sentences 必须是包含口播句子和分镜的数组。')
+        if spoken is not None:
+            if len(sentences) != len(spoken) or any(not isinstance(row, dict) for row in sentences):
+                raise PlanError(f'分镜须按锁定的 {len(spoken)} 个段落逐一返回。')
+            for i, (row, text) in enumerate(zip(sentences, spoken)):
+                row.update(text=text,kind='hook' if i == 0 else 'cta' if i == len(spoken) - 1 else 'fact')
         for i, sentence in enumerate(sentences):
             if not isinstance(sentence, dict) or not isinstance(sentence.get('text'), str) or not isinstance(sentence.get('shots'), list):
                 raise PlanError(f'第 {i + 1} 句须包含口播 text 和 shots 数组。')
@@ -501,10 +566,10 @@ class Editor:
                 plan['publication'][k] = value
         common_ids = {fact['id'] for fact in facts}
         cited_ids = {ident for sentence in sentences for ident in sentence.get('factIds', [])}
-        omit_unsupported = not (revised or task.get('requirements') or prefs) and (
+        omit_unsupported = spoken is None and not (revised or task.get('requirements') or prefs) and (
             task['count'] == 1 or common_ids.issubset(cited_ids)
         )
-        self.rebind_fact_references(sentences,references,result,editable=not revised,omit_unsupported=omit_unsupported)
+        self.rebind_fact_references(sentences,references,result,editable=not revised and spoken is None,omit_unsupported=omit_unsupported)
         authorization = result.get('topicAuthorization') or ''
         if authorization and (not isinstance(authorization, str) or authorization not in task.get('requirements', '') + '\n' + prefs):
             raise PlanError('专题需能引用用户明确提出的要求。')
@@ -514,7 +579,7 @@ class Editor:
             raise PlanError('请补齐顶层策划角度字段 ' + '、'.join(missing_angles) + '。', result)
         expected = common_ids
         used = {ident: None for sentence in sentences for ident in sentence.get('factIds', [])}
-        if expected - used.keys() and not (authorization or revised):
+        if spoken is None and expected - used.keys() and not (authorization or revised):
             self.complete_common_facts(sentences, facts, expected - used.keys(), selected, length)
             used = {ident: None for sentence in sentences for ident in sentence.get('factIds', [])}
         unknown = sorted(set(used) - references.keys())
@@ -674,6 +739,7 @@ class Editor:
             '不能扩大成所有房间都配备、某种疗法或某种材质性能。纯画面封面标签允许用对应实拍作依据。'
             '原文支持的重要服务可用一句简述，并明确是环境背景，勿把普通展柜或康复空间说成该服务的现场。'
             '打回时在审核说明中用 audit 的 sentences[下标] 精确指明需要修改的句子。'
+            '环境背景已在分镜备注标注，且口播未把镜头中的场所说成事实现场时，可直接通过，不要求口播念出处或画面说明。'
             '审核口语质量、覆盖范围、结尾咨询、封面及发布文案。材料未支持或文画明显不合时拒绝。'
             '如有共同提纲，核对每条都在实际口播讲全，实拍可呈现的重点展开，缺少对应画面的重要内容一句带过。'
             '成片时长由工作台按实际语音单独核验；不要凭稿件猜实测秒数。'
