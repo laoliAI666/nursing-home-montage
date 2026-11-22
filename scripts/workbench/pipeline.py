@@ -99,6 +99,7 @@ class Pipeline:
         if action == 'avatars': args += ['--wait-seconds','0']
         if shutil.which('rtk'): args = ['rtk','proxy',*args]
         env = {**os.environ, 'MONTAGE_PROJECT_ROOT':str(self.app.project),
+               'UV_CACHE_DIR':str(self.app.data / 'uv-cache'),
                'MONTAGE_QUEUE_ITEM':row['id'], 'MONTAGE_QUEUE_LEASE':lease}
         from workspace import delivery_folder
         task = self.app.task(row['taskId'])
