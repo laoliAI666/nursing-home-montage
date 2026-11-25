@@ -42,13 +42,13 @@ def revise(source,out,plan_file=None,platform=None):
             if p.suffix=='.json':write(out/name,rebase(read(p),source,out))
             else:shutil.copy2(p,out/name)
         for folder in ('assets','runs'):
-            if (source/folder).is_dir():shutil.copytree(source/folder,out/folder)
+            if (source/folder).is_dir():shutil.copytree(source/folder,out/folder,copy_function=shutil.copyfile)
         # Rebase run records only; never alter immutable external provider records or source media.
         for p in list((out/'assets').rglob('*.json'))+list((out/'runs').rglob('*.json')):
             write(p,rebase(read(p),source,out))
     else:
         for folder in ('assets/person','assets/fonts','assets/cover-input','assets/music'):
-            if (source/folder).is_dir():shutil.copytree(source/folder,out/folder)
+            if (source/folder).is_dir():shutil.copytree(source/folder,out/folder,copy_function=shutil.copyfile)
     cfg=rebase(cfg,source,out);plan['settings']=cfg;write(out/'plan.json',plan);setup(out)
     write(out/'revision-source.json',{'source':str(source),'narrationUnchanged':old_text==new_text,'reuseTimedAssets':same,'paidGenerationCalls':0})
     if same:

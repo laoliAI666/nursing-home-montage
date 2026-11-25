@@ -50,7 +50,8 @@ def compose(job):
     profiles=select_profiles(cfg.get('platform_ui',{}))
     rows=[];max_height=0
     for cue in cues:
-        rs=[typography.bounds(line,cue.get('focus','') if cue.get('focus','') in line else '',j)[2] for j,line in enumerate(cue['lines'])]
+        accent_row2=cue.get('accentSecondLine',True)
+        rs=[typography.bounds(line,cue.get('focus','') if cue.get('focus','') in line else '',j,style_row=j if accent_row2 else 0)[2] for j,line in enumerate(cue['lines'])]
         max_height=max(max_height,max(r[3] for r in rs)-min(r[1] for r in rs));rows.append(rs)
     # Select one stable zone per export; common profiles intersect all selected app layouts.
     limits=list(cap['limits'])
@@ -104,13 +105,15 @@ def compose(job):
     groups=[]
     for i,(cue,fit) in enumerate(zip(cues,fits)):
         parts=[]
+        accent_row2=cue.get('accentSecondLine',True)
         for row,line in enumerate(cue['lines']):
             focus=cue.get('focus','');focus=focus if focus in line else ''
-            b,tx,r=typography.bounds(line,focus,row);sx,sy=cap['scales'][row]
+            style_row=row if accent_row2 else 0
+            b,tx,r=typography.bounds(line,focus,row,style_row=style_row);sx,sy=cap['scales'][style_row]
             content=esc(line)
             if focus:
                 before,after=line.split(focus,1);content=esc(before)+f'<tspan fill="#FDD722" font-size="{cap["font_size"]*cap["focus_ratio"]}">{esc(focus)}</tspan>'+esc(after)
-            k=math.tan(math.radians(cap['angle']));color='#FA98C3' if row else '#FFFFFF'
+            k=math.tan(math.radians(cap['angle']));color='#FA98C3' if (row and accent_row2) else '#FFFFFF'
             parts.append(f'<g transform="matrix({sx} 0 {-sx*k} {sy} {tx} {cap["baselines"][row]})"><text font-family="OrangeRounded" font-weight="700" font-size="{cap["font_size"]}" letter-spacing="{cap["tracking"]}" fill="{color}" stroke="#15100B" stroke-width="{cap["stroke"]}" stroke-linejoin="round" paint-order="stroke fill" style="text-shadow:0 4px 5px #0008">{content}</text></g>')
         dx,dy=fit['translationNative']
         groups.append(f'<g id="caption-{i}" class="clip" data-start="{cue["start"]}" data-duration="{cue["duration"]}" data-track-index="0"><g transform="translate({dx*916/1080} {dy*1717/1920})">'+''.join(parts)+'</g></g>')

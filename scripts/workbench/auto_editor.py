@@ -594,9 +594,13 @@ class Editor:
                     used[alt] += 1
                     shots[j] = make_shot(alt, available, preferred, shot.get('weight', 1))
 
-            # 2. Ensure total footage duration covers conservative spoken duration (3.2 chars/sec).
+            # 2. Ensure duration coverage AND brisk multi-shot pacing (~2.0s fast-cut opening).
             est = max(2.2, len(spoken_characters(sentence['text'])) / 3.2)
-            while sum(capacity(s) for s in shots) < est and len(shots) < 4:
+            max_shot_sec = 2.0 if i == 0 else 4.0
+            max_shots = 8 if i == 0 else 5
+            min_shots = min(max_shots, max(3 if i == 0 and est >= 4.5 else 1, math.ceil(est / max_shot_sec)))
+            added = False
+            while (sum(capacity(s) for s in shots) < est or len(shots) < min_shots) and len(shots) < max_shots:
                 current_paths = {s['path'] for s in shots}
                 last = shots[-1]['path']
                 avoid = current_paths | ({prev_path} if prev_path else set()) | ({next_first} if next_first else set())
@@ -610,6 +614,10 @@ class Editor:
                     break
                 used[alt] += 1
                 shots.append(make_shot(alt, available, preferred, 1))
+                added = True
+            if added:
+                for sh in shots:
+                    sh['weight'] = 1
 
             prev_path = shots[-1]['path']
 
@@ -881,7 +889,8 @@ class Editor:
             'factIds 根据实际台词匹配，核心事实优先用 f 编号，其他可用 e 编号。每个事实小节需有来源。'
             '首尾只选有运动的真实视频。画面直接呈现台词事实时在 match 填 direct，否则填 context 并在 description 说明仅作背景。'
             'shots 的 path 填 mediaById 里的 M 开头编号，另填原片起始秒 sourceStart、相对时长 weight 和 description。'
-            '【剪辑防重与时长硬约束】对照 segmentEstimatedSeconds 和各视频的 duration：每小节所选镜头的可用时长合计必须不少于该小节的预估秒数（例如 9 秒的小节不能只配 1 段 4 秒短片，应配 2–3 个不同素材，避免单段视频循环播放或短闪切）；'
+            '【剪辑防重与时长硬约束】对照 segmentEstimatedSeconds 和各视频的 duration：每小节所选镜头的可用时长合计必须不少于该小节的预估秒数；'
+            '第 1 小节（开头）配约 2 秒一个的快切运动实拍混剪（例如 6–8 秒开头配 3–4 个不同运动视频，吸引观众停留）；正文单镜头不超过 4 秒，长句配 2–4 个不同素材，避免单段视频长时间停留、循环播放或短闪切；'
             '相邻两个小节的首尾以及同一小节内部，禁止连续使用同一段素材（同一 M 编号），优先轮换本机构其他相关实拍。'
             'plan.institution 填 name、displayName、headline，后两项最多 12 字。'
             'plan.cover 填不带分行标记的 main_title 字符串和恰好三个 labels，每项含 text、source 和视频提帧秒 time。'

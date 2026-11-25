@@ -13,7 +13,7 @@ class Typography:
         self.gs=self.font.getGlyphSet();self.cm=self.font.getBestCmap();self.units=self.font['head'].unitsPerEm
         self.spec=spec
 
-    def bounds(self,text,focus='',row=0):
+    def bounds(self,text,focus='',row=0,*,style_row=None):
         spec=self.spec;pen=BoundsPen(self.gs);advance=0
         start=text.find(focus) if focus else -1
         for i,c in enumerate(text):
@@ -23,7 +23,7 @@ class Typography:
             self.gs[glyph].draw(TransformPen(pen,(scale,0,k*scale,-scale,advance,0)))
             advance+=self.font['hmtx'][glyph][0]*scale+spec['tracking']
         b=pen.bounds or (0,-spec['font_size'],advance,0)
-        sx,sy=spec['scales'][row];cw,ch=spec.get('measurement_canvas',[1080,1920])
+        sx,sy=spec['scales'][row if style_row is None else style_row];cw,ch=spec.get('measurement_canvas',[1080,1920])
         # Reference SVG coordinates include canvas conversion. Judge the final pixel ratio.
         if sx<=0 or sy<=0 or abs((sx*1080/cw)/(sy*1920/ch)-1)>.05:
             raise ValueError('字幕必须保持字形比例，不能使用明显横纵不等的缩放。')
@@ -32,8 +32,8 @@ class Typography:
         rect=[(tx+sx*b[0]-margin)*1080/cw,(y+sy*b[1]-7)*1920/ch,(tx+sx*b[2]+margin)*1080/cw,(y+sy*b[3]+10)*1920/ch]
         return b,tx,rect
 
-    def fits(self,text,focus='',row=0):
-        r=self.bounds(text,focus if focus in text else '',row)[2]
+    def fits(self,text,focus='',row=0,*,style_row=None):
+        r=self.bounds(text,focus if focus in text else '',row,style_row=style_row)[2]
         return r[2]-r[0]<=self.spec['max_width']+1e-6
 
 
@@ -56,18 +56,30 @@ def auto_caption_lines(text, typography, protected, clean, characters, offset):
 
     @lru_cache(maxsize=None)
     def fits(start, end, row):
-        return typography.fits(text[start:end].strip(),row=row)
+        return typography.fits(text[start:end].strip(),row=row,style_row=0)
 
     parentheses=re.findall(r'（[^（）]+）|\([^()]+\)',text)
-    intact=[term for term in (*protected,*parentheses) if term in text and typography.fits(term)]
+    intact=[term for term in (*protected,*parentheses) if term in text and typography.fits(term,style_row=0)]
     protected_edges=set(boundaries(text,'',intact))
     cuts=[0,*boundaries(text,'')]
     cuts=[i for i in cuts if i in (0,len(text)) or (text[i] not in '）)、' and text[i-1] not in '（(')]
-    word_edges={i for _,start,end in tokenize(text) for i in (start,end)}
+    tokens=list(tokenize(text))
+    word_edges={i for _,start,end in tokens for i in (start,end)}
     word_edges.update(i for term in intact for m in re.finditer(re.escape(term),text) for i in m.span())
+    multi_word_starts={start for _,start,end in tokens if end-start>=2}
+    multi_word_starts.update(m.start() for term in intact if len(term)>=2 for m in re.finditer(re.escape(term),text))
     aligned={i:offset+len(clean(text[:i])) for i in cuts}
-    trailing_particles='的把和与在及跟向从也'
-    leading_particles='的了着过呢吗啊里中上下'
+    trailing_particles='的得地把和与在及跟向从也'
+    leading_particles='的得地了着过呢吗啊里中上下'
+
+    def is_hanging_particle(i):
+        if not 0 < i < len(text):
+            return False
+        if text[i-1] in trailing_particles:
+            return True
+        if text[i] in leading_particles and i not in multi_word_starts:
+            return True
+        return False
 
     def line_ends(start, row):
         for end in cuts:
@@ -84,7 +96,7 @@ def auto_caption_lines(text, typography, protected, clean, characters, offset):
 
     # Work backwards. Prefer whole words, avoid leaving connecting words hanging,
     # avoid sub-0.55s flashes, then minimize screens and balance rows.
-    best={len(text):((0,0,0,0,0,0,0),[])}
+    best={len(text):((0,0,0,0,0,0,0,0),[])}
     for start in reversed(cuts[:-1]):
         options=[]
         for split in line_ends(start,0):
@@ -94,12 +106,13 @@ def auto_caption_lines(text, typography, protected, clean, characters, offset):
                 next_cost,after=best[end]
                 breaks=(end,) if end==split else (split,end)
                 lengths=[aligned[b]-aligned[a] for a,b in zip((start,*breaks),breaks)]
+                imbalance=abs(lengths[0]-lengths[1]) if len(lengths)==2 else 0
                 cost=(sum(i not in protected_edges for i in breaks),
-                      sum(i<len(text) and (text[i-1] in trailing_particles or text[i] in leading_particles) for i in breaks),
+                      sum(is_hanging_particle(i) for i in breaks),
                       int(dur<.55),
                       sum(i not in word_edges for i in breaks),
                       sum(n==1 for n in lengths)+int(end==split and lengths[0]==2),
-                      1,len(breaks))
+                      1,len(breaks),imbalance)
                 lines=[text[a:b].strip().strip('、，,;；') or text[a:b].strip() for a,b in zip((start,*breaks),breaks)]
                 options.append((tuple(a+b for a,b in zip(cost,next_cost)),[lines,*after]))
         if options:best[start]=min(options,key=lambda item:item[0])
@@ -128,7 +141,8 @@ def reflow(cues, typography, clean, character_times=None):
         original=copy.deepcopy(cue);cue=copy.deepcopy(cue)
         text=''.join(cue['lines']);focus=cue.get('focus','')
         if clean(text)!=clean(cue['text']):raise ValueError('Caption lines change the spoken wording')
-        if 1<=len(cue['lines'])<=2 and all(typography.fits(t,focus,j) for j,t in enumerate(cue['lines'])):
+        accent_row2=cue.get('accentSecondLine',True)
+        if 1<=len(cue['lines'])<=2 and all(typography.fits(t,focus,j,style_row=j if accent_row2 else 0) for j,t in enumerate(cue['lines'])):
             output.append(cue);continue
         # Preserve author-supplied semantic line boundaries. Reflow an oversized
         # existing line first instead of moving fragments of it into the next thought.

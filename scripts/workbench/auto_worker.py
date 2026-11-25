@@ -486,8 +486,12 @@ class Production:
                             spoken = parts
                             sentence_to_para = list(range(len(parts)))
                             if complete:
-                                spoken = [parts[0]]
-                                sentence_to_para = [0]
+                                spoken = []
+                                sentence_to_para = []
+                                hook_lines = [line.strip() for line in re.split(r'(?<=[。！？])', parts[0]) if line.strip()]
+                                for line in hook_lines or [parts[0]]:
+                                    spoken.append(line)
+                                    sentence_to_para.append(0)
                                 for p_idx, paragraph in enumerate(parts[1:-1], 1):
                                     for line in re.split(r'(?<=[。！？；])', paragraph):
                                         if line.strip():

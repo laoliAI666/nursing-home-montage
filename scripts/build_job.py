@@ -5,7 +5,61 @@ from workflow import *
 from alignment import character_map,safe_boundary
 from caption_layout import Typography,auto_caption_lines
 
-CARE_TERMS=('老年公寓','书画室','阅读室','医务室','生活照护','失智照护','康复护理','健康监测','就医通道','忆路同行')
+CARE_TERMS=(
+    '老年公寓','书画室','阅读室','棋牌室','医务室','生活照护','失智照护','康复护理',
+    '健康监测','就医通道','绿色通道','三甲医院','忆路同行','乐享365','自理生活区',
+    '生活照护区','失智照护楼层','低盐低脂','营养均衡','24小时','实地','了解','家属',
+    '长辈','养老院','参观','预约','留言','评论区','餐食','定制','专属','服务','照护',
+    '设施','环境','空间','团队','安排','活动','休闲','广场','高龄','失能','失智','分区','方案',
+)
+FOCUS_TERMS=(
+    '失智照护楼层','自理生活区','生活照护区','绿色就医通道','忆路同行','乐享365',
+    '失智照护','生活照护','低盐低脂','营养均衡','三甲医院','绿色通道','医务室',
+    '24小时','9号线','10号线','棋牌室','书画室','阅读室','多功能活动室',
+    '户外休闲广场','空中花园','日间照料','短期托养','康养旅居','定制膳食',
+    '专属管家','健康管理','预约参观','评论区','留言',
+)
+
+def _pick_focus(lines, typography, institution_terms=()):
+    joined=''.join(lines)
+    candidates=[*FOCUS_TERMS,*institution_terms]
+    for term in sorted(dict.fromkeys(t for t in candidates if t and len(t)>=2),key=len,reverse=True):
+        if term in joined:
+            for row,line in enumerate(lines):
+                if term in line and typography.fits(line,term,row,style_row=0):
+                    return term
+    return ''
+
+def _opening_avatar_window(text, first, last, chars, duration, fps, max_seconds=10.0):
+    """End opening digital human after the 1st complete sentence, capped at max_seconds."""
+    cut = last
+    avatar_text = text
+    sent = re.search(r'[。！？!?]', text)
+    if sent:
+        n = len(clean(text[:sent.end()]))
+        if 0 < n < (last - first):
+            cut = first + n
+            avatar_text = text[:sent.end()].strip()
+    def end_for(idx):
+        if idx >= len(chars):
+            return duration
+        return min(math.ceil((chars[idx - 1]['end'] + .16) * fps) / fps, chars[idx]['start'] - .02)
+    end = end_for(cut)
+    if max_seconds and end > max_seconds:
+        # Prefer the latest clause boundary within max_seconds (at least 3s).
+        best_cut, best_end, best_text = None, None, None
+        for m in re.finditer(r'[，,；;。！？!?]', text):
+            n = len(clean(text[:m.end()]))
+            if not 0 < n <= (last - first):
+                continue
+            cand_end = end_for(first + n)
+            if 3.0 <= cand_end <= max_seconds:
+                best_cut, best_end, best_text = first + n, cand_end, text[:m.end()].strip()
+        if best_cut is not None:
+            cut, end, avatar_text = best_cut, best_end, best_text
+        else:
+            end = math.floor(max_seconds * fps) / fps
+    return cut, end, avatar_text
 
 def find_font(cfg):
     override=cfg['typography'].get('body_font')
@@ -13,18 +67,11 @@ def find_font(cfg):
         if not Path(override).is_file():raise ValueError('Configured body font missing')
         return Path(override)
     return SKILL/'assets/LXGWWenKai-Regular.ttf'
-def caption_parts(s, typography, protected, characters, cursor):
+def caption_parts(s, typography, protected, characters, cursor, *, focus_terms=()):
     if s.get('captions'):return s['captions']
     result=[]
-    parts=re.split(r'(（[^（）]*）|\([^()]*\))',s['text'])
-    clauses=['']
-    for i,part in enumerate(parts):
-        if i%2:
-            clauses[-1]+=part
-        else:
-            first,*rest=re.split(r'[，,；;：:。！？!?]',part)
-            clauses[-1]+=first
-            clauses.extend(rest)
+    display_text=s['text'].translate(str.maketrans('','','（）()'))
+    clauses=re.split(r'[，,；;：:。！？!?]',display_text)
     merged=[]
     for clause in clauses:
         clause=clause.strip()
@@ -36,7 +83,7 @@ def caption_parts(s, typography, protected, characters, cursor):
     for clause in merged:
         count=len(clean(clause))
         for lines in auto_caption_lines(clause,typography,protected,clean,characters,cursor):
-            result.append({'text':''.join(lines),'lines':lines,'focus':''})
+            result.append({'text':''.join(lines),'lines':lines,'focus':_pick_focus(lines,typography,focus_terms),'accentSecondLine':False})
         cursor+=count
     return result
 
@@ -131,10 +178,12 @@ def build(job):
     cap=pc.merge(read(SKILL/'assets/templates/fullscreen-orange.json'),cfg['template'].get('overrides',{}))['caption']
     typography=Typography(font,cfg['typography']['collection_index'],cap)
     inst=plan['institution']
-    protected={*CARE_TERMS,*(part for field in ('displayName','name') for part in re.split(r'[·•（）()\s]+',inst[field]) if part)}
+    inst_parts=tuple(part for field in ('displayName','name') for part in re.split(r'[·•（）()\s]+',inst[field]) if part)
+    protected={*CARE_TERMS,*inst_parts}
+    brand_focus=tuple(p for p in inst_parts if len(p)>=2 and p not in ('老年公寓','养老院','养老机构'))
     cues=[];cursor=0
     for s in plan['sentences']:
-        for c in caption_parts(s,typography,protected,chars,cursor):
+        for c in caption_parts(s,typography,protected,chars,cursor,focus_terms=brand_focus):
             n=len(clean(c['text']))
             if clean(c['text'])!=canonical[cursor:cursor+n]:raise ValueError('Caption draft dropped/changed words; edit the plan')
             if not safe_boundary(chars,cursor) or not safe_boundary(chars,cursor+n):raise ValueError('字幕不能从数字内部切开；合并该数字所在字幕后重新 build，复用原配音。')
@@ -220,14 +269,21 @@ def build(job):
     if mode in ('opening','both'):indices.append(0)
     if mode in ('closing','both') and len(ranges)-1 not in indices:indices.append(len(ranges)-1)
     avatars=[]
+    max_opening=cfg['avatar'].get('max_opening_seconds',10.0)
     for si in indices:
         first,last=ranges[si];prev_end=chars[first-1]['end'] if first else 0
         start=0 if si==0 else max(prev_end+.02,chars[first]['start']-cfg['avatar']['sentence_padding'])
-        end=duration if si==len(ranges)-1 else min(math.ceil((chars[last-1]['end']+.16)*fps)/fps,chars[last]['start']-.02)
+        if si==0:
+            cut,end,avatar_text=_opening_avatar_window(plan['sentences'][si]['text'],first,last,chars,duration,fps,max_opening)
+            last_char_end=chars[min(cut,len(chars))-1]['end']
+        else:
+            end=duration if si==len(ranges)-1 else min(math.ceil((chars[last-1]['end']+.16)*fps)/fps,chars[last]['start']-.02)
+            avatar_text=plan['sentences'][si]['text']
+            last_char_end=chars[last-1]['end']
         start=math.floor(start*fps)/fps;ident='opening' if si==0 else 'closing';out=job/'assets'/('avatar-'+ident);out.mkdir(exist_ok=True)
         run(['ffmpeg','-y','-v','error','-ss',start,'-i',raw,'-t',end-start,'-vn','-ar','24000','-ac','1','-c:a','pcm_s16le',out/'driver.wav'])
-        is_last=si==len(ranges)-1;display_end=total if is_last else offset+end
-        avatars.append({'id':ident,'video':str((out/'avatar-outlined.webm').relative_to(job)),'audio':str((out/'driver.wav').relative_to(job)),'start':offset+start,'duration':display_end-offset-start,'x':cfg['avatar']['x'],'y':cfg['avatar']['bottom']-cfg['avatar']['height'],'width':cfg['avatar']['width'],'height':cfg['avatar']['height'],'fadeIn':cfg['avatar']['fade_in'],'fadeOut':0 if is_last else min(cfg['avatar']['fade_out'],max(.04,end-chars[last-1]['end'])),'text':plan['sentences'][si]['text'],'sourceNarrationStart':start})
+        is_last=si==len(ranges)-1 and si!=0;display_end=total if is_last else offset+end
+        avatars.append({'id':ident,'video':str((out/'avatar-outlined.webm').relative_to(job)),'audio':str((out/'driver.wav').relative_to(job)),'start':offset+start,'duration':display_end-offset-start,'x':cfg['avatar']['x'],'y':cfg['avatar']['bottom']-cfg['avatar']['height'],'width':cfg['avatar']['width'],'height':cfg['avatar']['height'],'fadeIn':cfg['avatar']['fade_in'],'fadeOut':0 if is_last else min(cfg['avatar']['fade_out'],max(.04,end-last_char_end)),'text':avatar_text,'sourceNarrationStart':start})
     write(job/'avatars.json',avatars)
     write(job/'build-inputs.json',{'planSha256':sha(job/'plan.json'),'voiceSha256':v['sha256'],'sourceHashes':{p:r['sha256'] for p,r in files.items()},'noPostTtsTimeStretch':True})
     state(job,phase='timed',next='avatars',duration=total)
