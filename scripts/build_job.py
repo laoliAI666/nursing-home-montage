@@ -32,6 +32,7 @@ def _pick_focus(lines, typography, institution_terms=()):
 
 def _opening_avatar_window(text, first, last, chars, duration, fps, max_seconds=10.0):
     """End opening digital human after the 1st complete sentence, capped at max_seconds."""
+    text = strip_parenthetical(text)
     cut = last
     avatar_text = text
     sent = re.search(r'[。！？!?]', text)
@@ -70,7 +71,7 @@ def find_font(cfg):
 def caption_parts(s, typography, protected, characters, cursor, *, focus_terms=()):
     if s.get('captions'):return s['captions']
     result=[]
-    display_text=s['text'].translate(str.maketrans('','','（）()'))
+    display_text=strip_parenthetical(s['text'])
     clauses=re.split(r'[，,；;：:。！？!?]',display_text)
     merged=[]
     for clause in clauses:

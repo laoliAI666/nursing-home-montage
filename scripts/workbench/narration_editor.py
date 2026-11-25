@@ -17,9 +17,17 @@ def paragraphs(plan):
     return [row['text'] for row in plan['sentences'] if row.get('kind') != 'cta']
 
 
+PAREN_PATTERN = re.compile(r'[（()）]')
+
+
 def narration_issues(lines):
-    return {i: f'第 {i + 1} 段使用了核验口吻「{match.group()}」。改成直接向家属介绍。'
-            for i, line in enumerate(lines) if (match := REPORT_LANGUAGE.search(line))}
+    issues = {}
+    for i, line in enumerate(lines):
+        if PAREN_PATTERN.search(line):
+            issues[i] = f'第 {i + 1} 段包含括号。删掉括号及括号内的文字，括号里的内容不需要念出来。'
+        elif (match := REPORT_LANGUAGE.search(line)):
+            issues[i] = f'第 {i + 1} 段使用了核验口吻「{match.group()}」。改成直接向家属介绍。'
+    return issues
 
 
 def fragments(text, ignored):

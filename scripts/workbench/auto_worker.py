@@ -409,13 +409,18 @@ class Production:
             if complete and name:
                 mentions = [index for index, part in enumerate(parts) if name in spoken_characters(part)]
                 if not mentions or mentions[0] != 0:
-                    notes.append('开头需要自然说出机构全名。')
+                    notes.append('开头需要自然说出机构名称（不含括号及括号内说明）。')
                     positions.add(0)
                 if sum(spoken_characters(part).count(name) for part in parts) > 1:
-                    notes.append('机构全名只说一次，保留开头的介绍。')
+                    notes.append('机构名称只说一次，保留开头的介绍。')
                     positions.update(index for index in mentions[1:])
                     if len(mentions) == 1 and mentions[0] == 0:
                         positions.add(0)
+            if complete and parts:
+                first_sent = re.split(r'[。！？!?]', parts[0], maxsplit=1)[0]
+                if len(spoken_characters(first_sent)) > 34:
+                    notes.append('开头第 1 句偏长（超过 34 字，朗读易超过 10 秒）。请把开头第 1 句精简到 15–30 字，让数字人自然讲完第一句后退场。')
+                    positions.add(0)
             sizes = paragraph_sizes(parts)
             total = sum(sizes)
             section = '指定段落' if complete else '正文'

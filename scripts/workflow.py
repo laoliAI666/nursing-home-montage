@@ -118,12 +118,19 @@ def integer_zh(n):
             out+=chars[digit]+name
         elif out and n:zero=True
     return out[1:] if out.startswith('一十') else out
+_PAREN_RE=re.compile(r'（[^（）]*）|\([^()]*\)')
+def strip_parenthetical(text):
+    prev=None;out=str(text or '')
+    while prev!=out:
+        prev=out;out=_PAREN_RE.sub('',out)
+    return out.translate(str.maketrans('','','（）()'))
+
 def clean(text):
     from opencc import OpenCC
     return spoken_characters(OpenCC('t2s').convert(text))
 
 def spoken_characters(text):
-    text=text.replace('〇','零')
+    text=strip_parenthetical(text).replace('〇','零')
     digits='零一二三四五六七八九'
     text=re.sub(r'\d{4}(?=年)',lambda m:''.join(digits[int(c)] for c in m[0]),text)
     text=re.sub(r'\d+\.\d+',lambda m:integer_zh(m[0].split('.')[0])+'点'+''.join(digits[int(c)] for c in m[0].split('.')[1]),text)
@@ -184,7 +191,7 @@ def validate_plan(job):
         for c in s.get('captions',[]):
             if clean(''.join(c['lines']))!=clean(c['text']) or not 1<=len(c['lines'])<=2:raise ValueError('Caption lines must preserve wording and use 1–2 lines')
     # Quotations prove provenance, not the truth of an arbitrary paraphrase; SKILL.md requires semantic source review.
-    (job/'narration.txt').write_text('\n'.join(s['text'] for s in plan['sentences'])+'\n', encoding='utf-8')
+    (job/'narration.txt').write_text('\n'.join(strip_parenthetical(s['text']) for s in plan['sentences'])+'\n', encoding='utf-8')
     write(job/'plan.json',plan)
     from content_review import audit
     audit(job)
