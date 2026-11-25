@@ -8,7 +8,7 @@ import uuid
 
 from auto_editor import Editor, EditorialFeedback, NeedsInput, PlanError, approved, source_evidence
 from model_api import MODEL_OUTPUT_GUARD, ModelClient, ModelResponseError
-from pipeline import Pipeline, PreparationTimeout, fingerprint
+from pipeline import Pipeline, PreparationTimeout, StepTimeout, fingerprint
 from planning import digest
 from job_queue import BILLING_MESSAGE, is_minimax_balance_error
 from duration import DurationRevision, budget_issue, initial_budget, script_units
@@ -16,6 +16,35 @@ from narration_timing import MINUTE_TARGET
 from narration_editor import SIMILARITY_LIMIT, narration_issues, paragraphs, similarity_issue
 from narration_prompts import COMPLETE_NARRATION_POLICY, outline_omission_limit, variations
 from workflow import spoken_characters
+
+
+NON_RECOVERABLE_HINTS = (
+    '不能自动重提', 'submission_unknown', '上次提交状态不明',
+    'Speech content or numeric timing needs review', '词级映射与原稿不一致',
+    'HTTP 400', 'HTTP 401', 'HTTP 403', 'HTTP 404', 'HTTP 422',
+    '原冻结引擎缺失', '执行期间计划发生变化', '字体缺少', '配置字体缺失',
+    'Audio peak too high', '成片实测', '被拒绝', '余额不足',
+)
+RECOVERABLE_HINTS = (
+    'tmpfile 文件中转失败', 'TOS 音频上传失败', '数字人成片下载失败',
+    '连接超时', '请求中断', '超时', 'timed out', 'Timeout', 'Connection',
+    'RemoteDisconnected', 'IncompleteRead', 'BrokenPipe', 'SSL', 'EOF occurred',
+    'HTTP 408', 'HTTP 429', 'HTTP 500', 'HTTP 502', 'HTTP 503', 'HTTP 504',
+    '50429', '50430', '50500', '50501', 'Render failed', 'Target closed',
+    'Protocol error', 'Navigation timeout', 'ECONNRESET', 'ETIMEDOUT',
+    'Temporary failure',
+)
+
+
+def is_recoverable_stage_error(step, detail):
+    if isinstance(detail, dict) and (detail.get('recoverable') or detail.get('timeout')):
+        return True
+    text = str((detail or {}).get('error') if isinstance(detail, dict) else detail or '')
+    if is_minimax_balance_error(text):
+        return False
+    if any(marker in text for marker in NON_RECOVERABLE_HINTS):
+        return False
+    return any(marker in text for marker in RECOVERABLE_HINTS)
 
 
 class StageError(ValueError):
@@ -36,7 +65,10 @@ class LocalCoordinator:
         head = self.app.queue.head() or {}
         owner = head.get('localExecution')
         if owner and not head.get('settled'):
-            if process_alive(owner['pid']) or self.app.channel.has_active(head['id']):
+            same_process = owner['pid'] == os.getpid()
+            owner_alive = (bool(self.thread and self.thread.is_alive()) if same_process
+                           else process_alive(owner['pid']))
+            if owner_alive or self.app.channel.has_active(head['id']):
                 return
             evidence = '独立工作台进程和本阶段子进程均已退出，按已有检查点恢复'
             self.app.queue.recover(head['id'], head['lease'], evidence, local=owner)
@@ -152,6 +184,7 @@ class Production:
                 self.app.planning.check_narration(task,self.row['index'],self.read(self.job/'plan.json'))
             except ValueError as exc:
                 raise NeedsInput(str(exc)) from exc
+        step_retries = {}
         while True:
             result = self.pipe.advance(self.item, self.lease)
             state = result['state']
@@ -162,11 +195,22 @@ class Production:
             elif state == 'revise_duration':
                 duration.revise(result['duration'], result['target'])
             elif state == 'failed':
+                step = result['step']
                 detail = result.get('result', {})
-                if result['step'] == 'voice' and is_minimax_balance_error(detail.get('error')):
+                if step == 'voice' and is_minimax_balance_error(detail.get('error')):
                     self.terminal('billing_hold', BILLING_MESSAGE)
                     return
-                raise ValueError(f"{result['step']} 阶段暂停：" + str(detail.get('error') or detail))
+                if is_recoverable_stage_error(step, detail) and step_retries.get(step, 0) < 2:
+                    attempt = step_retries.get(step, 0) + 1
+                    step_retries[step] = attempt
+                    summary = self.app.redact(str(detail.get('error') or detail))[:200]
+                    self.progress(f'{step} 阶段遇到临时故障，正在从检查点自动重试（{attempt}/2）')
+                    self.app.event(self.row['taskId'],
+                                   f"第 {self.row['index'] + 1} 条 {step} 阶段临时故障，自动重试（{attempt}/2）：{summary}",
+                                   'warning')
+                    time.sleep(min(5 * attempt, self.time_budget(15)))
+                    continue
+                raise ValueError(f"{step} 阶段暂停：" + str(detail.get('error') or detail))
             elif state not in ('checkpoint', 'pending'):
                 raise ValueError('制作阶段返回了未知状态。')
 
@@ -356,6 +400,11 @@ class Production:
             style = narration_issues(parts)
             notes = list(style.values())
             positions = set(style)
+            cta_re = re.compile(r'欢迎留言|留言了解|评论区(?:扣|留)|预约参观|私信(?:我|了解)')
+            for idx in range(1, len(parts) - 1):
+                if cta_re.search(parts[idx]):
+                    notes.append(f'第 {idx + 1} 段正文不要包含结尾留言/咨询引导，咨询动作只留在最后一段。')
+                    positions.add(idx)
             name = spoken_characters(context['institutionName'])
             if complete and name:
                 mentions = [index for index, part in enumerate(parts) if name in spoken_characters(part)]
@@ -419,7 +468,7 @@ class Production:
                 except (PlanError, ModelResponseError) as exc:
                     feedback = str(exc)
                     continue
-            repairs = 2 if generation == 0 or complete else 0
+            repairs = 4 if generation == 0 or complete else 0
             for repair in range(repairs + 1):
                 notes, targets = issues_for(parts)
                 if not notes and draft_only:
@@ -428,25 +477,33 @@ class Production:
                     return
                 if not notes:
                     candidate = None
-                    for _ in range(2):
+                    sentence_to_para = list(range(len(parts)))
+                    for _ in range(3):
                         try:
                             if 'media' not in context:
                                 self.progress('口播字数已通过，正在观察素材和配镜头')
                                 context['media'] = self.editor.media(folder or self.job, self.read((folder or self.job)/'inventory.json'))
                             spoken = parts
+                            sentence_to_para = list(range(len(parts)))
                             if complete:
-                                spoken = [parts[0], *(line.strip() for paragraph in parts[1:-1]
-                                          for line in re.split(r'(?<=[。！？；])', paragraph) if line.strip()), parts[-1]]
+                                spoken = [parts[0]]
+                                sentence_to_para = [0]
+                                for p_idx, paragraph in enumerate(parts[1:-1], 1):
+                                    for line in re.split(r'(?<=[。！？；])', paragraph):
+                                        if line.strip():
+                                            spoken.append(line.strip())
+                                            sentence_to_para.append(p_idx)
+                                spoken.append(parts[-1])
+                                sentence_to_para.append(len(parts) - 1)
                             plan, angles = self.editor.plan(task,index,context,facts,[],feedback,
                                                             evidence=evidence,candidate=candidate,spoken=spoken)
                             candidate = {'plan':plan,**angles}
 
                             def review(job):
-                                nonlocal parts
                                 def verify_copy(prepared):
-                                    nonlocal parts
-                                    sealed = self.read(prepared/'plan.json')['sentences']
-                                    parts = [row['text'] for row in sealed]
+                                    sealed = [row['text'] for row in self.read(prepared/'plan.json')['sentences']]
+                                    if sealed and sealed[-1] != parts[-1]:
+                                        parts[-1] = sealed[-1]
                                     errors, _ = issues_for(parts)
                                     if errors:
                                         raise PlanError('。'.join(errors))
@@ -477,8 +534,8 @@ class Production:
                             if notes:
                                 break
                     if not notes:
-                        flagged = sorted({int(n) for n in re.findall(r'sentences\[(\d+)\]',feedback)
-                                          if int(n) < len(parts)})
+                        flagged = sorted({sentence_to_para[int(n)] for n in re.findall(r'sentences\[(\d+)\]',feedback)
+                                          if int(n) < len(sentence_to_para)})
                         if flagged:
                             notes, targets = [feedback], flagged
                         elif complete and '口播缺少共同事实' in feedback:
@@ -489,7 +546,7 @@ class Production:
                 feedback = '。'.join(notes) or feedback
                 if repair == repairs or not targets:
                     break
-                self.progress(f'第 {index + 1} 条正在定点返修口播（{repair + 1}/2）')
+                self.progress(f'第 {index + 1} 条正在定点返修口播（{repair + 1}/{repairs}）')
                 try:
                     parts = self.editor.revise_narration(parts, targets, notes, context, facts, budget, preference,
                                                          **prompt_options)

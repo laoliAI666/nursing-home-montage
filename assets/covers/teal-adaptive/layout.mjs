@@ -71,7 +71,21 @@ function footerFade(brand){const start=Math.round(brand.y-34),end=Math.round(bra
    if (titleLayout().error) state.title = '养老机构实地探访';
    if (!titleLayout().error) titleAdjustment = {original:originalTitle, resolved:state.title};
  }
+ const originalTags = [...state.tags];
+ let tagAdjustment;
+ if (input.automaticTitleFallback && tagsLayout().error) {
+   const fitTag = raw => {
+     let t = String(raw || '').trim();
+     if (!t) return '院内实景';
+     if (metrics(t, B.tags.min).w + 44 <= 324) return t;
+     t = t.replace(/^(?:院内|院区|机构|专属|花园式|无障碍|适老化|多功能)/, '') || t;
+     while (t.length > 2 && metrics(t, B.tags.min).w + 44 > 324) t = t.slice(0, -1);
+     return t;
+   };
+   state.tags = originalTags.map(fitTag);
+   if (!tagsLayout().error) tagAdjustment = {original:originalTags, resolved:[...state.tags]};
+ }
  render();
- return {ready:true,report:()=>({...lastLayout,identity:{...input.identity},institution_name:state.brand,title_text:state.title,title_highlights:words(),titleAdjustment,label_texts:[...state.tags],imageGenerationUsed:false}),png:()=>{if(lastLayout.errors.length)throw new Error(lastLayout.errors.join('; '));return canvas.toDataURL('image/png');},
+ return {ready:true,report:()=>({...lastLayout,identity:{...input.identity},institution_name:state.brand,title_text:state.title,title_highlights:words(),titleAdjustment,tagAdjustment,label_texts:[...state.tags],imageGenerationUsed:false}),png:()=>{if(lastLayout.errors.length)throw new Error(lastLayout.errors.join('; '));return canvas.toDataURL('image/png');},
  set:patch=>{Object.assign(state,patch);return render();},replacePhoto:async(i,url)=>{photos[i]=await image(url);input.photos[i]={data:url};return render();}};
 }

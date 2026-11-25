@@ -148,7 +148,7 @@ class ModelClient:
             hint = hints.get(code, '可稍后从工作台重试')
             error = ModelConnectionError if code in (408, 429, 500, 502, 503, 504) else ValueError
             raise error(f'模型服务返回 HTTP {code}，{hint}。') from None
-        except (OSError, http.client.RemoteDisconnected, http.client.IncompleteRead):
+        except (OSError, http.client.HTTPException):
             raise ModelConnectionError('模型服务连接超时或中断。') from None
         if len(raw) > 2_000_000:
             raise ValueError('模型响应超过预期大小。')

@@ -50,11 +50,19 @@ def require_review(job):
 
 
 def shot_audit(job):
-    shots=read(job/'shot-list.json');usage={};overlaps=[]
+    shots=read(job/'shot-list.json');usage={};overlaps=[];adjacent_same=[]
     for i,shot in enumerate(shots):
+        if i>0 and shots[i-1]['asset']==shot['asset']:
+            prev=shots[i-1]
+            ov=max(0.0,min(shot['sourceStart']+shot['duration'],prev['sourceStart']+prev['duration'])-max(shot['sourceStart'],prev['sourceStart']))
+            adjacent_same.append({'first':prev['id'],'second':shot['id'],'asset':shot['asset'],'sourceOverlapSeconds':round(ov,3)})
         for previous in usage.get(shot['asset'],[]):
             duration=min(shot['sourceStart']+shot['duration'],previous['sourceStart']+previous['duration'])-max(shot['sourceStart'],previous['sourceStart'])
             if duration>.1:overlaps.append({'first':previous['id'],'second':shot['id'],'sourceOverlapSeconds':round(duration,3),'adjacent':i>0 and shots[i-1]['id']==previous['id']})
         usage.setdefault(shot['asset'],[]).append(shot)
-    result={'sourceUsageSeconds':{k:round(sum(s['duration'] for s in v),3) for k,v in usage.items()},'overlaps':overlaps,'requiresVisualReview':True}
+    adjacent_overlaps=[o for o in overlaps if o.get('adjacent')]
+    short_shots=[{'id':s['id'],'duration':round(s['duration'],3)} for s in shots if s['duration']<1.0]
+    result={'sourceUsageSeconds':{k:round(sum(s['duration'] for s in v),3) for k,v in usage.items()},
+            'overlaps':overlaps,'adjacentOverlaps':adjacent_overlaps,'adjacentSameAsset':adjacent_same,
+            'shortShots':short_shots,'requiresVisualReview':True}
     write(job/'shot-audit.json',result);return result

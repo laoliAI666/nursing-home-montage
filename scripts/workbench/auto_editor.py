@@ -13,6 +13,7 @@ from narration_prompts import (
     COMPACT_OUTLINE, COMPLETE_NARRATION_POLICY, NARRATION_REPAIR_SYSTEM, NARRATION_SYSTEM, OUTLINE_RULES,
     edit_lengths, outline_omission_limit, user_prompt,
 )
+from workflow import spoken_characters
 
 
 NARRATOR_CONTEXT = (
@@ -250,22 +251,27 @@ class Editor:
             'requirements': context['requirements'], 'answer': context['answer'],
             'durationBudget': context['durationBudget'], 'outlineUnits': outline_units, 'evidence': evidence,
         }
+        all_paragraphs = {(row['source'], row['paragraph']) for row in evidence.values()}
         feedback = ''
         for _ in range(3):
             candidate = self.ask(OUTLINE_RULES, {**data, 'feedback': feedback})
             question(candidate)
             try:
-                self.validate_complete_outline(candidate, evidence)
-                checked = self.ask(
-                    '复核 candidateFacts。逐段扫原文，补回遗漏的核心主题和要点中的关键服务；'
-                    '核对每项实际引用的原句，删掉重复或依据不够的描述。' + OUTLINE_RULES,
-                    {**data, 'candidateFacts': candidate['facts']},
-                )
-                question(checked)
-                facts = self.validate_complete_outline(checked, evidence)
+                facts = self.validate_complete_outline(candidate, evidence)
+                covered = {(row['source'], row['paragraph']) for row in facts}
+                source_rows = candidate['facts']
+                if all_paragraphs - covered:
+                    checked = self.ask(
+                        '复核 candidateFacts。逐段扫原文，补回遗漏的核心主题和要点中的关键服务；'
+                        '核对每项实际引用的原句，删掉重复或依据不够的描述。' + OUTLINE_RULES,
+                        {**data, 'candidateFacts': candidate['facts']},
+                    )
+                    question(checked)
+                    facts = self.validate_complete_outline(checked, evidence)
+                    source_rows = checked['facts']
                 length = script_units({'sentences': facts})
                 if outline_units and length > outline_units:
-                    return self.compact_outline(checked['facts'], history=evidence, limit=outline_units,
+                    return self.compact_outline(source_rows, history=evidence, limit=outline_units,
                                                 requirements=context['requirements'])
                 return facts
             except PlanError as exc:
@@ -275,23 +281,58 @@ class Editor:
     def compact_outline(self, candidates, *, history, limit, requirements):
         evidence = {row['evidenceId']: history[row['evidenceId']] for row in candidates}
         sources = {(row['source'], row['paragraph']) for row in evidence.values()}
-        data = {'候选要点': candidates, '用户要求': requirements,
+        enriched = [{**row, 'source': history[row['evidenceId']]['source'],
+                     'paragraph': history[row['evidenceId']]['paragraph']} for row in candidates]
+        data = {'候选要点': enriched, '用户要求': requirements,
                 'targetUnits': round(limit * 0.82), 'maxUnits': limit}
         feedback = ''
-        for _ in range(3):
+        best = None
+        last_valid = None
+        for _ in range(4):
             compact = self.ask(COMPACT_OUTLINE, {**data, 'feedback': feedback})
             try:
                 facts = self.validate_complete_outline(compact, evidence)
-                length = script_units({'sentences': facts})
-                if length > limit:
-                    raise PlanError(f'必讲短语实数 {length} 字，超过提纲预算 {limit} 字；去掉候选中的次要背景和长清单。')
+                last_valid = facts
                 used = {(row['source'], row['paragraph']) for row in facts}
-                if sources - used:
-                    missing = '、'.join(f'{file}第{paragraph}段' for file, paragraph in sorted(sources - used))
-                    raise PlanError(f'漏了已选核心内容的来源 {missing}，每个来源段保留一句最重要的信息。')
+                missing_sources = sources - used
+                if missing_sources:
+                    missing = '、'.join(f'{file}第{paragraph}段' for file, paragraph in sorted(missing_sources))
+                    missing_ids = list(dict.fromkeys(
+                        row['evidenceId'] for row in candidates
+                        if (history[row['evidenceId']]['source'], history[row['evidenceId']]['paragraph']) in missing_sources
+                    ))
+                    raise PlanError(
+                        f'漏了已选核心内容的来源 {missing}（对应编号 {"、".join(missing_ids)}），每个来源段保留一句最重要的信息。'
+                    )
+                length = script_units({'sentences': facts})
+                if best is None or length < best[0]:
+                    best = (length, facts)
+                if length > limit:
+                    longest = sorted(
+                        ((script_units({'sentences': [row]}), row['topic']) for row in facts),
+                        reverse=True,
+                    )[:3]
+                    detail = '、'.join(f'{topic}({n}字)' for n, topic in longest)
+                    raise PlanError(
+                        f'必讲短语实数 {length} 字，超过提纲预算 {limit} 字；请把最长的 {detail} 改写成极简关键词组。'
+                    )
                 return facts
             except PlanError as exc:
                 feedback = str(exc)
+        if best is not None and best[0] <= round(limit * 1.35):
+            return best[1]
+        if last_valid is not None:
+            merged = list(last_valid)
+            used = {(row['source'], row['paragraph']) for row in merged}
+            for src in sorted(sources - used):
+                matches = [row for row in candidates
+                           if (history[row['evidenceId']]['source'], history[row['evidenceId']]['paragraph']) == src]
+                if matches:
+                    shortest = min(matches, key=lambda r: script_units({'sentences': [r]}))
+                    merged.append({'id': f'f{len(merged) + 1}', 'topic': shortest['topic'].strip(),
+                                   'text': shortest['text'].strip(), **history[shortest['evidenceId']]})
+            if script_units({'sentences': merged}) <= round(limit * 1.5):
+                return [{**row, 'id': f'f{i}'} for i, row in enumerate(merged, 1)]
         raise PlanError(feedback)
 
     @staticmethod
@@ -444,15 +485,17 @@ class Editor:
         sentences[insertion:insertion] = additions
 
     @staticmethod
-    def repair_shots(sentence, selected, fact_media, *, moving=False):
+    def repair_shots(sentence, selected, fact_media, *, moving=False, avoid_paths=()):
         available = {path: row for path, row in selected.items() if not moving or row['motion']}
         if not available:
             raise PlanError('开头和结尾需要已核验的实拍移动镜头。')
+        avoid = set(avoid_paths)
         preferred = [path for ident in sentence.get('factIds', []) if isinstance(ident, str)
                      for path in fact_media.get(ident, []) if path in available]
         entrances = [path for path, row in available.items()
                      if any(word in row['description'] for word in ('门头', '门牌', '入口', '外立面'))]
-        fallback = next(iter(preferred or entrances or available))
+        ordered = list(dict.fromkeys([*preferred, *entrances, *available]))
+        fallback = next((p for p in ordered if p not in avoid), ordered[0])
         shots = sentence['shots'] or [{}]
         repaired = []
         for shot in shots:
@@ -465,8 +508,9 @@ class Editor:
                     if len(matches) == 1:
                         path = matches[0]
             if not isinstance(path, str) or path not in available:
-                chosen = available[fallback]
-                repaired.append({'path': fallback, 'sourceStart': 0, 'weight': 1, 'match': 'context',
+                chosen_path = next((p for p in ordered if p not in avoid and (not repaired or p != repaired[-1]['path'])), fallback)
+                chosen = available[chosen_path]
+                repaired.append({'path': chosen_path, 'sourceStart': 0, 'weight': 1, 'match': 'context',
                                  'description': chosen['description']})
                 continue
             source_start = shot.get('sourceStart', 0)
@@ -481,6 +525,93 @@ class Editor:
                 weight = 1
             repaired.append({**shot, 'path': path, 'sourceStart': start, 'weight': weight})
         sentence['shots'] = repaired
+
+    @staticmethod
+    def ensure_shot_variety_and_coverage(sentences, selected, fact_media):
+        """Eliminate consecutive duplicate clips and ensure enough footage duration per sentence."""
+        if len(selected) < 2:
+            return
+
+        specific_room = ('浴室', '淋浴', '卫生间', '洗手间', '马桶', '洗手台', '浴椅', '扶手', '拉绳', '卧室', '床铺', '衣柜')
+        room_topics = ('居室', '卧室', '房间', '房型', '住', '卫浴', '浴室', '卫生间', '淋浴', '适老', '扶手', '床')
+
+        def capacity(shot):
+            row = selected[shot['path']]
+            if row['kind'] == 'video':
+                return max(0.0, float(row.get('duration', 0)) - float(shot.get('sourceStart', 0)))
+            return 4.5
+
+        def is_specific_room(row):
+            desc = row.get('description', '')
+            return any(word in desc for word in specific_room)
+
+        def pick(candidates, used, avoid, preferred=(), *, allow_specific=True):
+            first = [p for p in preferred if p in candidates and p not in avoid]
+            rest = [p for p in candidates if p not in avoid and p not in first]
+            if not allow_specific:
+                neutral = [p for p in rest if not is_specific_room(candidates[p])]
+                if neutral:
+                    rest = neutral
+            rest.sort(key=lambda p: (
+                0 if not is_specific_room(candidates[p]) else 1,
+                0 if candidates[p]['kind'] == 'video' else 1,
+                used.get(p, 0),
+                -float(candidates[p].get('duration', 0)),
+            ))
+            pool = first + rest
+            return pool[0] if pool else None
+
+        def make_shot(path, available, preferred, weight=1):
+            row = available[path]
+            direct = path in preferred
+            desc = row['description'] if direct else '仅作同机构环境背景。' + row['description']
+            return {'path': path, 'sourceStart': 0, 'weight': weight,
+                    'match': 'direct' if direct else 'context', 'description': desc}
+
+        used = Counter(shot['path'] for s in sentences for shot in s['shots'])
+        prev_path = None
+        for i, sentence in enumerate(sentences):
+            moving = i == 0 or sentence.get('kind') == 'cta'
+            available = {p: row for p, row in selected.items() if not moving or row['motion']}
+            preferred = [p for ident in sentence.get('factIds', []) if isinstance(ident, str)
+                         for p in fact_media.get(ident, []) if p in available]
+            allow_specific = any(word in sentence.get('text', '') for word in room_topics)
+            next_first = (sentences[i + 1]['shots'][0]['path']
+                          if i + 1 < len(sentences) and sentences[i + 1].get('shots') else None)
+
+            # 1. Remove consecutive same-asset repeats (across boundary and within sentence).
+            shots = sentence['shots']
+            for j, shot in enumerate(shots):
+                prev = prev_path if j == 0 else shots[j - 1]['path']
+                if shot['path'] != prev:
+                    continue
+                after = shots[j + 1]['path'] if j + 1 < len(shots) else next_first
+                avoid = {prev} | ({after} if after else set())
+                alt = (pick(available, used, avoid, preferred, allow_specific=allow_specific)
+                       or pick(available, used, {prev}, preferred, allow_specific=allow_specific))
+                if alt:
+                    used[shot['path']] = max(0, used[shot['path']] - 1)
+                    used[alt] += 1
+                    shots[j] = make_shot(alt, available, preferred, shot.get('weight', 1))
+
+            # 2. Ensure total footage duration covers conservative spoken duration (3.2 chars/sec).
+            est = max(2.2, len(spoken_characters(sentence['text'])) / 3.2)
+            while sum(capacity(s) for s in shots) < est and len(shots) < 4:
+                current_paths = {s['path'] for s in shots}
+                last = shots[-1]['path']
+                avoid = current_paths | ({prev_path} if prev_path else set()) | ({next_first} if next_first else set())
+                alt = pick(available, used, avoid, preferred, allow_specific=allow_specific)
+                if alt is None:
+                    alt = pick(available, used, {last} | ({next_first} if next_first else set()),
+                               preferred, allow_specific=allow_specific)
+                if alt is None:
+                    alt = pick(available, used, {last}, preferred, allow_specific=allow_specific)
+                if alt is None:
+                    break
+                used[alt] += 1
+                shots.append(make_shot(alt, available, preferred, 1))
+
+            prev_path = shots[-1]['path']
 
     def rebuild_narration(self, reference_plan, context, facts, evidence, previous, index, preference):
         result = self.ask(
@@ -690,7 +821,10 @@ class Editor:
                 raise PlanError(f'第 {i + 1} 句的 factIds 必须是编号字符串数组，如 ["f1","f2"]。', result)
             if related:
                 sentence['factIds'] = list(dict.fromkeys([*ids, *(key for fact in ids for key in related.get(fact, []))]))
-            self.repair_shots(sentence, selected, fact_media, moving=i == 0 or sentence.get('kind') == 'cta')
+            prev_paths = (sentences[i - 1]['shots'][-1]['path'],) if i > 0 and sentences[i - 1].get('shots') else ()
+            self.repair_shots(sentence, selected, fact_media, moving=i == 0 or sentence.get('kind') == 'cta',
+                              avoid_paths=prev_paths)
+        self.ensure_shot_variety_and_coverage(sentences, selected, fact_media)
         if revised:
             text = ''.join(s['text'] for s in sentences)
             if ''.join(revised.split()) != ''.join(text.split()):
@@ -738,6 +872,8 @@ class Editor:
 
     def bind_narration(self, spoken, context, facts, evidence, preference, feedback, candidate, publication):
         segments = {str(i + 1): text for i, text in enumerate(spoken)}
+        estimated_seconds = {str(i + 1): round(max(2.2, len(spoken_characters(text)) / 3.4), 1)
+                             for i, text in enumerate(spoken)}
         media = {f'M{i + 1}': shot for i, shot in enumerate(context.get('media', []))}
         result = self.ask(
             '给已经定稿的口播小节选镜头、绑定原文、编写封面和发布文案。spokenSegments 的每个编号恰好返回一次，'
@@ -745,8 +881,11 @@ class Editor:
             'factIds 根据实际台词匹配，核心事实优先用 f 编号，其他可用 e 编号。每个事实小节需有来源。'
             '首尾只选有运动的真实视频。画面直接呈现台词事实时在 match 填 direct，否则填 context 并在 description 说明仅作背景。'
             'shots 的 path 填 mediaById 里的 M 开头编号，另填原片起始秒 sourceStart、相对时长 weight 和 description。'
+            '【剪辑防重与时长硬约束】对照 segmentEstimatedSeconds 和各视频的 duration：每小节所选镜头的可用时长合计必须不少于该小节的预估秒数（例如 9 秒的小节不能只配 1 段 4 秒短片，应配 2–3 个不同素材，避免单段视频循环播放或短闪切）；'
+            '相邻两个小节的首尾以及同一小节内部，禁止连续使用同一段素材（同一 M 编号），优先轮换本机构其他相关实拍。'
             'plan.institution 填 name、displayName、headline，后两项最多 12 字。'
             'plan.cover 填不带分行标记的 main_title 字符串和恰好三个 labels，每项含 text、source 和视频提帧秒 time。'
+            '每枚封面标签 text 严格控制在 2 至 5 个汉字内（如“院区环境”“居住空间”“活动空间”），超过 5 个汉字会放不下。'
             '封面 source 填能直接支持标签的 M 开头素材编号，不使用 f 或 e 开头的事实编号。'
             '按锁定稿实际开场确定封面标题，综合稿用综合标题或忠实的开场切入，不能用次要事实重新指定整条主题。'
             'plan.publication 填 title、description、五个不同的 topics，数字用 factIds 引用原文。'
@@ -755,7 +894,8 @@ class Editor:
             '"plan":{"institution":{},"cover":{},"publication":{}},"openingAngle":"","structure":"","coverAngle":"",'
             '"topicAuthorization":""}。\n' + self.rules('covers'),
             {**{key: value for key, value in context.items() if key != 'media'},
-             'mediaById': media, 'spokenSegments': segments, 'facts': facts, 'supportingEvidence': evidence,
+             'mediaById': media, 'spokenSegments': segments, 'segmentEstimatedSeconds': estimated_seconds,
+             'facts': facts, 'supportingEvidence': evidence,
              'preference': preference, 'feedback': feedback, 'candidate': candidate,
              'publicationOverride': publication}, max_tokens=6500)
         bindings = result.get('segments')
@@ -792,16 +932,20 @@ class Editor:
 
         def resolve(labels):
             if (not isinstance(labels, list) or len(labels) != 3
-                    or any(not isinstance(row, dict) or not isinstance(row.get('source'), str) for row in labels)):
+                    or any(not isinstance(row, dict) or not isinstance(row.get('source'), str)
+                           or not isinstance(row.get('text'), str) or not row['text'].strip()
+                           or sum(.55 if ord(c) < 128 else 1.0 for c in row['text'].strip()) > 5.5
+                           for row in labels)):
                 return None
-            resolved = [{**row, 'source': media.get(row['source'], {}).get('path', row['source'])}
+            resolved = [{**row, 'text': row['text'].strip(), 'source': media.get(row['source'], {}).get('path', row['source'])}
                         for row in labels]
             return resolved if all(row['source'] in paths for row in resolved) else None
 
         labels = resolve(cover.get('labels'))
         if labels is None:
             result = self.ask(
-                '仅重选封面的三张实拍图和短标签。对照 mediaById 的观察描述，每个标签只描述图片能直接看到的空间或物件。'
+                '仅重选或精简封面的三张实拍图和短标签。对照 mediaById 的观察描述，每个标签只描述图片能直接看到的空间或物件，'
+                '每枚标签严格控制在 2 至 5 个汉字内（如“院区环境”“居室空间”“用餐环境”），不得超过 5 个汉字。'
                 '可换掉原先无直接画面可用的标签。source 只填 M 开头的素材编号，视频用有依据的提帧秒，缺省用 0。'
                 '返回 {"labels":[{"text":"短标签","source":"M1","time":0}]}，恰好三项。',
                 {'mainTitle': cover.get('main_title'), 'previousLabels': cover.get('labels'),
@@ -965,7 +1109,14 @@ class Editor:
             '原文支持的重要服务可用一句简述，并明确是环境背景，勿把普通展柜或康复空间说成该服务的现场。'
             '打回时在审核说明中用 audit 的 sentences[下标] 精确指明需要修改的句子。'
             '环境背景已在分镜备注标注，且口播未把镜头中的场所说成事实现场时，可直接通过，不要求口播念出处或画面说明。'
-            '审核口语质量、覆盖范围、结尾咨询、封面及发布文案。材料未支持或文画明显不合时拒绝。'
+            '若必讲提纲或原文中的服务、交通、周边医疗、活动室名称在本机构实拍素材中本就无直拍镜头，只要分镜已标 match=context 作院内环境背景且口播未宣称“镜头/画面可见该现场”，不得以“缺少直拍画面/文画关系弱”将 hardChecksPassed 判为 false，有优化建议只写入 styleIssues。'
+            '【四条硬红线】仅当出现以下四类问题之一时，才可将 hardChecksPassed 设为 false 硬打回：'
+            '1）编造原文不存在的事实、数字、机构名或明显事实错误；'
+            '2）医疗治愈/疗效/改善认知/延缓衰退等夸大或未经核实的效果承诺；'
+            '3）口播把仅作环境背景的画面硬说成对应房间或服务正在发生的实拍现场；'
+            '4）漏掉用户明确指定的要求或主题。'
+            '轻微的口语化缩略（例如把“10分钟即可抵达就医”简说成“10分钟可达”、口语省去“最大程度”等修饰语）、服务清单长短、段落节奏或背景镜头贴合度优化，均属于风格建议，必须将 hardChecksPassed 设为 true，仅写入 styleIssues，不得硬打回。'
+            '审核口语质量、覆盖范围、结尾咨询、封面及发布文案。'
             + coverage_rule + '实拍可呈现的重点展开，缺少对应画面的重要内容一句带过。'
             '成片时长由工作台按实际语音单独核验；不要凭稿件猜实测秒数。'
             '区分原文支持的可用设施与当前画面里正在发生的动作。只说可以使用已拍到的设施时，不要求画面有人使用。'

@@ -3,10 +3,12 @@ import ast
 import base64
 import contextlib
 import hashlib
+import http.client
 import io
 import json
 import sys
 import time
+import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
@@ -70,6 +72,54 @@ class AvatarClient:
             entry["cleanup_error"] = sanitized(str(error), (self.ak, self.sk))
         save_state(directory, state)
 
+    def _upload_tos(self, directory, state, settings, *, fallback_from=None):
+        import tos
+        if not state.get("upload") or state["upload"].get("provider") != "tos":
+            state["upload"] = {"provider": "tos", "bucket": settings["bucket"],
+                "key": settings["prefix"].rstrip("/") + "/" + uuid.uuid4().hex + "/narration.mp3",
+                "deleted": False}
+            if fallback_from:
+                state["upload"]["fallback_from"] = fallback_from
+        save_state(directory, state)
+        last_error = None
+        for attempt in range(3):
+            try:
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    storage = self.storage_client()
+                    storage.put_object_from_file(state["upload"]["bucket"], state["upload"]["key"],
+                                                 state["submitted_audio"], content_type="audio/mpeg")
+                    return storage.pre_signed_url(tos.HttpMethodType.Http_Method_Get,
+                        bucket=state["upload"]["bucket"], key=state["upload"]["key"],
+                        expires=settings["url_expires_seconds"]).signed_url
+            except Exception as error:
+                last_error = error
+                if attempt < 2:
+                    time.sleep(1 + 2 * attempt)
+        raise RuntimeError("TOS 音频上传失败：" + sanitized(str(last_error), (self.ak, self.sk))) from None
+
+    def _download_video(self, url, target):
+        temporary = target.with_suffix(".download")
+        last_error = None
+        for attempt in range(3):
+            try:
+                temporary.unlink(missing_ok=True)
+                with urllib.request.urlopen(url, timeout=120) as response, temporary.open("wb") as out:
+                    while True:
+                        chunk = response.read(256 * 1024)
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                if not temporary.is_file() or not temporary.stat().st_size:
+                    raise RuntimeError("下载的数字人视频为空")
+                temporary.replace(target)
+                return
+            except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException, RuntimeError) as error:
+                last_error = error
+                temporary.unlink(missing_ok=True)
+                if attempt < 2:
+                    time.sleep(2 * (attempt + 1))
+        raise RuntimeError("数字人成片下载失败（已重试 3 次），可稍后恢复查询：" + sanitized(str(last_error), (self.ak, self.sk, url))) from None
+
     def submit(self, directory, state):
         if state.get("task_id"):
             return
@@ -83,22 +133,26 @@ class AvatarClient:
             raise RuntimeError("人物图在准备后发生变化，先核对新的图像。")
         settings = storage_settings(self.cfg.get("storage"))
         if settings["provider"] == "tmpfile":
-            url, state["upload"] = tmpfile_audio(directory, state["submitted_audio"])
-            save_state(directory, state)
+            url = None
+            last_error = None
+            for attempt in range(3):
+                try:
+                    url, state["upload"] = tmpfile_audio(directory, state["submitted_audio"])
+                    save_state(directory, state)
+                    break
+                except RuntimeError as error:
+                    last_error = error
+                    if attempt < 2:
+                        time.sleep(1 + 2 * attempt)
+            if url is None:
+                raw_storage = self.cfg.get("storage") or {}
+                if raw_storage.get("bucket") and self.ak and self.sk:
+                    tos_cfg = storage_settings({**raw_storage, "provider": "tos"})
+                    url = self._upload_tos(directory, state, tos_cfg, fallback_from="tmpfile")
+                else:
+                    raise last_error
         else:
-            import tos
-            if not state.get("upload"):
-                state["upload"] = {"provider": "tos", "bucket": settings["bucket"],
-                    "key": settings["prefix"].rstrip("/") + "/" + uuid.uuid4().hex + "/narration.mp3",
-                    "deleted": False}
-            save_state(directory, state)
-            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-                storage = self.storage_client()
-                storage.put_object_from_file(state["upload"]["bucket"], state["upload"]["key"],
-                                             state["submitted_audio"], content_type="audio/mpeg")
-                url = storage.pre_signed_url(tos.HttpMethodType.Http_Method_Get,
-                    bucket=state["upload"]["bucket"], key=state["upload"]["key"],
-                    expires=settings["url_expires_seconds"]).signed_url
+            url = self._upload_tos(directory, state, settings)
         avatar = self.cfg["avatar"]
         body = {"req_key": avatar["req_key"], "binary_data_base64": [base64.b64encode(
                     Path(state["image"]).read_bytes()).decode()], "audio_url": url,
@@ -141,9 +195,7 @@ class AvatarClient:
                              ensure_ascii=False), flush=True)
             if response.get("code") == 10000 and status == "done" and data.get("video_url"):
                 target = Path(directory) / "provider-video.mp4"
-                temporary = target.with_suffix(".download")
-                urllib.request.urlretrieve(data["video_url"], temporary)
-                temporary.replace(target)
+                self._download_video(data["video_url"], target)
                 state["phase"] = "downloaded"
                 save_state(directory, state)
                 self.cleanup(directory, state)

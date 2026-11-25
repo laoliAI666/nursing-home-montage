@@ -1,5 +1,5 @@
 """The approved full-frame reference layout, with measured caption and chapter fit."""
-import base64,html,json,math,sys
+import base64,html,json,math,re,sys
 from pathlib import Path
 from fontTools import subset
 from fontTools.ttLib import TTFont
@@ -90,7 +90,7 @@ def compose(job):
     def document(ident,body):
         return f'<template><style>{styles}</style><div id="root" data-composition-id="{ident}" data-width="1080" data-height="1920"><svg class="overlay" width="1080" height="1920" viewBox="0 0 916 1717" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">{body}</svg></div><script>const tl=gsap.timeline({{paused:true}});window.__timelines["{ident}"]=tl;</script></template>'
     inst=read(job/'institution.json');h=spec['header'];hx,hy=h['translation']
-    brand=inst['displayName'].replace('·',' · ')
+    brand=re.sub(r'\s*·\s*',' · ',inst['displayName']).strip()
     ui=f'''<g transform="translate({hx*916/1080} {hy*1717/1920}) scale({h['scale']})"><text x="458" y="220" text-anchor="middle" font-family="TitleFace" font-size="86" font-weight="900" font-style="italic" textLength="{h['title_width']}" lengthAdjust="spacingAndGlyphs" fill="white" stroke="#14100C" stroke-width="10" paint-order="stroke fill" stroke-linejoin="round" style="text-shadow:0 4px 6px #0008">{esc(inst['headline'])}</text><path fill="#FF941F" d="M58 265L788 251L856 265L829 278L877 288L853 304L887 316L871 330L883 344L858 354L871 370L827 383L92 401L38 383L51 369L24 351L45 337L26 321L55 306L42 291L76 281Z"/><text x="458" y="353" text-anchor="middle" font-family="BrandFace" font-weight="900" font-style="italic" font-size="82" textLength="{h['brand_width']}" lengthAdjust="spacingAndGlyphs" fill="white" stroke="#111" stroke-width="10" paint-order="stroke fill" stroke-linejoin="round">{esc(brand)}</text></g>'''
     timeline=read(job/'natural-timeline.json');x,y,w,height=spec['chapter']['rect']
     for i,(st,du,label) in enumerate(timeline['chapters']):

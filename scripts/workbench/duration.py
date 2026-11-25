@@ -21,16 +21,19 @@ def parse_target(value):
 
 def initial_budget(target, person=None):
     # Initial estimate only. Once speech exists we use the same person's measured pace.
-    lower, upper = (210, 230) if target == MINUTE_TARGET else (
+    lower, upper = (195, 245) if target == MINUTE_TARGET else (
         round((target - 4) * 3.8), round((target + 2) * 3.8))
     if target == MINUTE_TARGET and person:
         reference = person.get('narration_reference', {})
-        bounds = reference.get('draft_character_range', [])
         if (reference.get('speaker') == person.get('speaker') and
-                reference.get('speech_rate') == person.get('speech_rate') and
-                isinstance(bounds, list) and len(bounds) == 2 and
-                all(type(value) is int and value > 0 for value in bounds) and bounds[0] <= bounds[1]):
-            lower, upper = bounds
+                reference.get('speech_rate') == person.get('speech_rate')):
+            bounds = reference.get('draft_character_range', [])
+            cps = reference.get('characters_per_second')
+            if (isinstance(bounds, list) and len(bounds) == 2 and
+                    all(type(value) is int and value > 0 for value in bounds) and bounds[0] <= bounds[1]):
+                lower, upper = bounds
+            elif isinstance(cps, (int, float)) and 1.5 <= cps <= 8.0:
+                lower, upper = max(140, round(54 * cps)), round(68 * cps)
     opening, closing = round(upper * .12), round(upper * .09)
     return {'targetSeconds': target, 'minUnits': lower, 'maxUnits': upper,
             'sections': {'hook': opening, 'body': upper - opening - closing, 'cta': closing}}

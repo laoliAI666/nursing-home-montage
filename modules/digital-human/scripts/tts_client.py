@@ -1,8 +1,10 @@
 """Explicit cloned-speaker TTS; no voice training or client-side time stretching."""
 import base64
+import http.client
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -70,19 +72,31 @@ def synthesize(text, cfg, directory, revision=0):
     if settings.get("custom_speaker_id"):payload["req_params"]["custom_speaker_id"]=settings["custom_speaker_id"]
     directory = Path(directory)
     write_json(directory / f"tts-request-{revision}.json", payload)
-    request = urllib.request.Request(settings["endpoint"], data=json.dumps(payload).encode(), method="POST",
-        headers={"Content-Type": "application/json", "X-Api-Key": key,
-                 "X-Api-Resource-Id": settings["resource_id"], "X-Api-Request-Id": str(uuid.uuid4())})
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            raw = response.read()
-            logid = response.headers.get("X-Tt-Logid")
-        data = parse_audio(raw)
-    except urllib.error.HTTPError as error:
-        body = sanitized(error.read().decode(errors="replace"), (key,))
-        raise RuntimeError(f"TTS HTTP {error.code}: {body}") from None
-    except Exception as error:
-        raise RuntimeError(sanitized(str(error), (key,))) from None
+    data, logid = None, None
+    for attempt in range(3):
+        request = urllib.request.Request(settings["endpoint"], data=json.dumps(payload).encode(), method="POST",
+            headers={"Content-Type": "application/json", "X-Api-Key": key,
+                     "X-Api-Resource-Id": settings["resource_id"], "X-Api-Request-Id": str(uuid.uuid4())})
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                raw = response.read()
+                logid = response.headers.get("X-Tt-Logid")
+            data = parse_audio(raw)
+            break
+        except urllib.error.HTTPError as error:
+            code = error.code
+            body = sanitized(error.read().decode(errors="replace"), (key,))
+            if code in (408, 429, 500, 502, 503, 504) and attempt < 2:
+                time.sleep(1 + 2 * attempt)
+                continue
+            raise RuntimeError(f"TTS HTTP {code}: {body}") from None
+        except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException) as error:
+            if attempt < 2:
+                time.sleep(1 + 2 * attempt)
+                continue
+            raise RuntimeError(sanitized(str(error), (key,))) from None
+        except Exception as error:
+            raise RuntimeError(sanitized(str(error), (key,))) from None
     output = directory / f"narration-{revision}.mp3"
     output.write_bytes(data)
     return {"file": str(output), "speaker": settings["speaker"], "resource_id": settings["resource_id"],

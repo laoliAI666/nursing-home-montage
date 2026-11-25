@@ -1,6 +1,8 @@
 """MiniMax mainland Speech API client for cloning and MP3 synthesis."""
+import http.client
 import json
 import re
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -25,14 +27,26 @@ def request(action, key, payload, content_type='application/json'):
     body = json.dumps(payload, ensure_ascii=False).encode() if isinstance(payload, dict) else payload
     req = urllib.request.Request(API + action, data=body, method='POST',
                                  headers={'Content-Type': content_type, 'Authorization': 'Bearer ' + key})
-    try:
-        with urllib.request.build_opener(NoRedirect()).open(req, timeout=90) as response:
-            result = json.loads(response.read(32_000_000))
-    except urllib.error.HTTPError as error:
-        error.close()
-        if error.code in (400, 401, 403, 422, 429):
-            raise Rejected(f'MiniMax 拒绝了请求（HTTP {error.code}）。') from None
-        raise RuntimeError(f'MiniMax 请求中断（HTTP {error.code}）。') from None
+    result = None
+    for attempt in range(3):
+        try:
+            with urllib.request.build_opener(NoRedirect()).open(req, timeout=90) as response:
+                result = json.loads(response.read(32_000_000))
+            break
+        except urllib.error.HTTPError as error:
+            code = error.code
+            error.close()
+            if code in (400, 401, 403, 422, 429):
+                raise Rejected(f'MiniMax 拒绝了请求（HTTP {code}）。') from None
+            if attempt < 2 and code in (408, 500, 502, 503, 504):
+                time.sleep(1 + 2 * attempt)
+                continue
+            raise RuntimeError(f'MiniMax 请求中断（HTTP {code}）。') from None
+        except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException):
+            if attempt < 2:
+                time.sleep(1 + 2 * attempt)
+                continue
+            raise RuntimeError('MiniMax 请求连接超时或中断。') from None
     metadata = result.get('base_resp', {})
     code = metadata.get('status_code')
     if type(code) is not int:

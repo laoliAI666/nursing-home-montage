@@ -25,16 +25,23 @@ def caption_parts(s, typography, protected, characters, cursor):
             first,*rest=re.split(r'[，,；;：:。！？!?]',part)
             clauses[-1]+=first
             clauses.extend(rest)
+    merged=[]
     for clause in clauses:
-        clause=clause.strip();count=len(clean(clause))
-        if not count:continue
+        clause=clause.strip()
+        if not len(clean(clause)):continue
+        if merged and (len(clean(clause))<=4 or len(clean(merged[-1]))<=4):
+            merged[-1]=merged[-1]+'，'+clause
+        else:
+            merged.append(clause)
+    for clause in merged:
+        count=len(clean(clause))
         for lines in auto_caption_lines(clause,typography,protected,clean,characters,cursor):
             result.append({'text':''.join(lines),'lines':lines,'focus':''})
         cursor+=count
     return result
 
 
-def fit_shot_windows(shots, files, count, fps):
+def fit_shot_windows(shots, files, count, fps, *, fallback_pool=None):
     """Allocate measured narration frames within the reviewed source footage."""
     if count<len(shots):raise ValueError('Too many shots for this sentence')
     weights=[shot.get('weight',1) for shot in shots]
@@ -61,15 +68,42 @@ def fit_shot_windows(shots, files, count, fps):
         if extra:
             lengths[i]+=extra;remaining-=extra
             starts[i]=min(starts[i],max(0,row['duration']-lengths[i]/fps))
-    fitted=list(zip(shots,starts,lengths))
+    fitted=[[shot,start,length] for shot,start,length in zip(shots,starts,lengths)]
+    if remaining and fallback_pool:
+        # Fill shortfall from distinct alternate footage before ever replaying a clip.
+        for alt in fallback_pool:
+            if not remaining:break
+            if fitted and alt['path']==fitted[-1][0]['path']:continue
+            row=files[alt['path']]
+            cap=remaining if row['kind']!='video' else math.floor((row['duration']+.001)*fps+1e-9)
+            if cap<fps and cap<remaining:continue
+            extra=min(remaining,cap)
+            if extra>0:
+                fitted.append([alt,0,extra]);remaining-=extra
     if remaining:
-        # Replay a reviewed moving shot from this sentence if its footage is exhausted.
+        # Replay a reviewed moving shot from this sentence only when no alternate footage exists.
         index=max(range(len(shots)),key=lengths.__getitem__)
         if lengths[index]<fps:raise ValueError('分镜缺少足够的实拍时长')
         while remaining:
             extra=min(remaining,lengths[index]);remaining-=extra
-            fitted.append((shots[index],0,extra))
-    return fitted
+            fitted.append([shots[index],0,extra])
+    # Prevent jarring sub-second flash cuts on appended fallback/replay tails.
+    if len(fitted)>len(shots) and fitted[-1][2]<fps:
+        need=fps-fitted[-1][2]
+        donor=max(range(len(fitted)-1),key=lambda idx:fitted[idx][2])
+        can_give=max(0,fitted[donor][2]-fps)
+        transfer=min(need,can_give)
+        if transfer>0:
+            fitted[donor][2]-=transfer
+            fitted[-1][2]+=transfer
+            row=files[fitted[-1][0]['path']]
+            if row['kind']=='video':
+                max_len=math.floor((row['duration']+.001)*fps+1e-9)
+                if fitted[-1][2]>max_len:
+                    excess=fitted[-1][2]-max_len
+                    fitted[-1][2]=max_len
+                    fitted[donor][2]+=excess
+    return [(s,st,ln) for s,st,ln in fitted]
 
 
 def build(job):
@@ -91,7 +125,7 @@ def build(job):
     raw=copy_asset(source,voice_dir/'narration.mp3')
     levels=run(['ffmpeg','-hide_banner','-i',raw,'-af','aformat=channel_layouts=stereo,loudnorm=I=-17:TP=-1.5:LRA=11:print_format=json','-f','null','-']).stderr
     levels=json.loads(levels[levels.rfind('{'):levels.rfind('}')+1]);gain=cfg['voice']['target_lufs']-float(levels['input_i'])
-    run(['ffmpeg','-y','-v','error','-i',raw,'-af',f'volume={gain:.4f}dB','-ar','48000','-ac','2','-c:a','pcm_s16le',voice_dir/'narration-master.wav'])
+    run(['ffmpeg','-y','-v','error','-i',raw,'-af',f'volume={gain:.4f}dB,alimiter=limit=0.7943:attack=3:release=40:level=false','-ar','48000','-ac','2','-c:a','pcm_s16le',voice_dir/'narration-master.wav'])
     import project_config as pc
     font=find_font(cfg)
     cap=pc.merge(read(SKILL/'assets/templates/fullscreen-orange.json'),cfg['template'].get('overrides',{}))['caption']
@@ -117,10 +151,23 @@ def build(job):
         ms=round(t*1000);h,ms=divmod(ms,3600000);m,ms=divmod(ms,60000);s,ms=divmod(ms,1000);return f'{h:02}:{m:02}:{s:02},{ms:03}'
     (job/'subtitles.srt').write_text('\n\n'.join(str(i+1)+'\n'+stamp(c['start'])+' --> '+stamp(c['end'])+'\n'+'\n'.join(c['lines']) for i,c in enumerate(cues))+'\n', encoding='utf-8')
     source_root=Path(read(job/'inventory.json')['source']);shots=[];ledger=[]
+    used_paths={}
+    for s in plan['sentences']:
+        for sh in s['shots']:
+            used_paths[sh['path']]=used_paths.get(sh['path'],0)+1
+    visual_files=[r for r in files.values() if r['kind'] in ('video','image')]
     for si,sentence in enumerate(plan['sentences']):
         selected=sentence['shots'];start_frame=round(boundaries[si]*fps);last_frame=round(boundaries[si+1]*fps);count=last_frame-start_frame
         running=start_frame
-        for s,src_start,length in fit_shot_windows(selected,files,count,fps):
+        moving_only=(si==0 or sentence.get('kind')=='cta')
+        next_first=(plan['sentences'][si+1]['shots'][0]['path']
+                    if si+1<len(plan['sentences']) and plan['sentences'][si+1].get('shots') else None)
+        avoid={sh['path'] for sh in selected}|({next_first} if next_first else set())
+        pool_rows=[r for r in visual_files if (not moving_only or r['kind']=='video') and r['path'] not in avoid]
+        pool_rows.sort(key=lambda r:(used_paths.get(r['path'],0),0 if r['kind']=='video' else 1,-float(r.get('duration',0))))
+        fallback_pool=[{'path':r['path'],'sourceStart':0,'weight':1,'description':'同机构实拍补镜'} for r in pool_rows]
+        for s,src_start,length in fit_shot_windows(selected,files,count,fps,fallback_pool=fallback_pool):
+            used_paths[s['path']]=used_paths.get(s['path'],0)+1
             st=running/fps;running+=length;end=running/fps
             row=files[s['path']];orig=(source_root/s['path']).resolve()
             if sha(orig)!=row['sha256']:raise RuntimeError('Input changed since inventory: '+s['path'])
@@ -147,7 +194,12 @@ def build(job):
     write(job/'orange-font-match.json',match)
     # Fresh subsets must include the new institution and narration, not the previous project's glyph set.
     for f in ('OrangeRounded.woff2','OrangeLabel.woff2'):(job/'assets/fonts'/f).unlink(missing_ok=True)
-    timeline={'duration':total,'voiceStart':offset,'voiceDuration':duration,'audio':'assets/voice/narration-master.wav','audioSha256':sha(voice_dir/'narration-master.wav'),'rawAudio':'assets/voice/narration.mp3','rawAudioSha256':sha(raw),'constantGainDB':gain,'speaker':cfg['voice']['speaker'],'speechRate':cfg['voice']['speech_rate'],'outroStart':total,'outroDuration':0,'holdLastCaption':True,'chapters':[[boundaries[i],boundaries[i+1]-boundaries[i],s['label']] for i,s in enumerate(plan['sentences'])]}
+    chapters=[]
+    for i,s in enumerate(plan['sentences']):
+        st,du,lb=boundaries[i],boundaries[i+1]-boundaries[i],s['label']
+        if chapters and chapters[-1][2]==lb:chapters[-1][1]+=du
+        else:chapters.append([st,du,lb])
+    timeline={'duration':total,'voiceStart':offset,'voiceDuration':duration,'audio':'assets/voice/narration-master.wav','audioSha256':sha(voice_dir/'narration-master.wav'),'rawAudio':'assets/voice/narration.mp3','rawAudioSha256':sha(raw),'constantGainDB':gain,'speaker':cfg['voice']['speaker'],'speechRate':cfg['voice']['speech_rate'],'outroStart':total,'outroDuration':0,'holdLastCaption':True,'chapters':chapters}
     write(job/'natural-timeline.json',timeline)
     if cfg['music'].get('enabled') and cfg['music'].get('resource'):
         music_path=cfg['music']['resource'];music_path=Path(music_path) if Path(music_path).is_absolute() else project_root()/music_path

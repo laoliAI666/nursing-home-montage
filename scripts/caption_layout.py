@@ -67,7 +67,7 @@ def auto_caption_lines(text, typography, protected, clean, characters, offset):
     word_edges.update(i for term in intact for m in re.finditer(re.escape(term),text) for i in m.span())
     aligned={i:offset+len(clean(text[:i])) for i in cuts}
     trailing_particles='的把和与在及跟向从也'
-    leading_particles='的了着过呢吗啊'
+    leading_particles='的了着过呢吗啊里中上下'
 
     def line_ends(start, row):
         for end in cuts:
@@ -75,30 +75,32 @@ def auto_caption_lines(text, typography, protected, clean, characters, offset):
             if not fits(start,end,row):break
             yield end
 
-    def room_to_read(start, end):
+    def cue_duration(start, end):
         a,b=aligned[start],aligned[end]
-        if not safe_boundary(characters,b):return False
+        if not safe_boundary(characters,b):return 0.0
         stop=characters[b-1]['end']+.2
         if b<len(characters):stop=min(stop,characters[b]['start']-.025)
-        return stop-characters[a]['start']>.2
+        return stop-characters[a]['start']
 
     # Work backwards. Prefer whole words, avoid leaving connecting words hanging,
-    # then minimize screens and use the available width before adding a second row.
-    best={len(text):((0,0,0,0,0,0),[])}
+    # avoid sub-0.55s flashes, then minimize screens and balance rows.
+    best={len(text):((0,0,0,0,0,0,0),[])}
     for start in reversed(cuts[:-1]):
         options=[]
         for split in line_ends(start,0):
             for end in (split,*line_ends(split,1)):
-                if end not in best or not room_to_read(start,end):continue
+                dur=cue_duration(start,end)
+                if end not in best or dur<=.2:continue
                 next_cost,after=best[end]
                 breaks=(end,) if end==split else (split,end)
                 lengths=[aligned[b]-aligned[a] for a,b in zip((start,*breaks),breaks)]
                 cost=(sum(i not in protected_edges for i in breaks),
-                      sum(i not in word_edges for i in breaks),
                       sum(i<len(text) and (text[i-1] in trailing_particles or text[i] in leading_particles) for i in breaks),
+                      int(dur<.55),
+                      sum(i not in word_edges for i in breaks),
                       sum(n==1 for n in lengths)+int(end==split and lengths[0]==2),
                       1,len(breaks))
-                lines=[text[a:b].strip() for a,b in zip((start,*breaks),breaks)]
+                lines=[text[a:b].strip().strip('、，,;；') or text[a:b].strip() for a,b in zip((start,*breaks),breaks)]
                 options.append((tuple(a+b for a,b in zip(cost,next_cost)),[lines,*after]))
         if options:best[start]=min(options,key=lambda item:item[0])
     if 0 not in best:

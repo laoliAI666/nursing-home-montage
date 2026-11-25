@@ -30,6 +30,8 @@ def validate_content(plan,cfg,inventory):
     files={r['path']:r for r in inventory.get('files',[])}
     for label in labels:
         if not isinstance(label,dict) or not label.get('text','').strip():raise ValueError('标签需要 text 和同机构素材来源')
+        units=sum(.55 if ord(c)<128 else 1.0 for c in label['text'].strip())
+        if units>5.8:raise ValueError('封面标签过长（每枚最多 5 个汉字，48px 下放不下），请改短：'+label['text'].strip())
         row=files.get(label.get('source'))
         if not row or row['kind'] not in ('image','video'):raise ValueError('封面图片必须来自当前机构素材：'+str(label.get('source')))
         if label.get('time',0)<0:raise ValueError('封面提帧时间不能为负')
@@ -135,6 +137,8 @@ def generate(job):
     if title_adjustment:
         record['content']['title'] = record['layout']['title_text']
         record['content']['highlights'] = record['layout']['title_highlights']
+    if record['layout'].get('tagAdjustment'):
+        record['content']['labels'] = record['layout']['label_texts']
     if cfg['cover'].get('image'):
         image=Path(cfg['cover']['image']);meta=next(s for s in probe(image)['streams'] if s['codec_type']=='video')
         if (meta['width'],meta['height'])!=(1080,1920):raise ValueError('指定封面须为 1080×1920，避免擅自裁切')

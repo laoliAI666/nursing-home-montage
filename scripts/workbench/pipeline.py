@@ -32,6 +32,31 @@ class PreparationTimeout(ValueError):
     pass
 
 
+class StepTimeout(PreparationTimeout):
+    pass
+
+
+STEP_TIMEOUTS = {
+    'inventory': 600,
+    'revise': 600,
+    'validate-plan': 120,
+    'setup': 300,
+    'preflight': 300,
+    'voice': 420,
+    'build': 300,
+    'avatars': 240,
+    'cutouts': 900,
+    'cover': 300,
+    'carve': 300,
+    'check': 300,
+    'snapshot': 300,
+    'render': 1200,
+    'verify': 300,
+    'package': 300,
+    'repair-audio-peak': 300,
+}
+
+
 def stop_process(process):
     if sys.platform == 'win32':
         try:
@@ -97,7 +122,7 @@ class Pipeline:
         else:
             args = self.command(self.engine(job), *(cli_args or [action, job, *(extra or [])]))
         if action == 'setup': args.append('--install')
-        if action == 'avatars': args += ['--wait-seconds','0']
+        if action == 'avatars': args += ['--wait-seconds','45']
         if shutil.which('rtk'): args = ['rtk','proxy',*args]
         env = {**os.environ, 'MONTAGE_PROJECT_ROOT':str(self.app.project),
                'UV_CACHE_DIR':str(self.app.data / 'uv-cache'),
@@ -126,16 +151,19 @@ class Pipeline:
             process = subprocess.Popen(args, cwd=self.app.project, env=env, stdout=out, stderr=err,start_new_session=sys.platform!='win32')
             self.write(receipt,{'pid':process.pid,'state':'running','action':action,'leaseHash':hashlib.sha256(lease.encode()).hexdigest(),'started':time.time()})
             last_report = time.monotonic()
-            deadline = last_report + 600 if action in ('inventory','revise') else None
+            step_timeout = STEP_TIMEOUTS.get(action, 600)
+            deadline = last_report + step_timeout
             while process.poll() is None:
                 self.app.queue.expire_head()
                 current = self.app.queue.item(row['id'])
                 timed_out = deadline is not None and time.monotonic() >= deadline
                 if current.get('lease') != lease or current['status']!='running' or timed_out:
                     stop_process(process)
-                    self.write(receipt,{'pid':process.pid,'state':'exited','action':action,'cancelled':True,'ended':time.time()})
+                    self.write(receipt,{'pid':process.pid,'state':'exited','action':action,'cancelled':True,'timedOut':bool(timed_out),'ended':time.time()})
                     if timed_out and current['status']=='running':
-                        raise PreparationTimeout('素材准备超时。')
+                        if action == 'inventory':
+                            raise PreparationTimeout('素材准备超时。')
+                        raise StepTimeout(f'{action} 阶段超过 {step_timeout} 秒未返回，已终止进程。')
                     raise ValueError('当前阶段已停止，云端任务 ID 与已有资产保留')
                 if time.monotonic()-last_report >= 60:
                     try:
@@ -209,43 +237,75 @@ class Pipeline:
                     return {'state':'needs_review','gate':step,'job':str(job),'phase':PHASE[step]}
             else:
                 self.app.queue.report(ident,lease,PHASE[step],'running','正在执行：'+step)
-                code,result=self.invoke(row,lease,step)
+                try:
+                    code,result=self.invoke(row,lease,step)
+                except StepTimeout as exc:
+                    return {'state':'failed','step':step,'result':{'error':str(exc),'timeout':True,'recoverable':True},'job':str(job)}
                 if not code and step == 'voice' and target is not None and 'durationAdjustmentRequired' in result:
                     return {'state':'revise_duration','duration':result['durationAdjustmentRequired'],'target':target}
-                if not code and step == 'voice' and (tempo := result.get('tempoAdjustment')):
-                    self.app.event(row['taskId'], f"配音实测 {tempo['beforeSeconds']:.2f} 秒，"
-                                   f"已按 {tempo['rate']:.3f} 倍微加速至 {tempo['afterSeconds']:.2f} 秒。")
+                if not code and step == 'voice':
+                    if tempo := result.get('tempoAdjustment'):
+                        self.app.event(row['taskId'], f"配音实测 {tempo['beforeSeconds']:.2f} 秒，"
+                                       f"已按 {tempo['rate']:.3f} 倍微加速至 {tempo['afterSeconds']:.2f} 秒。")
+                    self.calibrate_person_pace(job)
                 while (code==2 or result.get('pending')) and time.monotonic()+10<deadline:
                     # Poll the same registered provider task; no model round trip.
-                    time.sleep(max(0, min(10, current.get('deadline', float('inf')) - time.time())))
+                    time.sleep(max(0, min(5, current.get('deadline', float('inf')) - time.time())))
                     current=self.row(ident,lease)
                     if current['status']=='stopping':self.app.queue.report(ident,lease,PHASE[step],'running','已到停止检查点')
-                    code,result=self.invoke(row,lease,step)
+                    try:
+                        code,result=self.invoke(row,lease,step)
+                    except StepTimeout as exc:
+                        return {'state':'failed','step':step,'result':{'error':str(exc),'timeout':True,'recoverable':True},'job':str(job)}
                 if code==2 or result.get('pending'):
                     self.write(journal_path,{**journal,'plan':fingerprint(job/'plan.json'),'waiting':step})
                     return {'state':'pending','step':step,'result':result}
                 if code and step == 'check':
                     if self.fit_overflowing_headers(job):
                         self.app.event(row['taskId'], '片中标题或机构名超出画布，已适配宽度并重新检查。')
-                        code, result = self.invoke(row,lease,step)
+                        try:
+                            code, result = self.invoke(row,lease,step)
+                        except StepTimeout as exc:
+                            return {'state':'failed','step':step,'result':{'error':str(exc),'timeout':True,'recoverable':True},'job':str(job)}
                     if code and self.accept_contrast_notice(row, lease, job):
                         code = 0
                 if code and step == 'verify' and result.get('error') == 'Audio peak too high':
                     self.app.queue.report(ident, lease, PHASE[step], 'running', '混音峰值超标，正在修正音轨并保留原画面')
-                    code, result = self.invoke(row, lease, 'repair-audio-peak')
-                    if not code:
-                        if result.get('changed'):
-                            note = f"混音峰值由 {result['beforeDbtp']:.2f} 调整为 {result['afterDbtp']:.2f} dBTP，画面与时间轴保持一致。"
-                            self.app.event(row['taskId'], note)
-                        code, result = self.invoke(row, lease, step)
+                    try:
+                        code, result = self.invoke(row, lease, 'repair-audio-peak')
+                        if not code:
+                            if result.get('changed'):
+                                note = f"混音峰值由 {result['beforeDbtp']:.2f} 调整为 {result['afterDbtp']:.2f} dBTP，画面与时间轴保持一致。"
+                                self.app.event(row['taskId'], note)
+                            code, result = self.invoke(row, lease, step)
+                    except StepTimeout as exc:
+                        return {'state':'failed','step':step,'result':{'error':str(exc),'timeout':True,'recoverable':True},'job':str(job)}
                 if code:
                     return {'state':'failed','step':step,'result':result,'job':str(job)}
+                if step == 'build':
+                    audit = self.read(job/'shot-audit.json', {})
+                    inv_visuals = [x for x in self.read(job/'inventory.json', {}).get('files', [])
+                                   if x.get('kind') in ('video', 'image')]
+                    if len(inv_visuals) >= 2:
+                        shot_notes = []
+                        if audit.get('adjacentOverlaps'):
+                            shot_notes.append(f"检测到 {len(audit['adjacentOverlaps'])} 处相邻分镜源画面重叠。")
+                        if audit.get('shortShots'):
+                            shot_notes.append(f"检测到 {len(audit['shortShots'])} 个不足 1 秒的短切镜头。")
+                        if shot_notes:
+                            self.save_notices(job, 'shots', shot_notes)
+                            self.app.event(row['taskId'], ' '.join(shot_notes), 'warning')
                 if step == 'cover':
                     layout = self.read(job/'cover.json', {}).get('layout', {})
+                    cover_notes = []
                     if layout.get('titleAdjustment'):
-                        note = '原封面标题超出两行空间，已自动排入两行：' + layout['title_text'].replace('\n', ' ')
-                        self.save_notices(job, 'cover', [note])
-                        self.app.event(row['taskId'], note)
+                        cover_notes.append('原封面标题超出两行空间，已自动排入两行：' + layout['title_text'].replace('\n', ' '))
+                    if layout.get('tagAdjustment'):
+                        cover_notes.append('原封面标签过长，已自动精简以适配 48px 卡片：' + ' / '.join(layout['label_texts']))
+                    if cover_notes:
+                        self.save_notices(job, 'cover', cover_notes)
+                        for note in cover_notes:
+                            self.app.event(row['taskId'], note)
                 if step == 'package':
                     verified, _ = self.verified_render(job)
                     final = job / 'final.mp4'
@@ -266,6 +326,58 @@ class Pipeline:
         self.app.queue.report(ident,lease,5,'completed','视频已核验，交付产物已保存，等待用户验收')
         return {'state':'completed','job':str(job)}
 
+    def calibrate_person_pace(self, job):
+        """Record measured characters-per-second for people without a matching pace reference."""
+        try:
+            voice = self.read(job/'voice.json', {})
+            runtime = self.read(job/'runtime.json', {})
+            plan = self.read(job/'plan.json', {})
+            person_id = plan.get('person')
+            narration_path = job/'narration.txt'
+            if not person_id or not voice or not narration_path.is_file():
+                return
+            from workflow import spoken_characters
+            spoken = len(spoken_characters(narration_path.read_text(encoding='utf-8')))
+            settings = runtime.get('settings', {})
+            voice_cfg = settings.get('voice', {})
+            lead = float(voice_cfg.get('start', 0))
+            tempo = voice.get('tempoAdjustment') or {}
+            raw_seconds = float(tempo['beforeSeconds']) - lead if tempo.get('beforeSeconds') else float(voice.get('duration', 0))
+            if spoken < 60 or raw_seconds < 15:
+                return
+            cps = round(spoken / raw_seconds, 5)
+            if not 1.5 <= cps <= 8.0:
+                return
+            with self.app.transaction():
+                cfg = self.app.pc.load()
+                person = cfg.get('people', {}).get(person_id)
+                if not person or person.get('speaker') != voice_cfg.get('speaker'):
+                    return
+                existing = person.get('narration_reference') or {}
+                if (existing.get('speaker') == person.get('speaker')
+                        and existing.get('speech_rate') == person.get('speech_rate')
+                        and existing.get('baseline')):
+                    return
+                if (existing.get('speaker') == person.get('speaker')
+                        and existing.get('speech_rate') == person.get('speech_rate')
+                        and existing.get('characters_per_second')):
+                    return
+                lower, upper = max(140, round(54 * cps)), round(68 * cps)
+                person['narration_reference'] = {
+                    'purpose': '工作台按实测配音自动校准的写稿容量参考；人物或语速变化后自动更新。',
+                    'speaker': person.get('speaker'),
+                    'speech_rate': person.get('speech_rate'),
+                    'spoken_characters': spoken,
+                    'voice_duration_seconds': round(raw_seconds, 3),
+                    'characters_per_second': cps,
+                    'draft_characters': round(61 * cps),
+                    'draft_character_range': [lower, upper],
+                    'target_duration_seconds': [55, 70],
+                }
+                self.app.pc.write(self.app.pc.directory()/'project.json', cfg)
+        except Exception:
+            pass
+
     def fit_overflowing_headers(self, job):
         check = self.read(job/'check.json', {})
         if check.get('browserSkipped') is not False:
@@ -275,7 +387,7 @@ class Pipeline:
         institution = self.read(job/'institution.json', {})
         headers = {
             institution.get('headline'): 'TitleFace',
-            institution.get('displayName', '').replace('·',' · '): 'BrandFace',
+            re.sub(r'\s*·\s*', ' · ', institution.get('displayName', '')).strip(): 'BrandFace',
         }
         if not errors or any(item.get('code') != 'text_box_overflow'
                 or item.get('sourceFile') != 'compositions/orange-ui.html'

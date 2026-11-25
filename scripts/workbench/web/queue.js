@@ -109,7 +109,8 @@ renderCreate=function(){
 };
 function queueButton(row,options={}){
   if(row.stopReason==='timeout'&&!row.settled)return '<span class="subtle">超时，等待执行者退出</span>';
-  if(['completed','cancelled','timed_out'].includes(row.status)&&row.settled)return '';
+  if(['completed','cancelled'].includes(row.status)&&row.settled)return '';
+  if(row.status==='timed_out'&&row.settled)return `<button class="secondary" data-action="queue-retry" data-id="${row.id}">重试当前条</button>`;
   const atHead=row.id===state.queue.headId;
   const inspect=options.inspect!==false&&!row.settled&&atHead?`<button class="text-button" data-action="inspect-progress" data-id="${row.id}">查看状态诊断</button>`:'';
   const planning = row.kind === 'planning';
@@ -123,7 +124,7 @@ function queueButton(row,options={}){
     return (cancelling?'<button class="text-button" disabled aria-label="取消已提交，等待执行者退出确认">取消中</button>':'<span class="subtle">制作完成，等待执行者退出</span>')+confirm+inspect;
   }
   if(row.status==='billing_hold')return `<button class="secondary" data-action="queue-retry" data-id="${row.id}" ${row.settled?'':'disabled'}>充值后继续</button>`+cancel;
-  if(['failed','interrupted'].includes(row.status))return `<button class="secondary" data-action="queue-retry" data-id="${row.id}" ${!row.settled||!atHead?'disabled':''}>${!row.settled?'等待当前制作结束':!atHead?'等待前序处理':planning?'重试策划':'重试当前条'}</button>`+cancel+inspect;
+  if(['failed','interrupted'].includes(row.status))return `<button class="secondary" data-action="queue-retry" data-id="${row.id}" ${!row.settled?'disabled':''}>${!row.settled?'等待当前制作结束':planning?'重试策划':'重试当前条'}</button>`+cancel+inspect;
   if(row.answerPending)return '<span class="subtle">补充已保存，等待当前制作结束</span>'+inspect;
   if(row.status==='needs_input')return `<a class="secondary" href="#task/${row.taskId}">补充信息</a>`+cancel+inspect;
   return row.status==='queued'&&!planning?`<button class="text-button" data-action="queue-cancel" data-id="${row.id}">取消排队</button>`:cancel+inspect;

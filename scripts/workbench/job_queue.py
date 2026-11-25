@@ -35,10 +35,26 @@ class JobQueue:
     def save(self,data):
         self.write(self.path,data)
 
+    def _runnable(self, row, data):
+        if row['status'] != 'queued':
+            return False
+        if row['kind'] == 'video':
+            planner = next((x for x in data['items'] if x['taskId'] == row['taskId'] and x['kind'] == 'planning'), None)
+            if planner and not (planner['status'] == 'completed' and planner.get('settled')):
+                return False
+        return True
+
     def head(self,data=None):
-        rows = (data or self.data())['items']
+        data = data or self.data()
+        rows = data['items']
         active = next((row for row in rows if not row.get('settled')), None)
-        return active or next((row for row in rows if row['status'] not in TERMINAL | {'billing_hold'}), None)
+        if active:
+            return active
+        if self.app.workbench_host == 'local':
+            runnable = next((row for row in rows if self._runnable(row, data)), None)
+            if runnable:
+                return runnable
+        return next((row for row in rows if row['status'] not in TERMINAL | {'billing_hold'}), None)
 
     def park_minimax_balance(self):
         # Legacy frozen jobs can still return the original provider error.
@@ -145,6 +161,7 @@ class JobQueue:
             status=None
         waiting = [x for x in rows if not (x['status'] in TERMINAL and x.get('settled'))]
         current = next((x for x in waiting if not x.get('settled')), None)
+        current = current or next((x for x in waiting if x['status'] in ('assigned', 'running', 'stopping', 'queued')), None)
         current = current or next((x for x in waiting if x['status'] != 'billing_hold'), None)
         current = current or (waiting or rows)[-1]
         if status is None:
@@ -211,7 +228,7 @@ class JobQueue:
             if not isinstance(worker_id,str) or not worker_id.strip():raise ValueError('必须提供独立子 Agent 持有者标识')
             now=time.time()
             row.update(status='running',workerId=worker_id,started=row.get('started',now),seen=now,updated=now,message='Agent 已接手这一条视频')
-            if row['kind']=='video' and 'deadline' not in row:
+            if row['kind'] in ('video','planning') and 'deadline' not in row:
                 row['timeoutMinutes']=self.app.models.production_timeout()
                 row['deadline']=row['started']+row['timeoutMinutes']*60
             self.mark_expired(row,now)
@@ -319,8 +336,9 @@ class JobQueue:
                     self.save(data)
                     self.sync_task(row['taskId'])
                     return row
-                if not head or head['id']!=ident:raise ValueError('只能处理队首，不能插队或越过更早的作业')
-                if row['status'] not in BLOCKED:raise ValueError('当前作业无需重试')
+                allow_non_head = self.app.workbench_host == 'local' and row.get('settled')
+                if not allow_non_head and (not head or head['id']!=ident):raise ValueError('只能处理队首，不能插队或越过更早的作业')
+                if row['status'] not in BLOCKED and not (action=='retry' and row['status']=='timed_out' and row.get('settled')):raise ValueError('当前作业无需重试')
                 if action=='retry' and row['status']=='needs_input':raise ValueError('请先在页面答复当前问题，再继续这一条')
                 if action=='answer':
                     if row['status']!='needs_input' or not str(answer or '').strip():raise ValueError('请填写当前问题的补充信息')
@@ -389,7 +407,10 @@ class JobQueue:
             for row in rows:
                 if row['status'] not in TERMINAL or not row.get('settled'):self.action(row['id'],'cancel')
         else:
-            row=next((x for x in rows if not(x['status'] in TERMINAL and x.get('settled'))),None)
+            row = next((x for x in rows if x['status'] in BLOCKED and (not answer or x['status'] == 'needs_input')), None)
+            if not row and not answer:
+                row = next((x for x in rows if x['status'] in ('billing_hold', 'timed_out') and x.get('settled')), None)
+            row = row or next((x for x in rows if not(x['status'] in TERMINAL and x.get('settled'))),None)
             if not row:raise ValueError('本批次已经结束；重做请从单条成品进入')
             self.action(row['id'],'answer' if answer else 'retry',answer)
         return self.app.task(task_id)
