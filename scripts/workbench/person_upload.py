@@ -13,7 +13,7 @@ from voice_training import AUDIO_FORMATS, MAX_AUDIO_BYTES
 IMAGE_FORMATS = {'.jpg': 'jpeg_pipe', '.jpeg': 'jpeg_pipe', '.png': 'png_pipe', '.webp': 'webp_pipe'}
 MAX_IMAGE_BYTES = 20_000_000
 MAX_UPLOAD_BYTES = MAX_IMAGE_BYTES + MAX_AUDIO_BYTES + 65_536
-TEXT_FIELDS = {'name', 'social_media_name', 'speaker', 'custom_speaker_id', 'person_voice_provider', 'person_aliyun_model', 'speech_rate', 'default', 'music_track_id', 'closing_hook'}
+TEXT_FIELDS = {'name', 'social_media_name', 'speaker', 'custom_speaker_id', 'person_voice_provider', 'person_aliyun_model', 'speech_rate', 'default', 'music_track_id', 'closing_hook', 'xiaohongshu_account_id', 'douyin_account_id', 'channels_account_id'}
 
 
 def read_form(content_type, body):
@@ -48,8 +48,6 @@ def read_form(content_type, body):
 
 
 def create_person(app, values, photo, recording, run):
-    if not values.get('social_media_name', '').strip():
-        raise ValueError('请填写社媒署名。')
     if not values.get('name', '').strip():
         raise ValueError('请填写人物名称。')
     ident = 'p-' + uuid.uuid4().hex[:12]
@@ -81,7 +79,8 @@ def create_person(app, values, photo, recording, run):
             cfg = app.pc.load()
             retry = next((p for p in cfg['people'].values() if p.get('source_hash') == fingerprint
                           and p.get('name') == values['name'].strip()[:60]
-                          and p.get('social_media_name') == values['social_media_name'].strip()), None)
+                          and (not values.get('social_media_name', '').strip()
+                               or p.get('social_media_name') == values['social_media_name'].strip())), None)
             if retry:
                 return retry['id']
             cfg['connections'].setdefault('main', {'provider': 'volcengine'})

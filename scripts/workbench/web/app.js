@@ -28,7 +28,8 @@ const paths = {
   save:'<path d="M4 3h13l4 4v14H3V3h1M7 3v6h10V3M7 21v-8h10v8"/>',
   box:'<path d="m12 2 9 5-9 5-9-5zM3 7v10l9 5 9-5V7M12 12v10M7.5 4.5l9 5"/>',
   retry:'<path d="M3 11a9 9 0 1 1 2 7M3 4v7h7"/>',
-  stop:'<rect x="5" y="5" width="14" height="14" rx="2"/>'
+  stop:'<rect x="5" y="5" width="14" height="14" rx="2"/>',
+  mic:'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/>'
 };
 const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.clapper}</svg>`;
 function hydrateIcons(root = document) { root.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = icon(el.dataset.icon); }); }
@@ -99,11 +100,11 @@ function voiceConfigured(config, provider) {
 }
 function hasServices() {
   const c=state.config;
-  const people=c.people.filter(person=>person.ready&&person.social_media_name);
+  const people=c.people.filter(person=>person.ready);
   const hasVoice=people.length?people.some(person=>voiceConfigured(c,boundVoicePlatform(person))):voiceConfigured(c,c.voice.provider);
   return hasVoice&&c.connection.ak&&c.connection.sk;
 }
-function hasPerson() { return state.config.people.some(p => p.ready && p.social_media_name); }
+function hasPerson() { return state.config.people.some(p => p.ready); }
 function allConfigured() { return hasServices() && hasPerson() && state.config.agent.state === 'connected'; }
 function heading(title, text, action = '') { return `<div class="page-heading"><div><h1>${title}</h1><p>${text}</p></div>${action}</div>`; }
 function stages(phase = -1, running = false) {
@@ -127,7 +128,7 @@ function renderCreate() {
   if (person && !createDraft.person) createDraft.person = person.id;
   const source = createDraft.source || '';
   const folderName = source.split(/[\\/]/).filter(Boolean).pop();
-  main.innerHTML = `${heading('让实拍素材，讲一个好故事。','从一份机构资料，到一条完整视频。交给你的 Agent。',`<div class="heading-note">${icon('shield')} 本地保存，随时继续</div>`)}${!allConfigured() ? `<div class="setup-banner">${icon('spark')}<div><h3>${!hasServices() || !hasPerson() ? '先用几分钟，准备好你的工作台' : '素材和人物已就绪，连接 Agent 即可制作'}</h3><p>${!hasServices() ? '填好服务 Key，配置一个数字人，以后每次直接开始。' : !hasPerson() ? '补齐人物照片、署名与音色，让每条视频都有自己的主角。' : '沿用 Agent 的 Agent 与 skill，制作进度会同步到这里。'}</p></div><a class="secondary" href="${hasServices() && hasPerson() ? '#settings' : '#onboarding'}">${hasServices() && hasPerson() ? '连接 '+a.label : '开始准备'} ${icon('arrow-right')}</a></div>` : ''}<div class="create-grid"><section class="panel create-panel"><div class="panel-top"><h2>开始一条新视频</h2><span class="draft-label">${icon('save')} 制作草稿自动保留</span></div><form id="create-form"><div class="form-group"><div class="label-row"><label>机构素材</label><button type="button" class="text-button" data-action="import-source">导入文件夹 ${icon('arrow-up-right')}</button></div><button type="button" class="source-select" id="source-drop" data-action="pick-source"><span class="source-icon">${icon('folder')}</span><span class="source-content"><strong>${E(folderName || '选择本地素材文件夹')}</strong><small>${source ? '已选择 · 点击更换' : '实拍视频、照片，以及机构的文字介绍'}</small></span>${icon(source ? 'check' : 'plus')}</button>${source ? `<p class="source-path">${E(source)}</p>` : ''}<div id="source-info">${sourceInfo()}</div><details class="file-table"><summary>手动填写文件夹路径</summary><input class="input" name="source" value="${E(source)}" placeholder="粘贴本地文件夹路径"><button class="text-button" type="button" data-action="scan-source">读取这个文件夹 ${icon('arrow-right')}</button></details></div><div class="form-group"><div class="label-row"><label for="requirements">你想怎么介绍这家机构？<span class="optional">可选</span></label></div><textarea id="requirements" name="requirements" placeholder="比如：带家属看看这里的一天，突出餐饮、活动和居住环境，语气亲切自然。">${E(createDraft.requirements)}</textarea><p class="form-help">AI 会结合真实资料写文案、选镜头。你只需要说清楚想表达什么。</p></div><details class="form-group" ${createDraft.facts ? 'open' : ''}><summary class="field-label">补充机构介绍<span class="optional">素材里没有文字介绍时填写</span></summary><textarea name="facts" aria-label="机构事实介绍" style="margin-top:11px" placeholder="填写机构名称、位置、设施与服务等真实信息。">${E(createDraft.facts)}</textarea></details><div class="form-group"><div class="label-row"><label for="person-select">这次，谁来出镜？</label><a class="text-button" href="#people">管理数字人 ${icon('chevron-right')}</a></div><div class="person-picker">${person?.hasPortrait ? `<img class="person-thumb" id="selected-portrait" src="/media/person/${E(person.id)}" alt="${E(person.name)}">` : `<span class="person-thumb" style="display:grid;place-items:center">${icon('person')}</span>`}<select name="person" id="person-select" ${!people.length ? 'disabled' : ''}>${people.length ? people.map(p => `<option value="${E(p.id)}" ${person?.id === p.id ? 'selected' : ''}>${E(p.name)}${p.social_media_name ? ' · ' + E(p.social_media_name) : ' · 待补齐署名'}</option>`).join('') : '<option>先添加一个数字人</option>'}</select>${person?.ready ? badge('已就绪') : badge('待配置','warn')}</div></div><div class="form-row"><div class="form-group"><label class="field-label" for="title-input" style="margin-bottom:9px">给作品起个名字<span class="optional">可选</span></label><input class="input" id="title-input" name="title" value="${E(createDraft.title)}" placeholder="例如：养老院探访 · 日常生活"></div><div class="form-group"><label class="field-label" for="count-input" style="margin-bottom:9px">制作数量</label><select name="count" id="count-input">${[1,2,3,5,10].map(n => `<option value="${n}" ${Number(createDraft.count || 1) === n ? 'selected' : ''}>${n} 条${n > 1 ? ' · 同机构不同讲法' : ''}</option>`).join('')}</select></div></div><div class="switch-row"><label for="music-check">${icon('music')} 添加轻柔背景音乐</label><input class="switch" id="music-check" name="music" type="checkbox" ${(createDraft.music ?? c.preferences.music) ? 'checked' : ''}></div><div class="error-slot" id="create-error" role="alert"></div><button class="primary wide" type="submit">${icon('spark')} 开始制作 ${icon('arrow-right')}</button><p class="submit-hint">自动保存任务 · 页面可随时关闭，保持本地服务运行即可</p></form></section>${previewPanel()}</div>${stages()}<div class="section-heading"><h2>最近的制作</h2><a class="text-button" href="#works">全部作品 ${icon('arrow-right')}</a></div><div id="recent-tasks">${taskRows(state.tasks.slice(0,3))}</div>`;
+  main.innerHTML = `${heading('让实拍素材，讲一个好故事。','从一份机构资料，到一条完整视频。交给你的 Agent。',`<div class="heading-note">${icon('shield')} 本地保存，随时继续</div>`)}${!allConfigured() ? `<div class="setup-banner">${icon('spark')}<div><h3>${!hasServices() || !hasPerson() ? '先用几分钟，准备好你的工作台' : '素材和人物已就绪，连接 Agent 即可制作'}</h3><p>${!hasServices() ? '填好服务 Key，配置一个数字人，以后每次直接开始。' : !hasPerson() ? '补齐人物照片与音色，让每条视频都有自己的主角。' : '沿用 Agent 的 Agent 与 skill，制作进度会同步到这里。'}</p></div><a class="secondary" href="${hasServices() && hasPerson() ? '#settings' : '#onboarding'}">${hasServices() && hasPerson() ? '连接 '+a.label : '开始准备'} ${icon('arrow-right')}</a></div>` : ''}<div class="create-grid"><section class="panel create-panel"><div class="panel-top"><h2>开始一条新视频</h2><span class="draft-label">${icon('save')} 制作草稿自动保留</span></div><form id="create-form"><div class="form-group"><div class="label-row"><label>机构素材</label><button type="button" class="text-button" data-action="import-source">导入文件夹 ${icon('arrow-up-right')}</button></div><button type="button" class="source-select" id="source-drop" data-action="pick-source"><span class="source-icon">${icon('folder')}</span><span class="source-content"><strong>${E(folderName || '选择本地素材文件夹')}</strong><small>${source ? '已选择 · 点击更换' : '实拍视频、照片，以及机构的文字介绍'}</small></span>${icon(source ? 'check' : 'plus')}</button>${source ? `<p class="source-path">${E(source)}</p>` : ''}<div id="source-info">${sourceInfo()}</div><details class="file-table"><summary>手动填写文件夹路径</summary><input class="input" name="source" value="${E(source)}" placeholder="粘贴本地文件夹路径"><button class="text-button" type="button" data-action="scan-source">读取这个文件夹 ${icon('arrow-right')}</button></details></div><div class="form-group"><div class="label-row"><label for="requirements">你想怎么介绍这家机构？<span class="optional">可选</span></label></div><textarea id="requirements" name="requirements" placeholder="比如：带家属看看这里的一天，突出餐饮、活动和居住环境，语气亲切自然。">${E(createDraft.requirements)}</textarea><p class="form-help">AI 会结合真实资料写文案、选镜头。你只需要说清楚想表达什么。</p></div><details class="form-group" ${createDraft.facts ? 'open' : ''}><summary class="field-label">补充机构介绍<span class="optional">素材里没有文字介绍时填写</span></summary><textarea name="facts" aria-label="机构事实介绍" style="margin-top:11px" placeholder="填写机构名称、位置、设施与服务等真实信息。">${E(createDraft.facts)}</textarea></details><div class="form-group"><div class="label-row"><label for="person-select">这次，谁来出镜？</label><a class="text-button" href="#people">管理数字人 ${icon('chevron-right')}</a></div><div class="person-picker">${person?.hasPortrait ? `<img class="person-thumb" id="selected-portrait" src="/media/person/${E(person.id)}" alt="${E(person.name)}">` : `<span class="person-thumb" style="display:grid;place-items:center">${icon('person')}</span>`}<select name="person" id="person-select" ${!people.length ? 'disabled' : ''}>${people.length ? people.map(p => `<option value="${E(p.id)}" ${person?.id === p.id ? 'selected' : ''}>${E(p.name)}</option>`).join('') : '<option>先添加一个数字人</option>'}</select>${person?.ready ? badge('已就绪') : badge('待配置','warn')}</div></div><div class="form-row"><div class="form-group"><label class="field-label" for="title-input" style="margin-bottom:9px">给作品起个名字<span class="optional">可选</span></label><input class="input" id="title-input" name="title" value="${E(createDraft.title)}" placeholder="例如：养老院探访 · 日常生活"></div><div class="form-group"><label class="field-label" for="count-input" style="margin-bottom:9px">制作数量</label><select name="count" id="count-input">${[1,2,3,5,10].map(n => `<option value="${n}" ${Number(createDraft.count || 1) === n ? 'selected' : ''}>${n} 条${n > 1 ? ' · 同机构不同讲法' : ''}</option>`).join('')}</select></div></div><div class="switch-row"><label for="music-check">${icon('music')} 添加轻柔背景音乐</label><input class="switch" id="music-check" name="music" type="checkbox" ${(createDraft.music ?? c.preferences.music) ? 'checked' : ''}></div><div class="error-slot" id="create-error" role="alert"></div><button class="primary wide" type="submit">${icon('spark')} 开始制作 ${icon('arrow-right')}</button><p class="submit-hint">自动保存任务 · 页面可随时关闭，保持本地服务运行即可</p></form></section>${previewPanel()}</div>${stages()}<div class="section-heading"><h2>最近的制作</h2><a class="text-button" href="#works">全部作品 ${icon('arrow-right')}</a></div><div id="recent-tasks">${taskRows(state.tasks.slice(0,3))}</div>`;
   bindCreate();
 }
 function sourceInfo() { return scanResult && scanResult.folder === createDraft.source ? `<div class="source-files"><span>${icon('video')}${scanResult.counts.video} 段视频</span><span>${icon('image')}${scanResult.counts.image} 张照片</span><span>${icon('text')}${scanResult.counts.text} 份介绍</span></div><details class="file-table"><summary>查看 ${scanResult.files.length} 个素材文件</summary><ul>${scanResult.files.slice(0,100).map(f => `<li>${icon(f.kind === 'video' ? 'video' : f.kind === 'image' ? 'image' : 'text')}${E(f.name)}</li>`).join('')}</ul></details>` : ''; }
@@ -694,32 +695,9 @@ function formatTrackDuration(seconds) {
   const n = Math.round(seconds || 0), h = Math.floor(n / 3600), m = Math.floor(n / 60) % 60;
   return (h ? h + ':' : '') + String(m).padStart(h ? 2 : 1, '0') + ':' + String(n % 60).padStart(2, '0');
 }
-function personMusicState(person) {
-  const tracks = state.music?.tracks || [];
-  const defaultTrack = tracks.find(t => t.id === state.music?.defaultId) || null;
-  const boundId = person?.music_track_id || '';
-  if (!boundId) return {boundId: '', track: defaultTrack, isCustom: false, missing: false};
-  const found = tracks.find(t => t.id === boundId) || null;
-  if (!found || found.archived) return {boundId, track: found, isCustom: true, missing: true};
-  return {boundId, track: found, isCustom: true, missing: false};
-}
-function personBindingSummary(person) {
-  const music = personMusicState(person);
-  const musicText = music.missing
-    ? '<span class="person-binding-warn">原配乐已收起，请重选</span>'
-    : music.isCustom
-      ? E(music.track.name)
-      : `跟随默认${music.track ? ' · ' + E(music.track.name) : ''}`;
-  const hook = (person.closing_hook || '').trim();
-  const hookText = hook ? E(hook) : '默认咨询引导';
-  return `<div class="person-bindings">
-    <div class="person-binding-row">${icon('music')}<span><strong>配乐</strong>${musicText}</span></div>
-    <div class="person-binding-row">${icon('spark')}<span><strong>钩子</strong><span class="person-hook-snippet">${hookText}</span></span></div>
-  </div>`;
-}
 function renderPeople() {
   clearVoicePreview();
-  main.innerHTML = `${heading('每条视频，都有自己的主角。','照片、音色、配乐和片尾钩子绑定在一起，选好人物就能直接制作。',`<button class="secondary" data-action="add-person">${icon('plus')} 添加数字人</button>`)}<div class="people-grid">${state.config.people.map(p => `<article class="person-card"><div class="portrait-area">${p.hasPortrait ? `<img src="/media/person/${E(p.id)}" alt="${E(p.name)}的数字人照片">` : ''}${p.isDefault ? badge('默认出镜') : ''}</div><div class="person-card-content"><h2>${E(p.name)} <span data-person-ready="${E(p.id)}">${personReadiness(p)}</span></h2><p>${E(p.social_media_name || '还没有设置社媒署名')}</p><div data-person-voice="${E(p.id)}">${personVoice(p)}</div>${personBindingSummary(p)}<button class="secondary" data-action="edit-person" data-id="${E(p.id)}">编辑人物资料 ${icon('arrow-right')}</button></div></article>`).join('')}<button class="add-person" data-action="add-person">${icon('plus')}<strong>添加一位新数字人</strong><small>形象、声音、配乐与片尾钩子<br>一次绑好，做片直接复用。</small></button></div><div id="person-editor">${editPerson !== undefined ? personEditor() : ''}</div>`;
+  main.innerHTML = `${heading('每条视频，都有自己的主角。','照片、音色、配乐、片尾钩子与分发账号统一归档在人物资料中，选好人物即可制作。',`<button class="secondary" data-action="add-person">${icon('plus')} 添加数字人</button>`)}<div class="people-grid">${state.config.people.map(p => `<article class="person-card"><div class="portrait-area">${p.hasPortrait ? `<img src="/media/person/${E(p.id)}" alt="${E(p.name)}的数字人照片">` : ''}${p.isDefault ? badge('默认出镜') : ''}</div><div class="person-card-content"><h2>${E(p.name)} <span data-person-ready="${E(p.id)}">${personReadiness(p)}</span></h2><button class="secondary" data-action="edit-person" data-id="${E(p.id)}">编辑人物资料 ${icon('arrow-right')}</button></div></article>`).join('')}<button class="add-person" data-action="add-person">${icon('plus')}<strong>添加一位新数字人</strong><small>形象、声音、配乐、钩子与平台账号<br>一次绑好，做片直接复用。</small></button></div><div id="person-editor">${editPerson !== undefined ? personEditor() : ''}</div>`;
   bindPerson();
 }
 function personUploadFields() {
@@ -765,78 +743,126 @@ function personEditor() {
   const showCustom=provider==='volcengine'&&(p?.speaker==='custom_speaker_id'||Boolean(p?.custom_speaker_id));
   const boundMusicId = p?.music_track_id || '';
   const closingHook = p?.closing_hook || '';
+  const xhsId = p?.xiaohongshu_account_id ?? p?.platform_accounts?.xiaohongshu ?? '';
+  const dyId = p?.douyin_account_id ?? p?.platform_accounts?.douyin ?? '';
+  const channelsId = p?.channels_account_id ?? p?.platform_accounts?.channels ?? '';
+  const modules = [
+    ['profile', '个人信息'],
+    ['voice', '声音与配音'],
+    ['narration', '口播内容'],
+    ['visual', '配乐与视觉'],
+    ['platforms', '分发账号'],
+  ];
   return `<section class="panel editor-panel">
-    <div class="editor-heading"><h2>${p?'编辑 '+E(p.name):'添加一个数字人'}</h2><button data-action="close-editor" aria-label="关闭人物编辑">${icon('close')}</button></div>
+    <div class="editor-heading"><div><h2>${p?'编辑 '+E(p.name):'添加一个数字人'}</h2><p class="form-help" style="margin-top:4px">按模块管理数字人的形象、声音、口播、视觉与平台账号配置。</p></div><button data-action="close-editor" aria-label="关闭人物编辑">${icon('close')}</button></div>
+    <div class="person-module-nav" role="navigation" aria-label="人物资料模块">${modules.map(([id, label]) => `<button type="button" class="person-module-pill" data-module-jump="${id}">${label}</button>`).join('')}</div>
     <form id="person-form">
-      ${p?`<input type="hidden" name="id" value="${E(p.id)}">`:personUploadFields()}
-      <div class="form-row">
-        <div class="form-group"><label class="field-label" for="person-name">人物名称</label><input class="input" id="person-name" name="name" value="${E(p?.name)}" placeholder="例如：小林" required></div>
-        <div class="form-group"><label class="field-label" for="person-social">社媒署名</label><input class="input" id="person-social" name="social_media_name" value="${E(p?.social_media_name)}" placeholder="例如：小林带你看养老" required></div>
-      </div>
-      <div class="form-group"><label class="field-label" for="person-voice-provider">语音平台</label>
-        <select id="person-voice-provider" name="person_voice_provider">${voicePlatformOptions(provider)}</select>
-      </div>
-      <fieldset class="form-group provider-fields" data-person-platform="volcengine" ${provider==='volcengine'?'':'hidden disabled'}>
-        <div class="form-group"><label class="field-label" for="person-speaker">火山音色 ID<span class="optional">已有音色才填</span></label>
-          <input class="input" id="person-speaker" name="speaker" value="${E(speaker('volcengine'))}" placeholder="例如：S_xxxxxxxx">
-        </div>
-        <div class="form-group" id="person-custom-fields" ${showCustom?'':'hidden'}>
-          <label class="field-label" for="custom-speaker">火山自定义音色 ID</label>
-          <input class="input" id="custom-speaker" name="custom_speaker_id" value="${E(p?.custom_speaker_id)}" ${showCustom?'':'disabled'}>
-        </div>
-      </fieldset>
-      <fieldset class="form-group provider-fields" data-person-platform="minimax" ${provider==='minimax'?'':'hidden disabled'}>
-        <label class="field-label" for="person-minimax-speaker">MiniMax Voice ID<span class="optional">已有音色才填</span></label>
-        <input class="input" id="person-minimax-speaker" name="speaker" value="${E(speaker('minimax'))}">
-      </fieldset>
-      <fieldset class="form-group provider-fields" data-person-platform="aliyun" ${provider==='aliyun'?'':'hidden disabled'}>
-        <div class="form-group">
-          <label class="field-label" for="person-aliyun-model">百炼语音模型</label>
-          <select id="person-aliyun-model" name="person_aliyun_model">${aliyunModelOptions(p?.aliyun_model||state.config.voice.aliyunModel)}</select>
-        </div>
-        <label class="field-label" for="person-aliyun-speaker">百炼音色 ID<span class="optional">已有音色才填</span></label>
-        <input class="input" id="person-aliyun-speaker" name="speaker" value="${E(speaker('aliyun'))}">
-      </fieldset>
-      <div id="person-voice-editor" class="form-group">${p?personVoice(p,true,provider):'<p class="form-help">没有音色可留空，保存人物后点击「复刻」，音色会自动绑定。</p>'}</div>
-      ${p?`<details id="voice-preview" class="form-group" ${p.speaker?'':'hidden'}>
-        <summary class="field-label">试听音色</summary>
-        <label class="field-label" for="voice-preview-text">试听文案 <span class="optional">选填</span></label>
-        <textarea id="voice-preview-text" maxlength="200" placeholder="留空会用人物名生成一段约 10 秒的自我介绍。"></textarea>
-        <p class="form-help">使用当前绑定的 <span id="voice-preview-platform">${p.speaker?voicePlatforms[boundVoicePlatform(p)]:''}</span> 音色，按平台规则计费。</p>
-        <div class="person-voice-actions"><button type="button" class="secondary" id="generate-voice-preview">确认合成试听</button></div>
-        <p id="voice-preview-status" class="form-help" role="status"></p>
-        <div id="voice-preview-player"></div>
-      </details>`:''}
-      <div class="form-group">
-        <label class="field-label" for="speech-rate">语速</label>
-        <input class="input" type="number" min="-50" max="100" id="speech-rate" name="speech_rate" value="${p?.speech_rate??-3}">
-        <p class="form-help">0 为标准速度，负数稍慢，正数稍快。</p>
-      </div>
-      <div class="form-group person-binding-group">
-        <div class="label-row">
-          <label class="field-label" for="person-music-track" style="margin:0">专属背景音乐（BGM）<span class="optional">选填</span></label>
-          <div class="person-music-actions">
-            <button type="button" class="text-button" data-action="upload-person-music">${icon('plus')} 上传新配乐</button>
-            <a class="text-button" href="#settings/music">管理配乐 ${icon('arrow-up-right')}</a>
+      ${p?`<input type="hidden" name="id" value="${E(p.id)}">`:''}
+      <div class="person-modules">
+        <section class="person-module" id="person-module-profile" data-module="profile">
+          <div class="person-module-head"><span class="person-module-icon">${icon('person')}</span><div><h3>个人信息与形象</h3><p>数字人基础称呼、出镜照片与默认身份。</p></div></div>
+          <div class="form-group"><label class="field-label" for="person-name">人物名称</label><input class="input" id="person-name" name="name" value="${E(p?.name)}" placeholder="例如：小林" required></div>
+          ${p ? '' : personUploadFields()}
+          <div class="switch-row"><label for="person-default">设为默认出镜人物</label><input class="switch" type="checkbox" name="default" id="person-default" ${p?.isDefault||!state.config.people.length?'checked':''}></div>
+        </section>
+
+        <section class="person-module" id="person-module-voice" data-module="voice">
+          <div class="person-module-head"><span class="person-module-icon">${icon('mic')}</span><div><h3>声音与配音</h3><p>配置语音平台、音色复刻、音色试听与语速。</p></div></div>
+          <div class="form-row">
+            <div class="form-group"><label class="field-label" for="person-voice-provider">语音平台</label>
+              <select id="person-voice-provider" name="person_voice_provider">${voicePlatformOptions(provider)}</select>
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="speech-rate">语速</label>
+              <input class="input" type="number" min="-50" max="100" id="speech-rate" name="speech_rate" value="${p?.speech_rate??-3}">
+              <p class="form-help">0 为标准速度，负数稍慢，正数稍快。</p>
+            </div>
           </div>
-        </div>
-        <select id="person-music-track" name="music_track_id">${personMusicOptions(boundMusicId)}</select>
-        <input type="file" id="person-music-upload" accept="audio/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.opus" hidden>
-        <p id="person-music-upload-status" class="form-help" role="status"></p>
-        <div id="person-music-preview" class="person-music-preview">${renderPersonMusicPreview(boundMusicId)}</div>
-        <p class="form-help">绑定后，每次选这位数字人制作视频都会自动使用这首配乐；单次新建制作也可临时覆盖。</p>
+          <fieldset class="form-group provider-fields" data-person-platform="volcengine" ${provider==='volcengine'?'':'hidden disabled'}>
+            <div class="form-group"><label class="field-label" for="person-speaker">火山音色 ID<span class="optional">已有音色才填</span></label>
+              <input class="input" id="person-speaker" name="speaker" value="${E(speaker('volcengine'))}" placeholder="例如：S_xxxxxxxx">
+            </div>
+            <div class="form-group" id="person-custom-fields" ${showCustom?'':'hidden'}>
+              <label class="field-label" for="custom-speaker">火山自定义音色 ID</label>
+              <input class="input" id="custom-speaker" name="custom_speaker_id" value="${E(p?.custom_speaker_id)}" ${showCustom?'':'disabled'}>
+            </div>
+          </fieldset>
+          <fieldset class="form-group provider-fields" data-person-platform="minimax" ${provider==='minimax'?'':'hidden disabled'}>
+            <label class="field-label" for="person-minimax-speaker">MiniMax Voice ID<span class="optional">已有音色才填</span></label>
+            <input class="input" id="person-minimax-speaker" name="speaker" value="${E(speaker('minimax'))}">
+          </fieldset>
+          <fieldset class="form-group provider-fields" data-person-platform="aliyun" ${provider==='aliyun'?'':'hidden disabled'}>
+            <div class="form-group">
+              <label class="field-label" for="person-aliyun-model">百炼语音模型</label>
+              <select id="person-aliyun-model" name="person_aliyun_model">${aliyunModelOptions(p?.aliyun_model||state.config.voice.aliyunModel)}</select>
+            </div>
+            <label class="field-label" for="person-aliyun-speaker">百炼音色 ID<span class="optional">已有音色才填</span></label>
+            <input class="input" id="person-aliyun-speaker" name="speaker" value="${E(speaker('aliyun'))}">
+          </fieldset>
+          <div id="person-voice-editor" class="form-group">${p?personVoice(p,true,provider):'<p class="form-help">没有音色可留空，保存人物后点击「复刻」，音色会自动绑定。</p>'}</div>
+          ${p?`<details id="voice-preview" class="form-group" ${p.speaker?'':'hidden'}>
+            <summary class="field-label">试听音色</summary>
+            <label class="field-label" for="voice-preview-text">试听文案 <span class="optional">选填</span></label>
+            <textarea id="voice-preview-text" maxlength="200" placeholder="留空会用人物名生成一段约 10 秒的自我介绍。"></textarea>
+            <p class="form-help">使用当前绑定的 <span id="voice-preview-platform">${p.speaker?voicePlatforms[boundVoicePlatform(p)]:''}</span> 音色，按平台规则计费。</p>
+            <div class="person-voice-actions"><button type="button" class="secondary" id="generate-voice-preview">确认合成试听</button></div>
+            <p id="voice-preview-status" class="form-help" role="status"></p>
+            <div id="voice-preview-player"></div>
+          </details>`:''}
+        </section>
+
+        <section class="person-module" id="person-module-narration" data-module="narration">
+          <div class="person-module-head"><span class="person-module-icon">${icon('text')}</span><div><h3>口播内容</h3><p>固定该数字人的片尾收口话术与表达偏好。</p></div></div>
+          <div class="form-group">
+            <div class="label-row">
+              <label class="field-label" for="person-closing-hook" style="margin:0">片尾钩子（口播最后一句话）<span class="optional">选填</span></label>
+              <span id="person-hook-count" class="person-hook-count">${closingHook.length} / 120 字</span>
+            </div>
+            <textarea id="person-closing-hook" name="closing_hook" rows="3" maxlength="120" placeholder="例如：养老这件事，交给懂的人。我是税嘉，在重庆替你看100家养老院。想实地参观的，评论区扣参观，我安排。">${E(closingHook)}</textarea>
+            <p class="form-help">留空则由 AI 按默认咨询引导生成。填写后，该数字人每条口播最后一句将固定原样念出这段话（请不要包含括号）。</p>
+          </div>
+          <div class="module-roadmap"><span>规划中</span><p>口播语气风格将在后续版本加入本模块，与片尾钩子统一管理。</p></div>
+        </section>
+
+        <section class="person-module" id="person-module-visual" data-module="visual">
+          <div class="person-module-head"><span class="person-module-icon">${icon('music')}</span><div><h3>配乐与视觉风格</h3><p>为该数字人绑定专属背景音乐，并预留封面与成片界面风格。</p></div></div>
+          <div class="form-group">
+            <div class="label-row">
+              <label class="field-label" for="person-music-track" style="margin:0">专属背景音乐（BGM）<span class="optional">选填</span></label>
+              <div class="person-music-actions">
+                <button type="button" class="text-button" data-action="upload-person-music">${icon('plus')} 上传新配乐</button>
+                <a class="text-button" href="#settings/music">管理配乐 ${icon('arrow-up-right')}</a>
+              </div>
+            </div>
+            <select id="person-music-track" name="music_track_id">${personMusicOptions(boundMusicId)}</select>
+            <input type="file" id="person-music-upload" accept="audio/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.opus" hidden>
+            <p id="person-music-upload-status" class="form-help" role="status"></p>
+            <div id="person-music-preview" class="person-music-preview">${renderPersonMusicPreview(boundMusicId)}</div>
+            <p class="form-help">绑定后，每次选这位数字人制作视频都会自动使用这首配乐；单次新建制作也可临时覆盖。</p>
+          </div>
+          <div class="module-roadmap"><span>规划中</span><p>专属视频封面样式与视频 UI 风格将在后续版本加入本模块。</p></div>
+        </section>
+
+        <section class="person-module" id="person-module-platforms" data-module="platforms">
+          <div class="person-module-head"><span class="person-module-icon">${icon('arrow-up-right')}</span><div><h3>多平台分发账号</h3><p>全部非必填，绑定后用于后续一键分发到对应平台账号。</p></div></div>
+          <div class="platform-accounts-grid">
+            <div class="form-group">
+              <label class="field-label" for="person-xhs-id">小红书账号 ID<span class="optional">选填</span></label>
+              <input class="input" id="person-xhs-id" name="xiaohongshu_account_id" maxlength="100" value="${E(xhsId)}" placeholder="填写小红书账号 ID">
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="person-dy-id">抖音账号 ID<span class="optional">选填</span></label>
+              <input class="input" id="person-dy-id" name="douyin_account_id" maxlength="100" value="${E(dyId)}" placeholder="填写抖音账号 ID">
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="person-channels-id">视频号账号 ID<span class="optional">选填</span></label>
+              <input class="input" id="person-channels-id" name="channels_account_id" maxlength="100" value="${E(channelsId)}" placeholder="填写视频号账号 ID">
+            </div>
+          </div>
+        </section>
       </div>
-      <div class="form-group person-binding-group">
-        <div class="label-row">
-          <label class="field-label" for="person-closing-hook" style="margin:0">片尾钩子（口播最后一句话）<span class="optional">选填</span></label>
-          <span id="person-hook-count" class="person-hook-count">${closingHook.length} / 120 字</span>
-        </div>
-        <textarea id="person-closing-hook" name="closing_hook" rows="3" maxlength="120" placeholder="例如：养老这件事，交给懂的人。我是税嘉，在重庆替你看100家养老院。想实地参观的，评论区扣参观，我安排。">${E(closingHook)}</textarea>
-        <p class="form-help">留空则由 AI 按默认咨询引导生成。填写后，该数字人每条口播最后一句将固定原样念出这段话（请不要包含括号）。</p>
-      </div>
-      <div class="switch-row"><label for="person-default">设为默认出镜人物</label><input class="switch" type="checkbox" name="default" id="person-default" ${p?.isDefault||!state.config.people.length?'checked':''}></div>
       <div id="person-error" class="inline-error error-slot" role="alert"></div>
-      <button class="primary" type="submit" style="margin-top:16px">${icon('save')} 保存人物资料</button>
+      <div class="person-editor-footer"><button class="primary" type="submit">${icon('save')} 保存人物资料</button></div>
     </form>
   </section>`;
 }
@@ -853,6 +879,13 @@ function syncPersonVoice(form, person) {
 function bindPerson() {
   const form = $('#person-form');
   if (!form) return;
+  const editorPanel = form.closest('.editor-panel');
+  editorPanel?.querySelectorAll('[data-module-jump]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = editorPanel.querySelector('#person-module-' + btn.dataset.moduleJump);
+      target?.scrollIntoView({behavior: 'smooth', block: 'start'});
+    });
+  });
   const editing=()=>state.config.people.find(person=>person.id===editPerson);
   bindVoicePreview(editing);
   form.elements.person_voice_provider.addEventListener('change',()=>syncPersonVoice(form,editing()));

@@ -122,6 +122,44 @@ def apply_closing_hook(person, raw_text):
         person.pop("closing_hooks", None)
 
 
+PLATFORM_ACCOUNT_FIELDS = (
+    ("xiaohongshu", "xiaohongshu_account_id", "小红书账号 ID"),
+    ("douyin", "douyin_account_id", "抖音账号 ID"),
+    ("channels", "channels_account_id", "视频号账号 ID"),
+)
+
+
+def person_platform_accounts(person):
+    raw = (person or {}).get("platform_accounts") or {}
+    return {key: str(raw.get(key) or "").strip() for key, _, _ in PLATFORM_ACCOUNT_FIELDS}
+
+
+def apply_platform_accounts(person, values):
+    nested = values.get("platform_accounts") if isinstance(values.get("platform_accounts"), dict) else {}
+    touched = any(field in values or key in nested for key, field, _ in PLATFORM_ACCOUNT_FIELDS)
+    if not touched:
+        return
+    accounts = person_platform_accounts(person)
+    for key, field, label in PLATFORM_ACCOUNT_FIELDS:
+        if field in values:
+            raw = values.get(field)
+        elif key in nested:
+            raw = nested.get(key)
+        else:
+            continue
+        text = str(raw or "").strip()
+        if any(c in text for c in "\r\n"):
+            raise ValueError(f"{label}不能包含换行符。")
+        if len(text) > 100:
+            raise ValueError(f"{label}请控制在 100 个字符以内。")
+        accounts[key] = text
+    cleaned = {k: v for k, v in accounts.items() if v}
+    if cleaned:
+        person["platform_accounts"] = cleaned
+    else:
+        person.pop("platform_accounts", None)
+
+
 class App:
     ensure_dir=staticmethod(ensure_dir)
     python_command=staticmethod(python_command)
@@ -283,7 +321,8 @@ class App:
         people = []
         for ident, p in cfg["people"].items():
             voice_training = self.voice_training.public({**p, 'id': ident})
-            people.append({k: p.get(k) for k in ("name", "social_media_name", "speaker", "custom_speaker_id", "status", "speech_rate", "connection", "sample", "voice_provider", "aliyun_model")} | {"id": ident, "ready": bool(p.get("speaker") and self.pc.asset_path(p.get("portrait")) and self.pc.asset_path(p.get("portrait")).is_file()), "hasPortrait": bool(p.get("portrait")), "isDefault": ident == cfg.get("default_person"), "voiceTraining": voice_training, "music_track_id": p.get("music_track_id") or "", "closing_hook": person_closing_hook(p)})
+            accounts = person_platform_accounts(p)
+            people.append({k: p.get(k) for k in ("name", "social_media_name", "speaker", "custom_speaker_id", "status", "speech_rate", "connection", "sample", "voice_provider", "aliyun_model")} | {"id": ident, "ready": bool(p.get("speaker") and self.pc.asset_path(p.get("portrait")) and self.pc.asset_path(p.get("portrait")).is_file()), "hasPortrait": bool(p.get("portrait")), "isDefault": ident == cfg.get("default_person"), "voiceTraining": voice_training, "music_track_id": p.get("music_track_id") or "", "closing_hook": person_closing_hook(p), "platform_accounts": accounts, "xiaohongshu_account_id": accounts["xiaohongshu"], "douyin_account_id": accounts["douyin"], "channels_account_id": accounts["channels"]})
         storage = self.pc.storage_settings(c.get("storage"))
         voice_settings = cfg.get('settings', {})
         from aliyun_voice import DEFAULT_MODEL
@@ -424,6 +463,8 @@ class App:
             if any(p.get('social_media_name') == social for p in others):
                 raise ValueError('该社媒名已绑定其他数字人，请指定不同名字。')
             person['social_media_name'] = social
+        elif not person.get('social_media_name'):
+            person['social_media_name'] = person['name']
         speaker = values.get('speaker', '').strip()
         provider = values.get('person_voice_provider') or person.get('voice_provider') or 'volcengine'
         if provider not in ('volcengine', 'minimax', 'aliyun'):
@@ -472,6 +513,7 @@ class App:
                 person.pop('music_resource', None)
         if 'closing_hook' in values:
             apply_closing_hook(person, values.get('closing_hook'))
+        apply_platform_accounts(person, values)
         if values.get('default') or (speaker and not cfg.get('default_person')):
             cfg['default_person'] = person['id']
 
@@ -528,8 +570,8 @@ class App:
         ordered_person_ids = list(dict.fromkeys(spec['person'] for spec in specs)) if specs else ([v.get('person')] if v.get('person') else [])
         person_ids = set(ordered_person_ids)
         people = [p for p in cfg['people'] if p['id'] in person_ids]
-        if not person or any(not p['hasPortrait'] or not p['social_media_name'] for p in people):
-            raise ValueError('请先补齐所选数字人的照片和社媒署名')
+        if not person or any(not p['hasPortrait'] for p in people):
+            raise ValueError('请先补齐所选数字人的照片')
         if music_enabled and not original_music:
             if override_track_id:
                 self.music.track(override_track_id, active=True)
@@ -548,7 +590,7 @@ class App:
             if not cfg['model']['configured']:
                 raise ValueError('请先在设置中填写所选平台的模型 API Key')
             if any(not p['ready'] for p in people):
-                raise ValueError('请先补齐所选数字人的照片、署名和绑定音色')
+                raise ValueError('请先补齐所选数字人的照片和绑定音色')
         voice_keys = {'volcengine': cfg['connection']['speech'], 'minimax': cfg['voice']['minimaxConfigured'],
                       'aliyun': cfg['voice']['aliyunConfigured']}
         if not all(voice_keys.get(p.get('voice_provider') or 'volcengine') for p in people):

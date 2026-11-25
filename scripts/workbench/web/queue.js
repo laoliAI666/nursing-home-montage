@@ -13,9 +13,9 @@ function creationSetup(selected) {
     return {route:'settings/create-model', detail:'请先填写制作模型的 API Key。', action:'配置模型'};
   }
   const people = selected.map(({id}) => config.people.find(person => person.id === id));
-  if (!config.people.some(person => person.ready && person.social_media_name) ||
-      people.some(person => !person?.ready || !person.social_media_name)) {
-    return {route:'people/create', detail:'请为出镜数字人补齐照片、署名和音色。', action:'配置数字人'};
+  if (!config.people.some(person => person.ready) ||
+      people.some(person => !person?.ready)) {
+    return {route:'people/create', detail:'请为出镜数字人补齐照片和音色。', action:'配置数字人'};
   }
   const missingVoice = people.find(person => !voiceConfigured(config, boundVoicePlatform(person)));
   if (missingVoice) {
@@ -43,7 +43,7 @@ renderCreate=function(){
   const preferenceMap={...(createDraft.videoPreferenceMap||{})};let slots=[];
   if(!Object.keys(preferenceMap).length){let n=0;for(const p of selections)for(let i=0;i<p.count;i++)preferenceMap[p.id+':'+i]=createDraft.videoPreferences?.[n++]||'';}
   const label=oldPicker.closest('.form-group').querySelector('.label-row>label');if(label)label.outerHTML='<span class="field-label">出镜数字人与每人数量</span>';
-  oldPicker.outerHTML=`<fieldset class="batch-people"><legend class="sr-only">选择出镜数字人与每人制作数量</legend>${people.map(p=>{const s=selections.find(x=>x.id===p.id);const tags=[p.social_media_name||'待补齐署名'];if(p.music_track_id){const tr=(state.music?.tracks||[]).find(t=>!t.archived&&t.id===p.music_track_id);tags.push(tr?'配乐：'+tr.name:'配乐待重选');}if(p.closing_hook)tags.push('已绑钩子');return `<div class="batch-person ${s?'is-selected':''}"><label class="batch-person-choice"><input type="checkbox" data-queue-person="${E(p.id)}" aria-label="选择${E(p.name)}" ${s?'checked':''}>${p.hasPortrait?`<img src="/media/person/${E(p.id)}" alt="">`:icon('person')}<span><strong>${E(p.name)}</strong><small>${E(tags.join(' · '))}</small></span></label><div class="batch-person-count"><label class="sr-only" for="quantity-${E(p.id)}">${E(p.name)}制作数量</label><select data-search="false" id="quantity-${E(p.id)}" data-queue-count="${E(p.id)}" ${s?'':'disabled'}>${Array.from({length:20},(_,i)=>i+1).map(n=>`<option value="${n}" ${n===(s?.count||1)?'selected':''}>${n} 条</option>`).join('')}</select></div></div>`;}).join('')}</fieldset>`;
+  oldPicker.outerHTML=`<fieldset class="batch-people"><legend class="sr-only">选择出镜数字人与每人制作数量</legend>${people.map(p=>{const s=selections.find(x=>x.id===p.id);const tags=[];if(p.music_track_id){const tr=(state.music?.tracks||[]).find(t=>!t.archived&&t.id===p.music_track_id);tags.push(tr?'配乐：'+tr.name:'配乐待重选');}if(p.closing_hook)tags.push('已绑钩子');const platformCount=[p.xiaohongshu_account_id,p.douyin_account_id,p.channels_account_id].filter(Boolean).length;if(platformCount)tags.push(platformCount+' 个平台账号');const subtitle=tags.length?tags.join(' · '):(p.ready?'已就绪':'待配置音色');return `<div class="batch-person ${s?'is-selected':''}"><label class="batch-person-choice"><input type="checkbox" data-queue-person="${E(p.id)}" aria-label="选择${E(p.name)}" ${s?'checked':''}>${p.hasPortrait?`<img src="/media/person/${E(p.id)}" alt="">`:icon('person')}<span><strong>${E(p.name)}</strong><small>${E(subtitle)}</small></span></label><div class="batch-person-count"><label class="sr-only" for="quantity-${E(p.id)}">${E(p.name)}制作数量</label><select data-search="false" id="quantity-${E(p.id)}" data-queue-count="${E(p.id)}" ${s?'':'disabled'}>${Array.from({length:20},(_,i)=>i+1).map(n=>`<option value="${n}" ${n===(s?.count||1)?'selected':''}>${n} 条</option>`).join('')}</select></div></div>`;}).join('')}</fieldset>`;
   const duration = oldCount.closest('.form-group');
   if (state.config.agent.mode === 'local') {
     duration.innerHTML = `<label class="field-label" for="target-duration">每条目标时长（秒）</label>
