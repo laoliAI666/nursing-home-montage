@@ -41,7 +41,10 @@ class BatchPlanning:
         return {**settings, 'source': str(source), 'files': files, 'facts': task.get('facts', ''),
                 'requirements': task.get('requirements', ''), 'videoPreferences': task.get('videoPreferences', []),
                 'people': task.get('videoSpecs') or [{'person':task['person']}] * task['count'],
-                'music': task.get('musicTrack', {}), 'count': task['count']}
+                'music': task.get('musicTrack', {}),
+                **({'videoMusicTracks': task['videoMusicTracks']} if task.get('videoMusicTracks') else {}),
+                **({'personClosingHooks': task['personClosingHooks']} if task.get('personClosingHooks') else {}),
+                'count': task['count']}
 
     def initialize(self, task):
         folder = self.folder(task)

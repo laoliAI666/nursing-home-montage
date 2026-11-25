@@ -40,7 +40,7 @@ NARRATION_SYSTEM = (
     '口播台词严禁使用任何括号（含中英文括号）。若机构名称或原文中带有括号说明（例如「椿萱茂（重庆回兴）老年公寓」中的「（重庆回兴）」），口播直接省略括号及括号内文字（只念「椿萱茂老年公寓」），需要交代地名或补充信息时用正常语句自然说出。\n\n'
     '逐项覆盖「必讲要点」中的关键信息。相关内容可以合在一句或一段，每个事实讲清一次。'
     '全文只扩展一个重要细节，原文中的其余细节用来核对。'
-    '「展开重点」可以用一个有原文依据的细节讲具体。结尾用一句话完成「咨询引导」。\n\n'
+    '「展开重点」可以用一个有原文依据的细节讲具体。结尾用一句话完成「咨询引导」；若「咨询引导」标明为该数字人绑定的固定片尾钩子，最后一段必须原样使用该钩子全文（一字不改），并将其字数计入全文总字数范围内。\n\n'
     '机构原文是事实依据。用日常的话说清具体安排，保留正式名称、适用对象和服务条件。'
     '省去宣传评价和未经核实的效果承诺。\n\n'
     '全文含开头、正文和结尾，须落在用户给定的字数范围内。标点和空格不计，数字按实际读法计。'
@@ -57,7 +57,7 @@ NARRATION_REPAIR_SYSTEM = (
     '按替换段落的字数目标改写，替换段落合计不得超出给定范围。工作台会把改后的段落替回全文计数。'
     '继续覆盖本条必讲清单，保留适用对象、服务条件和本条切入方式。'
     '超长时先压缩重复、次要例子和修饰语，不能用删除必须保留项来凑字数。偏短时解释一个有原文依据的要点。'
-    '直接介绍具体安排，把核验备注留在后台。结尾保留一个咨询动作。'
+    '直接介绍具体安排，把核验备注留在后台。结尾保留一个咨询动作；若绑定了固定片尾钩子，最后一段原样保留不得改写。'
     '只返回 {"edits":[{"index":2,"text":"修订段落"}]}，段落编号从 1 起，每个指定编号返回一次。'
 )
 
@@ -80,15 +80,19 @@ def variations(facts, task_id, count):
     return [ordered[i % len(ordered)] for i in range(count)]
 
 
-def user_prompt(context, facts, budget, variation, preference, feedback):
+def user_prompt(context, facts, budget, variation, preference, feedback, *, closing_hook=None):
     lower, upper = budget['minUnits'], budget['maxUnits']
+    cta_guide = (
+        f'固定片尾钩子（最后一段必须原样使用，一字不改）：{closing_hook}'
+        if closing_hook else DEFAULT_CTA
+    )
     value = {
         '机构名称': context['institutionName'],
         '字数要求': {'目标': (lower + upper) // 2, '最少': lower, '最多': upper},
         '必讲要点': [{'主题': fact['topic'], '必须讲到的关键信息': fact['text'],
                      '对应原文': {'文件': fact['source'], '段落': fact['paragraph']}} for fact in facts],
         '本条变化参数': variation,
-        '咨询引导': DEFAULT_CTA,
+        '咨询引导': cta_guide,
         '机构原文全文': context['sources'],
     }
     answer = context.get('answer') or {}

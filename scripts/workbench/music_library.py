@@ -114,21 +114,25 @@ class MusicLibrary:
             self.write(self.index,data)
             return self.public()
 
-    def snapshot(self,ident,task_id,original=None):
+    def snapshot(self,ident,task_id,original=None,slot=None):
         if original:
             path=Path(original['resource']);row=original
             if not path.is_file() or sha(path)!=row['sha256']:raise ValueError('原任务配乐副本不完整，请先恢复该文件')
         else:
             row,path=self.track(ident or self.data()['defaultId'],active=True)
             if not path.is_file() or sha(path)!=row['sha256']:raise ValueError('配乐文件已变化，请重新上传后选择')
-        target=self.app.task_path(task_id).parent/'music'/('source'+path.suffix.lower())
+        base=self.app.task_path(task_id).parent/'music'
+        target=(base/str(slot)/('source'+path.suffix.lower())) if slot else (base/('source'+path.suffix.lower()))
         from publish_assets import link_or_copy
         link_or_copy(path,target)
         if sha(target)!=row['sha256']:raise ValueError('配乐复制未完成，请重试')
         return {k:row[k] for k in ('id','name','filename','sha256','duration')}|{'resource':str(target)}
 
-    def original(self,task,job):
+    def original(self,task,job,person_id=None):
         if not task.get('music',True):return None
+        pid=person_id or task.get('person')
+        per_person=(task.get('videoMusicTracks') or {}).get(pid) if pid else None
+        if per_person:return per_person
         if task.get('musicTrack'):return task['musicTrack']
         frozen=self.read(job/'runtime.json',{}).get('settings',{}).get('music',{})
         plan=self.read(job/'plan.json',{}).get('settings',{}).get('music',{})

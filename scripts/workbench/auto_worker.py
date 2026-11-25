@@ -361,9 +361,27 @@ class Production:
         self.progress(f'第 {index + 1} 条已保留文案优化提醒，继续制作')
         return validated, angles
 
+    def closing_hook_for(self, task, index):
+        specs = task.get('videoSpecs') or [{'person': task['person']}] * task['count']
+        person_id = specs[index]['person'] if 0 <= index < len(specs) else task.get('person')
+        if not person_id:
+            return ''
+        hooks = task.get('personClosingHooks') or {}
+        if person_id in hooks:
+            return str(hooks[person_id] or '').strip()
+        try:
+            person = self.app.pc.load().get('people', {}).get(person_id) or {}
+        except Exception:
+            return ''
+        ch = person.get('closing_hooks') or {}
+        default_id = ch.get('default_id')
+        item = (ch.get('library') or {}).get(default_id) if default_id else None
+        return str(item.get('text') or '').strip() if isinstance(item, dict) else ''
+
     def draft_spoken_plan(self, task, index, context, facts, evidence, validate, items, folder, *, draft_only=False):
         preference = (task.get('videoPreferences') or [''] * task['count'])[index]
         budget = self.app.planning.narration_budget(task, index)
+        bound_hook = self.closing_hook_for(task, index)
         prior = [paragraphs(self.read(folder/item['plan'])) for item in items]
         receipt = (folder or self.job)/f'narration-draft-{index + 1:04d}.json'
         log = self.read(receipt, {'firstReturn':None,'repairs':0})
@@ -382,8 +400,15 @@ class Production:
             self.write(receipt, log)
 
         prompt_options = {'variation': variation, 'remember': remember} if complete else {}
+        if bound_hook:
+            prompt_options['closing_hook'] = bound_hook
         if complete:
             log['variation'] = variation
+
+        def apply_bound_hook(parts):
+            if bound_hook and parts:
+                return [*parts[:-1], bound_hook]
+            return list(parts)
 
         def paragraph_sizes(parts):
             return [script_units({'sentences': [{'text': text}]}) for text in parts]
@@ -407,11 +432,12 @@ class Production:
                     positions.add(idx)
             name = spoken_characters(context['institutionName'])
             if complete and name:
-                mentions = [index for index, part in enumerate(parts) if name in spoken_characters(part)]
+                body_parts = parts[:-1] if bound_hook and len(parts) > 1 else parts
+                mentions = [index for index, part in enumerate(body_parts) if name in spoken_characters(part)]
                 if not mentions or mentions[0] != 0:
                     notes.append('开头需要自然说出机构名称（不含括号及括号内说明）。')
                     positions.add(0)
-                if sum(spoken_characters(part).count(name) for part in parts) > 1:
+                if sum(spoken_characters(part).count(name) for part in body_parts) > 1:
                     notes.append('机构名称只说一次，保留开头的介绍。')
                     positions.update(index for index in mentions[1:])
                     if len(mentions) == 1 and mentions[0] == 0:
@@ -439,7 +465,7 @@ class Production:
                     if complete and total > goal:
                         if sizes[0] > budget['sections']['hook'] + 8:
                             positions.add(0)
-                        if sizes[-1] > budget['sections']['cta']:
+                        if not bound_hook and sizes[-1] > budget['sections']['cta']:
                             positions.add(len(sizes) - 1)
             for previous in prior:
                 match = similarity_issue(parts[:-1], previous, context['institutionName'])
@@ -449,10 +475,12 @@ class Production:
                     sections = '、'.join(str(i + 1) for i in repeated)
                     notes.append(f'正文和本批已有稿的相似度为 {similarity:.1f}%，达到 {SIMILARITY_LIMIT}%。'
                                  f'重新组织第 {sections or "已指定"} 段的句式和衔接，保持事实和顺序。')
+            if bound_hook and len(parts) > 1:
+                positions.discard(len(parts) - 1)
             return notes, sorted(positions)
 
         def generate(stage):
-            parts = self.editor.draft_narration(context, facts, preference, budget, index, feedback, **prompt_options)
+            parts = apply_bound_hook(self.editor.draft_narration(context, facts, preference, budget, index, feedback, **prompt_options))
             if log['firstReturn'] is None:
                 issues, _ = issues_for(parts)
                 log['firstReturn'] = {'paragraphs': list(parts), 'issues': issues, 'passed': False}
@@ -466,7 +494,7 @@ class Production:
             self.progress(f'正在写并核对第 {index + 1}/{task["count"]} 条独立口播')
         for generation in range(2):
             if generation == 0 and (ready or first):
-                parts = ready or first
+                parts = apply_bound_hook(ready or first)
             else:
                 try:
                     parts = generate('first_draft' if generation == 0 else 'regeneration')
@@ -521,7 +549,10 @@ class Production:
                                     if complete:
                                         review_context = {**context, 'preference': preference,
                                                           'outlineOmissionsAllowed': outline_omission_limit(
-                                                              task.get('narrationPolicy'), len(facts))}
+                                                              task.get('narrationPolicy'), len(facts)),
+                                                          **({'boundClosingHook': bound_hook} if bound_hook else {})}
+                                    elif bound_hook:
+                                        review_context = {**context, 'boundClosingHook': bound_hook}
                                     self.review_candidate(job,review_context,facts,prepare=verify_copy)
                                 except EditorialFeedback as exc:
                                     self.invoke('review-content',job=job,extra=['--note',str(exc)])
@@ -557,8 +588,8 @@ class Production:
                     break
                 self.progress(f'第 {index + 1} 条正在定点返修口播（{repair + 1}/{repairs}）')
                 try:
-                    parts = self.editor.revise_narration(parts, targets, notes, context, facts, budget, preference,
-                                                         **prompt_options)
+                    parts = apply_bound_hook(self.editor.revise_narration(parts, targets, notes, context, facts, budget, preference,
+                                                                          **prompt_options))
                 except (PlanError, ModelResponseError) as exc:
                     feedback = str(exc)
                     break

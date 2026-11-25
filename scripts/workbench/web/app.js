@@ -690,9 +690,36 @@ async function uploadPersonVoice(input) {
     finally {input.value='';}
   });
 }
+function formatTrackDuration(seconds) {
+  const n = Math.round(seconds || 0), h = Math.floor(n / 3600), m = Math.floor(n / 60) % 60;
+  return (h ? h + ':' : '') + String(m).padStart(h ? 2 : 1, '0') + ':' + String(n % 60).padStart(2, '0');
+}
+function personMusicState(person) {
+  const tracks = state.music?.tracks || [];
+  const defaultTrack = tracks.find(t => t.id === state.music?.defaultId) || null;
+  const boundId = person?.music_track_id || '';
+  if (!boundId) return {boundId: '', track: defaultTrack, isCustom: false, missing: false};
+  const found = tracks.find(t => t.id === boundId) || null;
+  if (!found || found.archived) return {boundId, track: found, isCustom: true, missing: true};
+  return {boundId, track: found, isCustom: true, missing: false};
+}
+function personBindingSummary(person) {
+  const music = personMusicState(person);
+  const musicText = music.missing
+    ? '<span class="person-binding-warn">原配乐已收起，请重选</span>'
+    : music.isCustom
+      ? E(music.track.name)
+      : `跟随默认${music.track ? ' · ' + E(music.track.name) : ''}`;
+  const hook = (person.closing_hook || '').trim();
+  const hookText = hook ? E(hook) : '默认咨询引导';
+  return `<div class="person-bindings">
+    <div class="person-binding-row">${icon('music')}<span><strong>配乐</strong>${musicText}</span></div>
+    <div class="person-binding-row">${icon('spark')}<span><strong>钩子</strong><span class="person-hook-snippet">${hookText}</span></span></div>
+  </div>`;
+}
 function renderPeople() {
   clearVoicePreview();
-  main.innerHTML = `${heading('每条视频，都有自己的主角。','照片、音色和社媒署名绑定在一起，选好人物就能直接制作。',`<button class="secondary" data-action="add-person">${icon('plus')} 添加数字人</button>`)}<div class="people-grid">${state.config.people.map(p => `<article class="person-card"><div class="portrait-area">${p.hasPortrait ? `<img src="/media/person/${E(p.id)}" alt="${E(p.name)}的数字人照片">` : ''}${p.isDefault ? badge('默认出镜') : ''}</div><div class="person-card-content"><h2>${E(p.name)} <span data-person-ready="${E(p.id)}">${personReadiness(p)}</span></h2><p>${E(p.social_media_name || '还没有设置社媒署名')}</p><div data-person-voice="${E(p.id)}">${personVoice(p)}</div><button class="secondary" data-action="edit-person" data-id="${E(p.id)}">编辑人物资料 ${icon('arrow-right')}</button></div></article>`).join('')}<button class="add-person" data-action="add-person">${icon('plus')}<strong>添加一位新数字人</strong><small>一张照片，一段声音。<br>让更多人替你讲述。</small></button></div><div id="person-editor">${editPerson !== undefined ? personEditor() : ''}</div>`;
+  main.innerHTML = `${heading('每条视频，都有自己的主角。','照片、音色、配乐和片尾钩子绑定在一起，选好人物就能直接制作。',`<button class="secondary" data-action="add-person">${icon('plus')} 添加数字人</button>`)}<div class="people-grid">${state.config.people.map(p => `<article class="person-card"><div class="portrait-area">${p.hasPortrait ? `<img src="/media/person/${E(p.id)}" alt="${E(p.name)}的数字人照片">` : ''}${p.isDefault ? badge('默认出镜') : ''}</div><div class="person-card-content"><h2>${E(p.name)} <span data-person-ready="${E(p.id)}">${personReadiness(p)}</span></h2><p>${E(p.social_media_name || '还没有设置社媒署名')}</p><div data-person-voice="${E(p.id)}">${personVoice(p)}</div>${personBindingSummary(p)}<button class="secondary" data-action="edit-person" data-id="${E(p.id)}">编辑人物资料 ${icon('arrow-right')}</button></div></article>`).join('')}<button class="add-person" data-action="add-person">${icon('plus')}<strong>添加一位新数字人</strong><small>形象、声音、配乐与片尾钩子<br>一次绑好，做片直接复用。</small></button></div><div id="person-editor">${editPerson !== undefined ? personEditor() : ''}</div>`;
   bindPerson();
 }
 function personUploadFields() {
@@ -709,11 +736,35 @@ function personUploadFields() {
     </div>
   </div>`;
 }
+function personMusicOptions(boundId) {
+  const tracks = state.music?.tracks || [];
+  const available = tracks.filter(t => !t.archived);
+  const def = tracks.find(t => t.id === state.music?.defaultId);
+  const missing = boundId && !available.some(t => t.id === boundId);
+  return `<option value="">跟随工作台默认配乐${def ? '（' + E(def.name) + '）' : ''}</option>` +
+    available.map(t => `<option value="${E(t.id)}" ${t.id === boundId ? 'selected' : ''}>${E(t.name)} · ${formatTrackDuration(t.duration)}</option>`).join('') +
+    (missing ? `<option value="${E(boundId)}" selected>原绑定配乐已收起，请重新选择</option>` : '');
+}
+function renderPersonMusicPreview(trackId) {
+  const tracks = state.music?.tracks || [];
+  const available = tracks.filter(t => !t.archived);
+  const def = tracks.find(t => t.id === state.music?.defaultId);
+  if (trackId) {
+    const t = available.find(x => x.id === trackId);
+    if (!t) return '<p class="inline-error">原绑定配乐已收起或不可用，请在上方重新选择一首配乐，或改为跟随默认。</p>';
+    return `<div class="batch-music-caption"><span>专属配乐：${E(t.name)}</span><span>${formatTrackDuration(t.duration)}</span></div><audio data-duration="${t.duration}" controls preload="none" aria-label="试听数字人专属配乐" src="${E(t.url)}"></audio>`;
+  }
+  return def
+    ? `<div class="batch-music-caption"><span>当前跟随默认：${E(def.name)}</span><span>${formatTrackDuration(def.duration)}</span></div><audio data-duration="${def.duration}" controls preload="none" aria-label="试听默认配乐" src="${E(def.url)}"></audio>`
+    : '<p class="form-help">暂未设置默认配乐，可直接上传一首绑定给该数字人。</p>';
+}
 function personEditor() {
   const p = state.config.people.find(person=>person.id===editPerson);
   const provider=p?personVoicePlatform(p):state.config.voice.provider;
   const speaker=platform=>p&&boundVoicePlatform(p)===platform?p.speaker||'':'';
   const showCustom=provider==='volcengine'&&(p?.speaker==='custom_speaker_id'||Boolean(p?.custom_speaker_id));
+  const boundMusicId = p?.music_track_id || '';
+  const closingHook = p?.closing_hook || '';
   return `<section class="panel editor-panel">
     <div class="editor-heading"><h2>${p?'编辑 '+E(p.name):'添加一个数字人'}</h2><button data-action="close-editor" aria-label="关闭人物编辑">${icon('close')}</button></div>
     <form id="person-form">
@@ -761,6 +812,28 @@ function personEditor() {
         <input class="input" type="number" min="-50" max="100" id="speech-rate" name="speech_rate" value="${p?.speech_rate??-3}">
         <p class="form-help">0 为标准速度，负数稍慢，正数稍快。</p>
       </div>
+      <div class="form-group person-binding-group">
+        <div class="label-row">
+          <label class="field-label" for="person-music-track" style="margin:0">专属背景音乐（BGM）<span class="optional">选填</span></label>
+          <div class="person-music-actions">
+            <button type="button" class="text-button" data-action="upload-person-music">${icon('plus')} 上传新配乐</button>
+            <a class="text-button" href="#settings/music">管理配乐 ${icon('arrow-up-right')}</a>
+          </div>
+        </div>
+        <select id="person-music-track" name="music_track_id">${personMusicOptions(boundMusicId)}</select>
+        <input type="file" id="person-music-upload" accept="audio/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.opus" hidden>
+        <p id="person-music-upload-status" class="form-help" role="status"></p>
+        <div id="person-music-preview" class="person-music-preview">${renderPersonMusicPreview(boundMusicId)}</div>
+        <p class="form-help">绑定后，每次选这位数字人制作视频都会自动使用这首配乐；单次新建制作也可临时覆盖。</p>
+      </div>
+      <div class="form-group person-binding-group">
+        <div class="label-row">
+          <label class="field-label" for="person-closing-hook" style="margin:0">片尾钩子（口播最后一句话）<span class="optional">选填</span></label>
+          <span id="person-hook-count" class="person-hook-count">${closingHook.length} / 120 字</span>
+        </div>
+        <textarea id="person-closing-hook" name="closing_hook" rows="3" maxlength="120" placeholder="例如：养老这件事，交给懂的人。我是税嘉，在重庆替你看100家养老院。想实地参观的，评论区扣参观，我安排。">${E(closingHook)}</textarea>
+        <p class="form-help">留空则由 AI 按默认咨询引导生成。填写后，该数字人每条口播最后一句将固定原样念出这段话（请不要包含括号）。</p>
+      </div>
       <div class="switch-row"><label for="person-default">设为默认出镜人物</label><input class="switch" type="checkbox" name="default" id="person-default" ${p?.isDefault||!state.config.people.length?'checked':''}></div>
       <div id="person-error" class="inline-error error-slot" role="alert"></div>
       <button class="primary" type="submit" style="margin-top:16px">${icon('save')} 保存人物资料</button>
@@ -796,10 +869,76 @@ function bindPerson() {
     const show=speaker==='custom_speaker_id'||Boolean(person?.custom_speaker_id&&speaker===person.speaker);
     $('#person-custom-fields').hidden=$('#custom-speaker').disabled=!show;
   });
+  const musicSelect = $('#person-music-track');
+  const musicPreview = $('#person-music-preview');
+  const musicUploadBtn = form.querySelector('[data-action="upload-person-music"]');
+  const musicUploadInput = $('#person-music-upload');
+  const musicUploadStatusEl = $('#person-music-upload-status');
+  if (musicSelect && musicPreview) {
+    const syncMusicPreview = () => { musicPreview.innerHTML = renderPersonMusicPreview(musicSelect.value); };
+    musicSelect.addEventListener('change', syncMusicPreview);
+    if (musicUploadBtn && musicUploadInput) {
+      musicUploadBtn.addEventListener('click', () => musicUploadInput.click());
+      musicUploadInput.addEventListener('change', async event => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        event.target.value = '';
+        if (file.size > 256 * 1024 ** 2 || !file.size) {
+          musicUploadStatusEl.textContent = '音乐文件应大于 0 且不超过 256MB。';
+          return;
+        }
+        musicUploadBtn.disabled = true;
+        musicUploadStatusEl.textContent = `正在上传并检查「${file.name}」…`;
+        try {
+          const response = await fetch('/api/music/upload?name=' + encodeURIComponent(file.name), {
+            method: 'POST', headers: {'Content-Type': 'application/octet-stream'}, body: file,
+          });
+          const out = await response.json();
+          if (!response.ok) throw new Error(out.error);
+          state.music = out.library;
+          musicSelect.innerHTML = personMusicOptions(out.trackId);
+          musicSelect.value = out.trackId;
+          musicSelect.dispatchEvent(new Event('change', {bubbles: true}));
+          musicUploadStatusEl.textContent = out.duplicate ? '已选中配乐库中相同曲目，点击下方「保存人物资料」生效。' : '配乐已上传并选中，点击下方「保存人物资料」生效。';
+          notify('配乐已就绪，请保存人物资料完成绑定');
+        } catch (err) {
+          musicUploadStatusEl.textContent = err.message;
+          notify(err.message, true);
+        } finally {
+          musicUploadBtn.disabled = false;
+        }
+      });
+    }
+  }
+  const hookInput = $('#person-closing-hook');
+  const hookCount = $('#person-hook-count');
+  if (hookInput && hookCount) {
+    const syncHookCount = () => {
+      const val = hookInput.value.replace(/[\r\n]+/g, ' ').trim();
+      hookCount.textContent = `${val.length} / 120 字`;
+      if (/[（()）]/.test(val)) {
+        hookInput.setCustomValidity('片尾钩子请不要包含括号，直接写实际要念出的最后一句话。');
+      } else {
+        hookInput.setCustomValidity('');
+      }
+    };
+    hookInput.addEventListener('input', syncHookCount);
+    syncHookCount();
+  }
   form.addEventListener('submit', async event => {
     event.preventDefault();
     const errorSlot = form.querySelector('#person-error');
     errorSlot.textContent = '';
+    if (hookInput && /[（()）]/.test(hookInput.value)) {
+      errorSlot.textContent = '片尾钩子请不要包含括号，直接写口播要念出的最后一句话。';
+      hookInput.focus();
+      return;
+    }
+    if (musicSelect && musicSelect.value && !(state.music?.tracks || []).some(t => !t.archived && t.id === musicSelect.value)) {
+      errorSlot.textContent = '所选配乐已收起，请重新选择一首配乐，或改为跟随工作台默认配乐。';
+      musicSelect.focus();
+      return;
+    }
     const button = form.querySelector('[type=submit]');
     await busy(button, async () => {
       const data = new FormData(form);

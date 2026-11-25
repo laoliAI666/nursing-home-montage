@@ -328,9 +328,9 @@ class VideoEdits:
         source=self.app.acceptance.ensure_source(task)
         if not source.is_dir():raise ValueError('原视频的制作资料不可用，请从机构重新创建任务')
         music_enabled=task.get('music',True)
-        if not task.get('musicTrack') and self.read(job/'runtime.json',{}).get('settings',{}).get('music',{}).get('enabled') is False:
+        if not task.get('musicTrack') and not (task.get('videoMusicTracks') or {}).get(person) and self.read(job/'runtime.json',{}).get('settings',{}).get('music',{}).get('enabled') is False:
             music_enabled=False
-        original_music=self.app.music.original({**task,'music':music_enabled},job)
+        original_music=self.app.music.original({**task,'music':music_enabled},job,person_id=person)
         new=self.app.create({'source':str(source),'person':person,'count':1,'title':str(values.get('title','')).strip() or self.detail(ident,index)['title']+' · 重做','requirements':task.get('requirements',''),'music':music_enabled,'facts':task.get('facts',''),'videoPreferences':[requirements]}, original_music=original_music)
         self.app.update(new['id'],kind='revision',revisionReady=False)
         # Freeze the original task input, never take a later library revision.

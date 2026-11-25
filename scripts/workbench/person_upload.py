@@ -13,7 +13,7 @@ from voice_training import AUDIO_FORMATS, MAX_AUDIO_BYTES
 IMAGE_FORMATS = {'.jpg': 'jpeg_pipe', '.jpeg': 'jpeg_pipe', '.png': 'png_pipe', '.webp': 'webp_pipe'}
 MAX_IMAGE_BYTES = 20_000_000
 MAX_UPLOAD_BYTES = MAX_IMAGE_BYTES + MAX_AUDIO_BYTES + 65_536
-TEXT_FIELDS = {'name', 'social_media_name', 'speaker', 'custom_speaker_id', 'person_voice_provider', 'person_aliyun_model', 'speech_rate', 'default'}
+TEXT_FIELDS = {'name', 'social_media_name', 'speaker', 'custom_speaker_id', 'person_voice_provider', 'person_aliyun_model', 'speech_rate', 'default', 'music_track_id', 'closing_hook'}
 
 
 def read_form(content_type, body):
@@ -29,7 +29,8 @@ def read_form(content_type, body):
             raise ValueError('人物资料上传格式不正确。')
         data = part.get_payload(decode=True) or b''
         if field in TEXT_FIELDS:
-            if part.get_filename() or len(data) > 1024:
+            limit = 2048 if field == 'closing_hook' else 1024
+            if part.get_filename() or len(data) > limit:
                 raise ValueError('人物资料字段格式不正确。')
             parts[field] = data.decode('utf-8')
         else:

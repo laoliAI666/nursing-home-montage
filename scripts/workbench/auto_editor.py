@@ -651,23 +651,28 @@ class Editor:
             plan['publication']['title'] = title.strip()
         return {**result, 'plan': plan}
 
-    def draft_narration(self, context, facts, preference, budget, index, feedback='', *, variation=None, remember=None):
+    def draft_narration(self, context, facts, preference, budget, index, feedback='', *, variation=None, remember=None, closing_hook=None):
         if variation is not None:
-            user = user_prompt(context, facts, budget, variation, preference, feedback)
+            user = user_prompt(context, facts, budget, variation, preference, feedback, closing_hook=closing_hook)
             if remember:
                 remember(NARRATION_SYSTEM, user)
             result = self.ask(NARRATION_SYSTEM, user, max_tokens=2500)
             return self.narration_paragraphs(result)
         # A rotation changes the entry point while every script keeps the same facts.
         ordered = facts[index % len(facts):] + facts[:index % len(facts)]
+        cta_rule = (f'结尾最后一段必须原样使用该数字人绑定的固定片尾钩子（一字不改）：「{closing_hook}」。'
+                    if closing_hook else '结尾留一句留言咨询参观。')
+        payload = {**narration_material(context, ordered), 'preference': preference, 'feedback': feedback}
+        if closing_hook:
+            payload['boundClosingHook'] = closing_hook
         result = self.ask(
             '用客观自然的带看口吻，给长辈和家属写一篇养老机构探访口播。'
             '开头尽早交代是哪家机构，可从一个具体特点切入。正文讲全 coreFacts，相关要点可合段。'
-            '用户明确要求专题时按专题写。结尾留一句留言咨询参观。'
+            '用户明确要求专题时按专题写。' + cta_rule
             + NARRATION_SOURCE_RULES + narration_length_instruction(budget) +
             '篇幅偏短时，从原文和实拍里补充能把要点讲清楚的细节。通读去掉套话和重复。'
             '输出 {"paragraphs":["开头","正文段","结尾"]}，正文可有多段，每段只填实际要念的话。',
-            {**narration_material(context, ordered), 'preference': preference, 'feedback': feedback},
+            payload,
             max_tokens=2500)
         return self.narration_paragraphs(result)
 
@@ -680,14 +685,16 @@ class Editor:
         return [part.strip() for part in parts]
 
     def revise_narration(self, parts, targets, issues, context, facts, budget, preference='', *,
-                         variation=None, remember=None):
+                         variation=None, remember=None, closing_hook=None):
         if variation is not None:
             sizes = [script_units({'sentences': [{'text': text}]}) for text in parts]
-            user = user_prompt(context, facts, budget, variation, preference, '')
+            user = user_prompt(context, facts, budget, variation, preference, '', closing_hook=closing_hook)
             protected = ['用户明确要求的内容，原文中的正式名称、适用对象和服务条件。']
             if 0 in targets and (name := user['机构名称']):
                 protected.append(f'第 1 段自然说出完整机构名称「{name}」，全文只说一次。')
-            if len(parts) - 1 in targets:
+            if closing_hook:
+                protected.append(f'最后一段为数字人绑定的固定片尾钩子，必须原样保留：{closing_hook}')
+            elif len(parts) - 1 in targets:
                 protected.append(f'最后一段只保留一个咨询动作：{user["咨询引导"]}')
             user['返修信息'] = {
                 '上一稿': parts, '问题': issues, '只改段落': [i + 1 for i in targets],
@@ -722,6 +729,7 @@ class Editor:
         prefs = (task.get('videoPreferences') or [''] * task['count'])[index]
         person = (task.get('videoSpecs') or [{'person': task['person']}] * task['count'])[index]['person']
         revised = task.get('revisedNarration', '')
+        bound_hook = str((task.get('personClosingHooks') or {}).get(person) or '').strip() if not revised else ''
         evidence = evidence or {}
         target = task.get('targetDurationSeconds')
         length = initial_budget(target) if target is not None else {}
@@ -774,11 +782,12 @@ class Editor:
             'asrPrompt 可给出本稿实际出现的少见专名，供配音识别复核使用，不能换掉任何口播用词。'
             'institution.displayName 和 institution.headline 各最多 12 字，标点也计入。'
             '封面放在 plan.cover，包含 main_title 和三个 labels；发布文案放在 plan.publication，'
-            '包含 title、description 和五个不同的 topics。两个字段都按同一条完整口播撰写。\n'
+            '包含 title、description 和五个不同的 topics。两个字段都按同一条完整口播撰写。'
+            + (f'结尾最后一句（kind=cta）必须原样使用该数字人绑定的固定片尾钩子：「{bound_hook}」。\n' if bound_hook else '\n')
             + self.rules('plan-schema', 'narration', 'narration-polish', 'covers') + '\n' + compact,
             {**context, 'facts': facts, 'supportingEvidence': evidence, 'person': person, 'index': index + 1, 'total': task['count'],
              'preference': prefs, 'previousAngles': previous, 'feedback': feedback, 'candidate': candidate,
-             'durationBudget': length,
+             'durationBudget': length, **({'boundClosingHook': bound_hook} if bound_hook else {}),
              'revisedNarration': revised, 'publicationOverride': task.get('publicationOverride', {})},
                 max_tokens=12000)
         raw = result.get('plan')
@@ -797,9 +806,12 @@ class Editor:
         references = {x['id']: {k: x[k] for k in ('id', 'source', 'quote')} for x in facts}
         references.update({ident: {'id': ident, **quote} for ident, quote in evidence.items()})
         plan.update(version=1, person=person, facts=list(references.values()))
+        track = (task.get('videoMusicTracks') or {}).get(person) or task.get('musicTrack')
         plan['settings'] = {'music': {'enabled': task['music']}}
-        if task.get('musicTrack'):
-            plan['settings']['music']['resource'] = task['musicTrack']['resource']
+        if task['music'] and track:
+            plan['settings']['music']['resource'] = track['resource']
+        if bound_hook:
+            plan['settings']['closing_hook'] = {'text': bound_hook}
         if context['institutionName']:
             plan['institution']['name'] = context['institutionName']
         self.fit_institution_labels(plan['institution'], context, result)
@@ -821,7 +833,9 @@ class Editor:
                 raise PlanError(f'第 {i + 1} 句须包含口播 text 和 shots 数组。')
             # Layout uses the measured speech and glyph geometry in the render engine.
             sentence.pop('captions', None)
-            if not revised and sentence.get('kind') == 'cta' and not (prefs or task.get('requirements')):
+            if bound_hook and i == len(sentences) - 1 and sentence.get('kind') == 'cta':
+                sentence['text'] = bound_hook
+            elif not revised and sentence.get('kind') == 'cta' and not (prefs or task.get('requirements')):
                 # These interchangeable CTA forms avoid a known rhotic ASR boundary.
                 sentence['text'] = sentence['text'].replace('在这儿', '在这里').replace('来这儿', '来这里')
             ids = sentence.get('factIds', [])
@@ -1124,6 +1138,7 @@ class Editor:
             '2）医疗治愈/疗效/改善认知/延缓衰退等夸大或未经核实的效果承诺；'
             '3）口播把仅作环境背景的画面硬说成对应房间或服务正在发生的实拍现场；'
             '4）漏掉用户明确指定的要求或主题。'
+            '若末句（kind=cta）来自数字人绑定的固定片尾钩子，其中的出镜人自我介绍、探访系列口径及互动引导属于既定人物设定，原样保留，不得判为事实错误或硬打回。'
             '轻微的口语化缩略（例如把“10分钟即可抵达就医”简说成“10分钟可达”、口语省去“最大程度”等修饰语）、服务清单长短、段落节奏或背景镜头贴合度优化，均属于风格建议，必须将 hardChecksPassed 设为 true，仅写入 styleIssues，不得硬打回。'
             '审核口语质量、覆盖范围、结尾咨询、封面及发布文案。'
             + coverage_rule + '实拍可呈现的重点展开，缺少对应画面的重要内容一句带过。'

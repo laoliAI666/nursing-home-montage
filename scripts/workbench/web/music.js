@@ -47,10 +47,70 @@ const createBeforeMusic=renderCreate;
 renderCreate=function(){
   createBeforeMusic();const f=$('#create-form');if(!f)return;
   const selected=createDraft.musicTrackId||'',available=state.music.tracks.filter(t=>!t.archived),missing=selected&&!available.some(t=>t.id===selected);
-  $('#music-check').closest('.switch-row').insertAdjacentHTML('afterend',`<div class="batch-music" id="batch-music" ${$('#music-check').checked?'':'hidden'}><div class="label-row"><label for="batch-music-track">本批次背景音乐</label><a class="text-button" href="#settings/music">管理配乐 ${icon('arrow-up-right')}</a></div><select name="musicTrackId" id="batch-music-track"><option value="">使用默认 · ${E(musicDefault()?.name||'请选择')}</option>${available.map(t=>`<option value="${t.id}" ${t.id===selected?'selected':''}>${E(t.name)} · ${musicDuration(t.duration)}</option>`).join('')}${missing?`<option value="${E(selected)}" selected>原选择已收起，请重新选择</option>`:''}</select><div id="batch-music-preview"></div><p class="form-help">这一批的所有视频使用这首配乐。创建后固定保存，不随默认曲变动。</p></div>`);
-  const preview=()=>{const id=$('#batch-music-track').value,t=id?available.find(x=>x.id===id):musicDefault();$('#batch-music-preview').innerHTML=t?`<div class="batch-music-caption">${E(t.name)}<span>${musicDuration(t.duration)}</span></div><audio data-duration="${t.duration}" controls preload="none" aria-label="试听本批次背景音乐" src="${E(t.url)}"></audio>`:'<p class="inline-error">这首配乐已收起，请重新选择。</p>';};
+  $('#music-check').closest('.switch-row').insertAdjacentHTML('afterend',`<div class="batch-music" id="batch-music" ${$('#music-check').checked?'':'hidden'}><div class="label-row"><label for="batch-music-track">本批次背景音乐</label><a class="text-button" href="#settings/music">管理配乐 ${icon('arrow-up-right')}</a></div><select name="musicTrackId" id="batch-music-track"><option value="">按数字人绑定配乐（未绑定用默认 · ${E(musicDefault()?.name||'请选择')}）</option>${available.map(t=>`<option value="${t.id}" ${t.id===selected?'selected':''}>统一覆盖：${E(t.name)} · ${musicDuration(t.duration)}</option>`).join('')}${missing?`<option value="${E(selected)}" selected>原选择已收起，请重新选择</option>`:''}</select><div id="batch-music-preview"></div><p class="form-help">默认优先使用每位数字人绑定的专属配乐；也可以在这里统一指定一首覆盖整批。创建后固定保存。</p></div>`);
+  const preview=()=>{
+    const id=$('#batch-music-track').value;
+    if(id){
+      const t=available.find(x=>x.id===id);
+      $('#batch-music-preview').innerHTML=t?`<div class="batch-music-caption">${E(t.name)}（整批统一覆盖）<span>${musicDuration(t.duration)}</span></div><audio data-duration="${t.duration}" controls preload="none" aria-label="试听本批次背景音乐" src="${E(t.url)}"></audio>`:'<p class="inline-error">这首配乐已收起，请重新选择。</p>';
+      return;
+    }
+    const checkedIds=[...f.querySelectorAll('[data-queue-person]:checked')].map(el=>el.dataset.queuePerson);
+    const chosenPeople=(checkedIds.length?checkedIds:[createDraft.person||state.config.defaultPerson].filter(Boolean)).map(pid=>state.config.people.find(p=>p.id===pid)).filter(Boolean);
+    const def=musicDefault();
+    if(!chosenPeople.length){
+      $('#batch-music-preview').innerHTML=def?`<div class="batch-music-caption">默认配乐：${E(def.name)}<span>${musicDuration(def.duration)}</span></div><audio data-duration="${def.duration}" controls preload="none" aria-label="试听默认配乐" src="${E(def.url)}"></audio>`:'';
+      return;
+    }
+    const rows=[],players=new Map();
+    for(const person of chosenPeople){
+      const bound=person.music_track_id||'';
+      if(bound){
+        const t=available.find(x=>x.id===bound);
+        if(!t){rows.push(`<li class="batch-person-music-warn"><strong>${E(person.name)}</strong><span>原绑定配乐已收起，请先在数字人管理中更换</span></li>`);continue;}
+        rows.push(`<li><strong>${E(person.name)}</strong><span>专属 · ${E(t.name)} (${musicDuration(t.duration)})</span></li>`);
+        players.set(t.id,t);
+      }else if(def){
+        rows.push(`<li><strong>${E(person.name)}</strong><span>默认 · ${E(def.name)} (${musicDuration(def.duration)})</span></li>`);
+        players.set(def.id,def);
+      }
+    }
+    const audioHtml=[...players.values()].map(t=>`<div class="batch-music-caption">${E(t.name)}<span>${musicDuration(t.duration)}</span></div><audio data-duration="${t.duration}" controls preload="none" aria-label="试听 ${E(t.name)}" src="${E(t.url)}"></audio>`).join('');
+    $('#batch-music-preview').innerHTML=`<ul class="batch-person-music-list">${rows.join('')}</ul>${audioHtml}`;
+  };
+  window.refreshBatchMusicPreview=preview;
   preview();$('#batch-music-track').onchange=preview;$('#music-check').addEventListener('change',()=>{$('#batch-music').hidden=!$('#music-check').checked;if(!$('#music-check').checked)$('#batch-music audio')?.pause();});
 };
 const taskBeforeMusic=renderTask;
-renderTask=function(){taskBeforeMusic();const t=state.tasks.find(t=>t.id===selectedTask),brief=main.querySelector('.task-brief');if(!t||!brief)return;brief.insertAdjacentHTML('beforeend',`<h3>本批次配乐</h3>${!t.music?'<p>不添加背景音乐</p>':t.musicTrack?`<p>${E(t.musicTrack.name)} · ${musicDuration(t.musicTrack.duration)} · 已固定保存</p><audio class="task-music-audio" data-duration="${t.musicTrack.duration}" controls preload="none" aria-label="试听此任务固定配乐" src="/media/task/${t.id}/music"></audio>`:'<p>沿用原工程保存的配乐</p>'}`);};
+renderTask=function(){
+  taskBeforeMusic();
+  const t=state.tasks.find(t=>t.id===selectedTask),brief=main.querySelector('.task-brief');
+  if(!t||!brief)return;
+  const perPerson=t.videoMusicTracks&&Object.keys(t.videoMusicTracks).length?t.videoMusicTracks:null;
+  const uniqueTracks=perPerson?[...new Map(Object.values(perPerson).map(x=>[x.id,x])).values()]:[];
+  let musicHtml='';
+  if(!t.music){
+    musicHtml='<p>不添加背景音乐</p>';
+  }else if(perPerson&&uniqueTracks.length>1){
+    const nameById=new Map((t.videoSpecs||[]).map(s=>[s.person,s.personName]));
+    musicHtml=Object.entries(perPerson).map(([pid,track])=>{
+      const pName=nameById.get(pid)||state.config.people.find(p=>p.id===pid)?.name||pid;
+      return `<div class="task-person-music"><p><strong>${E(pName)}</strong> · ${E(track.name)} · ${musicDuration(track.duration)} · 已固定保存</p><audio class="task-music-audio" data-duration="${track.duration}" controls preload="none" aria-label="试听 ${E(pName)} 固定配乐" src="/media/task/${t.id}/music?person=${encodeURIComponent(pid)}"></audio></div>`;
+    }).join('');
+  }else if(t.musicTrack){
+    musicHtml=`<p>${E(t.musicTrack.name)} · ${musicDuration(t.musicTrack.duration)} · 已固定保存</p><audio class="task-music-audio" data-duration="${t.musicTrack.duration}" controls preload="none" aria-label="试听此任务固定配乐" src="/media/task/${t.id}/music"></audio>`;
+  }else{
+    musicHtml='<p>沿用原工程保存的配乐</p>';
+  }
+  brief.insertAdjacentHTML('beforeend',`<h3>本批次配乐</h3>${musicHtml}`);
+  const hooks=t.personClosingHooks&&Object.keys(t.personClosingHooks).length?t.personClosingHooks:null;
+  if(hooks){
+    const nameById=new Map((t.videoSpecs||[]).map(s=>[s.person,s.personName]));
+    const hookHtml=Object.entries(hooks).map(([pid,text])=>{
+      const pName=nameById.get(pid)||state.config.people.find(p=>p.id===pid)?.name||pid;
+      return `<p class="task-bound-hook"><strong>${E(pName)}</strong>：${E(text)}</p>`;
+    }).join('');
+    brief.insertAdjacentHTML('beforeend',`<h3>固定片尾钩子</h3>${hookHtml}`);
+  }
+};
 // queue.js starts the app after all shared controls register.

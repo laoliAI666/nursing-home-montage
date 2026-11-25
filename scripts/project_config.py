@@ -118,6 +118,8 @@ def resolved(job):
                                 aliyun_workspace=workspace_id(p.get('aliyun_workspace') or
                                     cfg['connections'].get('aliyun',{}).get('workspace')))
         out['avatar']['portrait']=str(asset_path(p.get('portrait')))
+        if p.get('music_resource'):
+            out.setdefault('music',{})['resource']=p['music_resource']
         out['person']={'id':p['id'],'name':p['name'],'spokenName':p.get('spoken_name',p['name']),'connection':p['connection'],
             'socialMediaName':p.get('social_media_name'),'coverPortrait':str(asset_path(p['cover_portrait'])) if p.get('cover_portrait') else None,
             'closingHooks':copy.deepcopy(p.get('closing_hooks',{}))}
