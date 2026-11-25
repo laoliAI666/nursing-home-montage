@@ -25,7 +25,8 @@ def settings(job):
     cfg=pc.resolved(job)
     if cfg['video']!={'width':1080,'height':1920,'fps':30}:raise ValueError('This approved template is 1080x1920 at 30fps; another format requires adapting its composition first')
     ident=cfg.get('template',{}).get('id','fullscreen-orange')
-    if ident!='fullscreen-orange':raise ValueError('新版只提供 fullscreen-orange；旧任务用冻结引擎继续，升级外观请用 revise 另存新版本。')
+    import style_registry as sr
+    if not sr.video_exists(ident) and not cfg.get('template',{}).get('_frozenEntry'):raise ValueError(f'未知视频样式：{ident}；请在风格库中选择内置或本地扩展的视频样式。')
     for role,font in cfg.get('template',{}).get('overrides',{}).get('fonts',{}).items():
         if font.get('file') and not Path(font['file']).is_file():raise ValueError('Template font is missing; fix the project font reference before production: '+role)
     a=cfg['avatar']

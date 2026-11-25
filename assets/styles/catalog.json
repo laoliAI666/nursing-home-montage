@@ -1,0 +1,5591 @@
+{
+  "schema": 1,
+  "covers": [
+    {
+      "id": "teal-adaptive",
+      "order": 1,
+      "num": "01",
+      "name": "经典青绿 · 暖橙",
+      "category": "经典基线",
+      "pairId": "fullscreen-orange",
+      "layoutTag": "3横图斜切 · 右下大人物",
+      "description": "现版认可基线（青绿斜切拼贴封面 + 全屏手撕暖橙视频），永久作为默认 1 号基线。",
+      "swatches": [
+        "#06757B",
+        "#FF8569",
+        "#FF941F",
+        "#FDD722"
+      ],
+      "tags": [
+        "默认",
+        "基线",
+        "青绿",
+        "暖橙",
+        "通用"
+      ],
+      "baseline": true,
+      "coverSpec": {
+        "engine": "teal-adaptive",
+        "photoCount": 3,
+        "hostPos": "right"
+      }
+    },
+    {
+      "id": "viral-4grid",
+      "order": 2,
+      "num": "02",
+      "name": "爆款四宫格",
+      "category": "爆款吸睛",
+      "pairId": "viral-4grid",
+      "layoutTag": "4张横版2×2四宫格 · 居中大人物",
+      "description": "上方 4 张 4:3 横版实景四宫格零裁切看全院，中部黑黄炸裂横幅标题 + 底部正中大半身主角。",
+      "swatches": [
+        "#14161A",
+        "#FFE135",
+        "#FF453A",
+        "#FFFFFF"
+      ],
+      "tags": [
+        "爆款",
+        "抖音",
+        "四宫格",
+        "黑黄",
+        "高点击"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "solid",
+          "color": "#14161A"
+        },
+        "header": {
+          "style": "pill",
+          "x": 540,
+          "y": 688,
+          "align": "center",
+          "bg": "#FF453A",
+          "color": "#FFFFFF",
+          "prefix": "★ ",
+          "size": 36
+        },
+        "title": {
+          "mode": "band",
+          "x": 36,
+          "y": 656,
+          "w": 1008,
+          "h": 248,
+          "bg": "#14161AF2",
+          "border": "#FFE135",
+          "borderW": 8,
+          "radius": 28,
+          "textY": 764,
+          "textH": 116,
+          "singleLine": true,
+          "color": "#FFFFFF",
+          "highlightColor": "#FFE135",
+          "highlightMode": "color"
+        },
+        "photos": [
+          {
+            "idx": 0,
+            "x": 24,
+            "y": 26,
+            "w": 508,
+            "h": 302,
+            "r": 20,
+            "border": 4,
+            "borderColor": "#FFE13577",
+            "labelIdx": 0,
+            "labelPos": "tl"
+          },
+          {
+            "idx": 1,
+            "x": 548,
+            "y": 26,
+            "w": 508,
+            "h": 302,
+            "r": 20,
+            "border": 4,
+            "borderColor": "#FFE13577",
+            "labelIdx": 1,
+            "labelPos": "tl"
+          },
+          {
+            "idx": 2,
+            "x": 24,
+            "y": 342,
+            "w": 508,
+            "h": 302,
+            "r": 20,
+            "border": 4,
+            "borderColor": "#FFE13577",
+            "labelIdx": 2,
+            "labelPos": "tl"
+          },
+          {
+            "idx": 3,
+            "x": 548,
+            "y": 342,
+            "w": 508,
+            "h": 302,
+            "r": 20,
+            "border": 4,
+            "borderColor": "#FFE13577",
+            "labelIdx": -1
+          }
+        ],
+        "tagStyle": {
+          "bg": "#14161AE0",
+          "color": "#FFE135",
+          "radius": 10,
+          "padX": 18,
+          "padY": 10
+        },
+        "host": {
+          "pos": "center",
+          "top": 924,
+          "maxW": 670,
+          "maxH": 840,
+          "outline": "#FFE135"
+        },
+        "identity": {
+          "x": 540,
+          "y": 1540,
+          "align": "center",
+          "bg": "#14161A",
+          "color": "#FFE135",
+          "border": "#FFE135",
+          "borderW": 5,
+          "radius": 99
+        },
+        "brand": {
+          "x": 42,
+          "y": 1712,
+          "w": 996,
+          "h": 134,
+          "bg": "#FFE135",
+          "color": "#14161A",
+          "border": "#14161A",
+          "borderW": 6,
+          "radius": 24
+        },
+        "stickers": []
+      }
+    },
+    {
+      "id": "coral-pop",
+      "order": 3,
+      "num": "03",
+      "name": "活力漫画风",
+      "category": "爆款吸睛",
+      "pairId": "coral-pop",
+      "layoutTag": "3横图漫画格 · 爆发星 · 右下大人物",
+      "description": "高饱和珊瑚红 + 柠檬亮黄 + 粗黑漫画硬投影 + 3 张横版漫画格（零竖裁切）+ 爆发星贴图。",
+      "swatches": [
+        "#FF4D3D",
+        "#FFE033",
+        "#FFFFFF",
+        "#181818"
+      ],
+      "tags": [
+        "抖音",
+        "漫画",
+        "爆款",
+        "珊瑚红",
+        "高反差"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "linear",
+          "colors": [
+            "#FF4D3D",
+            "#E83328",
+            "#FF6B4A"
+          ],
+          "pattern": "dots",
+          "dotColor": "#FFFFFF28"
+        },
+        "header": {
+          "style": "hard-shadow",
+          "x": 56,
+          "y": 72,
+          "bg": "#FFE033",
+          "color": "#181818",
+          "border": "#181818",
+          "borderW": 7,
+          "shadow": "#181818",
+          "prefix": "▶ ",
+          "angle": -2
+        },
+        "title": {
+          "x": 44,
+          "y": 206,
+          "w": 992,
+          "h": 330,
+          "align": "center",
+          "color": "#FFFFFF",
+          "stroke": "#181818",
+          "strokeW": 20,
+          "hardShadow": "#181818",
+          "highlightColor": "#FFE033",
+          "highlightMode": "color"
+        },
+        "photos": [
+          {
+            "idx": 0,
+            "x": 50,
+            "y": 570,
+            "w": 980,
+            "h": 390,
+            "r": 24,
+            "border": 8,
+            "borderColor": "#181818",
+            "hardShadow": "#181818",
+            "labelIdx": 0,
+            "labelPos": "tl"
+          },
+          {
+            "idx": 1,
+            "x": 50,
+            "y": 988,
+            "w": 490,
+            "h": 256,
+            "r": 22,
+            "border": 8,
+            "borderColor": "#181818",
+            "hardShadow": "#181818",
+            "labelIdx": 1,
+            "labelPos": "bl"
+          },
+          {
+            "idx": 2,
+            "x": 50,
+            "y": 1268,
+            "w": 490,
+            "h": 256,
+            "r": 22,
+            "border": 8,
+            "borderColor": "#181818",
+            "hardShadow": "#181818",
+            "labelIdx": 2,
+            "labelPos": "tl"
+          }
+        ],
+        "tagStyle": {
+          "bg": "#FFE033",
+          "color": "#181818",
+          "border": "#181818",
+          "borderW": 5,
+          "radius": 14
+        },
+        "host": {
+          "pos": "right",
+          "top": 820,
+          "maxW": 650,
+          "maxH": 900,
+          "outline": "#FFFFFF"
+        },
+        "identity": {
+          "x": 76,
+          "y": 1538,
+          "bg": "#FFFFFF",
+          "color": "#FF4D3D",
+          "border": "#181818",
+          "borderW": 7,
+          "hardShadow": "#181818",
+          "radius": 22,
+          "angle": -2
+        },
+        "brand": {
+          "x": 48,
+          "y": 1712,
+          "w": 984,
+          "h": 134,
+          "bg": "#FFE033",
+          "color": "#181818",
+          "border": "#181818",
+          "borderW": 8,
+          "hardShadow": "#181818",
+          "radius": 24
+        },
+        "stickers": [
+          {
+            "key": "popBurst",
+            "x": 854,
+            "y": 28,
+            "w": 190,
+            "h": 190
+          }
+        ]
+      }
+    },
+    {
+      "id": "impact-hero",
+      "order": 4,
+      "num": "04",
+      "name": "震撼单图大特写",
+      "category": "爆款吸睛",
+      "pairId": "impact-hero",
+      "layoutTag": "1张宽幅全景横图 · 居中超大人物",
+      "description": "1 张 4:3 全景横图居中铺开 + 居中超大前景主角 + 顶部白黄双色立体标题；抖音探店高点击王炸。",
+      "swatches": [
+        "#FF6B1A",
+        "#FFE347",
+        "#181412",
+        "#FFFFFF"
+      ],
+      "tags": [
+        "抖音",
+        "单图",
+        "居中人物",
+        "大标题",
+        "王炸"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "linear",
+          "colors": [
+            "#1F1814",
+            "#30241D",
+            "#181412"
+          ]
+        },
+        "header": {
+          "style": "pill",
+          "x": 540,
+          "y": 72,
+          "align": "center",
+          "bg": "#FF6B1A",
+          "color": "#FFFFFF",
+          "prefix": "★ ",
+          "suffix": " ★"
+        },
+        "title": {
+          "x": 44,
+          "y": 184,
+          "w": 992,
+          "h": 320,
+          "align": "center",
+          "color": "#FFFFFF",
+          "stroke": "#181412",
+          "strokeW": 18,
+          "line2Color": "#FFE347",
+          "highlightColor": "#FFE347",
+          "highlightMode": "color"
+        },
+        "photos": [
+          {
+            "idx": 0,
+            "x": 40,
+            "y": 520,
+            "w": 1000,
+            "h": 700,
+            "r": 32,
+            "border": 8,
+            "borderColor": "#FFE347",
+            "labelIdx": 0,
+            "labelPos": "tl"
+          }
+        ],
+        "extraTags": [
+          {
+            "labelIdx": 1,
+            "x": 46,
+            "y": 1176
+          },
+          {
+            "labelIdx": 2,
+            "x": 756,
+            "y": 1176
+          }
+        ],
+        "tagStyle": {
+          "bg": "#FFFFFFF2",
+          "color": "#181412",
+          "accentBar": "#FF6B1A",
+          "radius": 16
+        },
+        "host": {
+          "pos": "center",
+          "top": 790,
+          "maxW": 720,
+          "maxH": 960,
+          "outline": "#FFFDF8"
+        },
+        "identity": {
+          "x": 540,
+          "y": 1528,
+          "align": "center",
+          "bg": "#181412",
+          "color": "#FFE347",
+          "border": "#FFE347",
+          "borderW": 5,
+          "radius": 99
+        },
+        "brand": {
+          "x": 44,
+          "y": 1712,
+          "w": 992,
+          "h": 134,
+          "bg": "#F05B16",
+          "color": "#FFFFFF",
+          "border": "#FFFFFF",
+          "borderW": 5,
+          "radius": 24
+        },
+        "stickers": []
+      }
+    },
+    {
+      "id": "amber-checklist",
+      "order": 5,
+      "num": "05",
+      "name": "避坑红黑榜",
+      "category": "爆款吸睛",
+      "pairId": "amber-checklist",
+      "layoutTag": "3条横图清单卡 · 右下大人物",
+      "description": "炭黑网格 + 01/02/03 纵向核查清单卡（内置 4:3 横图不裁切）+ 实测对勾徽章贴图 + 右下大主角。",
+      "swatches": [
+        "#181A1E",
+        "#FFD426",
+        "#FF5C35",
+        "#FFFFFF"
+      ],
+      "tags": [
+        "避坑",
+        "干货",
+        "清单",
+        "测评",
+        "黑黄"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "solid",
+          "color": "#181A1E",
+          "pattern": "grid",
+          "gridColor": "#FFD42614",
+          "hazardTop": [
+            "#FFD426",
+            "#181A1E"
+          ]
+        },
+        "header": {
+          "style": "rect",
+          "x": 56,
+          "y": 84,
+          "bg": "#FF5C35",
+          "color": "#FFFFFF",
+          "radius": 10,
+          "prefix": "实地核查 · "
+        },
+        "title": {
+          "x": 56,
+          "y": 206,
+          "w": 968,
+          "h": 330,
+          "align": "left",
+          "color": "#FFFFFF",
+          "highlightMode": "pill",
+          "highlightBg": "#FFD426",
+          "highlightColor": "#181A1E"
+        },
+        "photos": [
+          {
+            "idx": 0,
+            "x": 46,
+            "y": 584,
+            "w": 496,
+            "h": 248,
+            "r": 20,
+            "border": 5,
+            "borderColor": "#FFD426",
+            "checklist": true,
+            "badge": "■ 重点 01",
+            "cardBg": "#24272D",
+            "thumbW": 246,
+            "labelIdx": 0
+          },
+          {
+            "idx": 1,
+            "x": 46,
+            "y": 862,
+            "w": 496,
+            "h": 248,
+            "r": 20,
+            "border": 4,
+            "borderColor": "#FFFFFF77",
+            "checklist": true,
+            "badge": "■ 重点 02",
+            "cardBg": "#24272D",
+            "thumbW": 246,
+            "labelIdx": 1
+          },
+          {
+            "idx": 2,
+            "x": 46,
+            "y": 1140,
+            "w": 496,
+            "h": 248,
+            "r": 20,
+            "border": 4,
+            "borderColor": "#FFFFFF77",
+            "checklist": true,
+            "badge": "■ 重点 03",
+            "cardBg": "#24272D",
+            "thumbW": 246,
+            "labelIdx": 2
+          }
+        ],
+        "tagStyle": {
+          "bg": "#FFD426",
+          "color": "#181A1E",
+          "textColor": "#FFFFFF",
+          "radius": 8
+        },
+        "host": {
+          "pos": "right",
+          "top": 820,
+          "maxW": 650,
+          "maxH": 900,
+          "outline": "#FFD426"
+        },
+        "identity": {
+          "x": 104,
+          "y": 1510,
+          "bg": "#FF5C35",
+          "color": "#FFFFFF",
+          "radius": 12
+        },
+        "brand": {
+          "x": 48,
+          "y": 1712,
+          "w": 984,
+          "h": 134,
+          "bg": "#FFD426",
+          "color": "#181A1E",
+          "radius": 16
+        },
+        "stickers": [
+          {
+            "key": "checkBadge",
+            "x": 882,
+            "y": 64,
+            "w": 150,
+            "h": 150
+          }
+        ]
+      }
+    },
+    {
+      "id": "vogue-editorial",
+      "order": 6,
+      "num": "06",
+      "name": "时尚大刊封面",
+      "category": "小红书画报",
+      "pairId": "vogue-editorial",
+      "layoutTag": "1张宽幅大刊实景 · 右下大人物",
+      "description": "刊头式大标题 + 1 张 4:3 杂志实景大画框（零裁切）+ 右下大半身主角 + 底部磨砂杂志院名卡。",
+      "swatches": [
+        "#1B2420",
+        "#FFFFFF",
+        "#DCEABC",
+        "#D8B77C"
+      ],
+      "tags": [
+        "小红书",
+        "杂志",
+        "大刊",
+        "单图",
+        "高级"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "linear",
+          "colors": [
+            "#18221E",
+            "#24332C",
+            "#141C19"
+          ]
+        },
+        "header": {
+          "style": "masthead",
+          "x": 56,
+          "y": 64,
+          "w": 968,
+          "color": "#DCEABC",
+          "lineColor": "#DCEABC88",
+          "prefix": "ISSUE · ",
+          "badge": "实景画报"
+        },
+        "title": {
+          "x": 56,
+          "y": 176,
+          "w": 968,
+          "h": 330,
+          "align": "center",
+          "color": "#FFFFFF",
+          "line2Color": "#DCEABC",
+          "highlightColor": "#DCEABC",
+          "highlightMode": "color"
+        },
+        "photos": [
+          {
+            "idx": 0,
+            "x": 50,
+            "y": 544,
+            "w": 980,
+            "h": 690,
+            "r": 26,
+            "border": 6,
+            "borderColor": "#FFFFFFE0",
+            "labelIdx": 0,
+            "labelPos": "tl"
+          }
+        ],
+        "extraTags": [
+          {
+            "labelIdx": 1,
+            "x": 56,
+            "y": 1272
+          },
+          {
+            "labelIdx": 2,
+            "x": 56,
+            "y": 1368
+          }
+        ],
+        "tagStyle": {
+          "bg": "#141C19D8",
+          "color": "#DCEABC",
+          "border": "#DCEABC88",
+          "borderW": 3,
+          "radius": 99
+        },
+        "host": {
+          "pos": "right",
+          "top": 820,
+          "maxW": 650,
+          "maxH": 900,
+          "outline": "#FFFFFF"
+        },
+        "identity": {
+          "x": 56,
+          "y": 1520,
+          "bg": "#DCEABC",
+          "color": "#141C19",
+          "radius": 14
+        },
+        "brand": {
+          "x": 50,
+          "y": 1712,
+          "w": 980,
+          "h": 134,
+          "bg": "#FFFFFFF2",
+          "color": "#141C19",
+          "radius": 22
+        },
+        "stickers": []
+      }
+    },
+    {
+      "id": "pine-editorial",
+      "order": 7,
+      "num": "07",
+      "name": "松青画报",
+      "category": "小红书画报",
+      "pairId": "pine-editorial",
+      "layoutTag": "1宽横主图+2横副图 · 右下大人物",
+      "description": "工作台同款深松青 + 浅叶绿 + 水彩松枝贴图；3 张标准横版实景完整呈现 + 右下大主角。",
+      "swatches": [
+        "#163D37",
+        "#DCEABC",
+        "#F5F7F1",
+        "#285E4C"
+      ],
+      "tags": [
+        "松青",
+        "专业",
+        "测评",
+        "画报",
+        "小红书"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "split",
+          "topColor": "#163D37",
+          "topEnd": "#10312C",
+          "splitY": 640,
+          "bottomColor": "#F5F7F1"
+        },
+        "header": {
+          "style": "accent-line",
+          "x": 64,
+          "y": 76,
+          "color": "#DCEABC",
+          "barColor": "#DCEABC"
+        },
+        "title": {
+          "x": 64,
+          "y": 174,
+          "w": 952,
+          "h": 330,
+          "align": "left",
+          "color": "#FFFFFF",
+          "highlightMode": "pill",
+          "highlightBg": "#DCEABC",
+          "highlightColor": "#10312C"
+        },
+        "photos": [
+          {
+            "idx": 0,
+            "x": 60,
+            "y": 566,
+            "w": 960,
+            "h": 466,
+            "r": 22,
+            "border": 6,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 0,
+            "labelPos": "tl"
+          },
+          {
+            "idx": 1,
+            "x": 56,
+            "y": 1054,
+            "w": 490,
+            "h": 262,
+            "r": 20,
+            "border": 6,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 1,
+            "labelPos": "bl"
+          },
+          {
+            "idx": 2,
+            "x": 56,
+            "y": 1336,
+            "w": 490,
+            "h": 262,
+            "r": 20,
+            "border": 6,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 2,
+            "labelPos": "tl"
+          }
+        ],
+        "tagStyle": {
+          "bg": "#163D37",
+          "color": "#DCEABC",
+          "radius": 10
+        },
+        "host": {
+          "pos": "right",
+          "top": 830,
+          "maxW": 640,
+          "maxH": 890,
+          "outline": "#FFFFFF"
+        },
+        "identity": {
+          "x": 108,
+          "y": 1544,
+          "bg": "#DCEABC",
+          "color": "#10312C",
+          "accentBar": "#163D37",
+          "radius": 14
+        },
+        "brand": {
+          "x": 48,
+          "y": 1712,
+          "w": 984,
+          "h": 134,
+          "bg": "#163D37",
+          "color": "#F7FAF3",
+          "bottomBar": "#DCEABC",
+          "radius": 20
+        },
+        "stickers": [
+          {
+            "key": "pineBranch",
+            "x": 820,
+            "y": 22,
+            "w": 260,
+            "h": 210,
+            "behind": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "minimal-ceramic",
+      "order": 8,
+      "num": "08",
+      "name": "瑞士留白画廊",
+      "category": "小红书画报",
+      "pairId": "minimal-ceramic",
+      "layoutTag": "2并排横图+1左横图 · 右下大人物",
+      "description": "美术馆白瓷大留白 + 3 张标准 4:3 横版画廊框 + 浮雕圆章 + 右下大主角；视频几乎零遮挡突出实拍。",
+      "swatches": [
+        "#FAF9F6",
+        "#1E2022",
+        "#3D6B58",
+        "#D9D5CD"
+      ],
+      "tags": [
+        "极简",
+        "白瓷",
+        "高级",
+        "留白",
+        "纪实"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "solid",
+          "color": "#FAF9F6"
+        },
+        "header": {
+          "style": "minimal-line",
+          "x": 68,
+          "y": 88,
+          "color": "#3D6B58",
+          "lineColor": "#1E2022"
+        },
+        "title": {
+          "x": 68,
+          "y": 206,
+          "w": 944,
+          "h": 330,
+          "align": "left",
+          "color": "#1E2022",
+          "highlightColor": "#3D6B58",
+          "highlightMode": "color"
+        },
+        "photos": [
+          {
+            "idx": 0,
+            "x": 64,
+            "y": 590,
+            "w": 466,
+            "h": 350,
+            "r": 12,
+            "border": 3,
+            "borderColor": "#D9D5CD",
+            "labelIdx": 0,
+            "labelPos": "bl"
+          },
+          {
+            "idx": 1,
+            "x": 550,
+            "y": 590,
+            "w": 466,
+            "h": 350,
+            "r": 12,
+            "border": 3,
+            "borderColor": "#D9D5CD",
+            "labelIdx": 1,
+            "labelPos": "tr"
+          },
+          {
+            "idx": 2,
+            "x": 64,
+            "y": 972,
+            "w": 486,
+            "h": 340,
+            "r": 12,
+            "border": 3,
+            "borderColor": "#D9D5CD",
+            "labelIdx": 2,
+            "labelPos": "bl"
+          }
+        ],
+        "tagStyle": {
+          "bg": "#FFFFFFEB",
+          "color": "#1E2022",
+          "radius": 8
+        },
+        "host": {
+          "pos": "right",
+          "top": 830,
+          "maxW": 640,
+          "maxH": 890,
+          "outline": "#FAF9F6"
+        },
+        "identity": {
+          "x": 68,
+          "y": 1490,
+          "bg": "#3D6B58",
+          "color": "#FFFFFF",
+          "radius": 8
+        },
+        "brand": {
+          "x": 64,
+          "y": 1712,
+          "w": 952,
+          "h": 134,
+          "bg": "#FFFFFF",
+          "color": "#1E2022",
+          "topBottomLine": "#1E2022",
+          "radius": 0
+        },
+        "stickers": [
+          {
+            "key": "ceramicSeal",
+            "x": 890,
+            "y": 54,
+            "w": 136,
+            "h": 136
+          }
+        ]
+      }
+    },
+    {
+      "id": "split-contrast",
+      "order": 9,
+      "num": "09",
+      "name": "上下双拼对比",
+      "category": "小红书画报",
+      "pairId": "split-contrast",
+      "layoutTag": "2张全宽横版大图 · 中央斜带标题 · 右下大人物",
+      "description": "2 张全宽 16:9 横版实景上下对比（室内 vs 园林），中央斜带大标题 + 右下大半身主角。",
+      "swatches": [
+        "#1F4E5F",
+        "#F9A03F",
+        "#FFFDF8",
+        "#E9F3F5"
+      ],
+      "tags": [
+        "对比",
+        "双拼",
+        "小红书",
+        "测评",
+        "横图"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "solid",
+          "color": "#163744"
+        },
+        "header": {
+          "style": "pill",
+          "x": 48,
+          "y": 54,
+          "bg": "#1F4E5F",
+          "color": "#FFFDF8"
+        },
+        "title": {
+          "mode": "band",
+          "x": -16,
+          "y": 628,
+          "w": 1112,
+          "h": 330,
+          "bg": "#FFFDF8",
+          "borderTop": "#F9A03F",
+          "borderBottom": "#1F4E5F",
+          "angle": -1.5,
+          "textY": 658,
+          "textH": 270,
+          "color": "#1F4E5F",
+          "highlightColor": "#E86F1F",
+          "highlightMode": "color"
+        },
+        "photos": [
+          {
+            "idx": 0,
+            "x": 0,
+            "y": 0,
+            "w": 1080,
+            "h": 650,
+            "r": 0,
+            "labelIdx": 0,
+            "labelPos": "tr"
+          },
+          {
+            "idx": 1,
+            "x": 0,
+            "y": 1020,
+            "w": 1080,
+            "h": 900,
+            "r": 0,
+            "labelIdx": 1,
+            "labelPos": "tl",
+            "labelOffsetY": 52
+          }
+        ],
+        "extraTags": [
+          {
+            "labelIdx": 2,
+            "x": 48,
+            "y": 1380
+          }
+        ],
+        "tagStyle": {
+          "bg": "#FFFDF8EB",
+          "color": "#1F4E5F",
+          "radius": 99
+        },
+        "host": {
+          "pos": "right",
+          "top": 980,
+          "maxW": 640,
+          "maxH": 800,
+          "outline": "#FFFDF8"
+        },
+        "identity": {
+          "x": 64,
+          "y": 1524,
+          "bg": "#F9A03F",
+          "color": "#FFFDF8",
+          "border": "#FFFDF8",
+          "borderW": 5,
+          "radius": 99
+        },
+        "brand": {
+          "x": 48,
+          "y": 1712,
+          "w": 984,
+          "h": 134,
+          "bg": "#1F4E5F",
+          "color": "#FFFDF8",
+          "border": "#F9A03F",
+          "borderW": 5,
+          "radius": 24
+        },
+        "stickers": []
+      }
+    },
+    {
+      "id": "mocha-arch",
+      "order": 10,
+      "num": "10",
+      "name": "杂志拱门画廊",
+      "category": "小红书画报",
+      "pairId": "mocha-arch",
+      "layoutTag": "3张横版宽拱窗 · 金丝带 · 右下大人物",
+      "description": "亚麻拿铁 + 焦糖深棕 + 宽幅拱形画廊横窗（零竖裁切）+ 金丝带结贴图 + 右下大主角。",
+      "swatches": [
+        "#EFE6DA",
+        "#8C5E3C",
+        "#2C1C13",
+        "#D8A86E"
+      ],
+      "tags": [
+        "奶咖",
+        "轻奢",
+        "拱门",
+        "知性",
+        "画廊"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "linear",
+          "colors": [
+            "#F5EFE6",
+            "#E8DAC8"
+          ],
+          "frameBorder": "#8C5E3C55",
+          "frameInset": 36,
+          "frameRadius": 28
+        },
+        "header": {
+          "style": "underline",
+          "x": 78,
+          "y": 92,
+          "color": "#8C5E3C",
+          "lineColor": "#D8A86E"
+        },
+        "title": {
+          "x": 78,
+          "y": 210,
+          "w": 924,
+          "h": 330,
+          "align": "left",
+          "color": "#2C1C13",
+          "highlightColor": "#9B6235",
+          "highlightMode": "color"
+        },
+        "photos": [
+          {
+            "idx": 0,
+            "x": 66,
+            "y": 584,
+            "w": 520,
+            "h": 420,
+            "archTop": 190,
+            "r": 24,
+            "border": 9,
+            "borderColor": "#FFFDF9",
+            "labelIdx": 0,
+            "labelPos": "bl"
+          },
+          {
+            "idx": 1,
+            "x": 610,
+            "y": 608,
+            "w": 404,
+            "h": 340,
+            "archTop": 150,
+            "r": 24,
+            "border": 8,
+            "borderColor": "#FFFDF9",
+            "labelIdx": 1,
+            "labelPos": "tc"
+          },
+          {
+            "idx": 2,
+            "x": 66,
+            "y": 1034,
+            "w": 500,
+            "h": 360,
+            "r": 26,
+            "border": 8,
+            "borderColor": "#FFFDF9",
+            "labelIdx": 2,
+            "labelPos": "tl"
+          }
+        ],
+        "tagStyle": {
+          "bg": "#2C1C13DC",
+          "color": "#EFE6DA",
+          "radius": 99
+        },
+        "host": {
+          "pos": "right",
+          "top": 820,
+          "maxW": 640,
+          "maxH": 890,
+          "outline": "#FFFDF9"
+        },
+        "identity": {
+          "x": 108,
+          "y": 1516,
+          "bg": "#8C5E3C",
+          "color": "#FFFDF9",
+          "border": "#D8A86E",
+          "borderW": 4,
+          "radius": 14
+        },
+        "brand": {
+          "x": 64,
+          "y": 1712,
+          "w": 952,
+          "h": 134,
+          "bg": "#2C1C13",
+          "color": "#F5EFE6",
+          "border": "#D8A86E",
+          "borderW": 3,
+          "radius": 20
+        },
+        "stickers": [
+          {
+            "key": "mochaRibbon",
+            "x": 854,
+            "y": 62,
+            "w": 165,
+            "h": 130
+          }
+        ]
+      }
+    },
+    {
+      "id": "warm-sunshine",
+      "order": 11,
+      "num": "11",
+      "name": "暖阳居家",
+      "category": "温馨手账",
+      "pairId": "warm-sunshine",
+      "layoutTag": "3横图圆角Bento · 左下大人物反位",
+      "description": "奶杏暖白 + 蜜橘琥珀 + 暖阳云朵贴图；大主角人物改站左下角反位构图，右侧错落展现 3 张标准横图。",
+      "swatches": [
+        "#FFF5E6",
+        "#F48C2E",
+        "#5A341C",
+        "#FFE47A"
+      ],
+      "tags": [
+        "温馨",
+        "暖阳",
+        "居家",
+        "亲和",
+        "左下人物"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "radial",
+          "colors": [
+            "#FFE7C2",
+            "#FFF6E9",
+            "#FCEBD2"
+          ]
+        },
+        "header": {
+          "style": "pill",
+          "x": 64,
+          "y": 74,
+          "bg": "#F48C2E",
+          "color": "#FFFDF8",
+          "shadow": "#D46C18",
+          "prefix": "☀ "
+        },
+        "title": {
+          "x": 64,
+          "y": 214,
+          "w": 952,
+          "h": 330,
+          "align": "left",
+          "color": "#5A341C",
+          "highlightMode": "pill",
+          "highlightBg": "#F48C2E",
+          "highlightColor": "#FFFFFF"
+        },
+        "photos": [
+          {
+            "idx": 1,
+            "x": 56,
+            "y": 592,
+            "w": 430,
+            "h": 330,
+            "r": 32,
+            "border": 10,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 1,
+            "labelPos": "tl"
+          },
+          {
+            "idx": 0,
+            "x": 512,
+            "y": 592,
+            "w": 512,
+            "h": 396,
+            "r": 32,
+            "border": 10,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 0,
+            "labelPos": "br"
+          },
+          {
+            "idx": 2,
+            "x": 528,
+            "y": 1020,
+            "w": 496,
+            "h": 366,
+            "r": 32,
+            "border": 10,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 2,
+            "labelPos": "tr"
+          }
+        ],
+        "tagStyle": {
+          "bg": "#FFF7EA",
+          "color": "#5A341C",
+          "border": "#F48C2E",
+          "borderW": 4,
+          "radius": 16
+        },
+        "host": {
+          "pos": "left",
+          "top": 820,
+          "maxW": 650,
+          "maxH": 900,
+          "outline": "#FFFFFF"
+        },
+        "identity": {
+          "x": 600,
+          "y": 1510,
+          "bg": "#5A341C",
+          "color": "#FFF6E5",
+          "border": "#FFE47A",
+          "borderW": 6,
+          "radius": 99
+        },
+        "brand": {
+          "x": 48,
+          "y": 1712,
+          "w": 984,
+          "h": 134,
+          "bg": "#FFFFFF",
+          "color": "#5A341C",
+          "border": "#F48C2E",
+          "borderW": 7,
+          "shadow": "#F4D1A6",
+          "radius": 30
+        },
+        "stickers": [
+          {
+            "key": "sun",
+            "x": 868,
+            "y": 22,
+            "w": 230,
+            "h": 230,
+            "behind": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "polaroid-journal",
+      "order": 12,
+      "num": "12",
+      "name": "温情拍立得手账",
+      "category": "温馨手账",
+      "pairId": "polaroid-journal",
+      "layoutTag": "2张横版拍立得 · 和纸胶带 · 右下大人物",
+      "description": "复古牛皮纸点底 + 2 张大横版拍立得实景（4:3 零裁切）+ 和纸胶带贴纸 + 右下大主角人物。",
+      "swatches": [
+        "#F4ECE0",
+        "#D96B43",
+        "#4A3428",
+        "#8EAD78"
+      ],
+      "tags": [
+        "拍立得",
+        "手账",
+        "胶带",
+        "复古",
+        "小红书"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "solid",
+          "color": "#F4ECE0",
+          "pattern": "dots",
+          "dotColor": "#4A342814"
+        },
+        "header": {
+          "style": "hard-shadow",
+          "x": 74,
+          "y": 78,
+          "bg": "#FFFDF8",
+          "color": "#4A3428",
+          "border": "#4A3428",
+          "borderW": 4,
+          "shadow": "#D96B43",
+          "prefix": "◆ ",
+          "angle": -2
+        },
+        "title": {
+          "x": 64,
+          "y": 206,
+          "w": 952,
+          "h": 330,
+          "align": "center",
+          "color": "#4A3428",
+          "highlightColor": "#D96B43",
+          "highlightMode": "underline",
+          "underlineColor": "#8EAD78"
+        },
+        "photos": [
+          {
+            "idx": 0,
+            "x": 46,
+            "y": 574,
+            "w": 560,
+            "h": 446,
+            "polaroid": true,
+            "pad": 20,
+            "footH": 72,
+            "rotate": -2.5,
+            "labelIdx": 0
+          },
+          {
+            "idx": 1,
+            "x": 64,
+            "y": 1054,
+            "w": 520,
+            "h": 416,
+            "polaroid": true,
+            "pad": 18,
+            "footH": 68,
+            "rotate": 2,
+            "labelIdx": 1
+          }
+        ],
+        "extraTags": [
+          {
+            "labelIdx": 2,
+            "x": 660,
+            "y": 596
+          }
+        ],
+        "tagStyle": {
+          "bg": "#FFFDF8",
+          "color": "#4A3428",
+          "border": "#4A3428",
+          "borderW": 4,
+          "radius": 10
+        },
+        "host": {
+          "pos": "right",
+          "top": 820,
+          "maxW": 650,
+          "maxH": 900,
+          "outline": "#FFFDF8"
+        },
+        "identity": {
+          "x": 114,
+          "y": 1520,
+          "bg": "#D96B43",
+          "color": "#FFFDF8",
+          "border": "#FFFDF8",
+          "borderW": 5,
+          "angle": -2,
+          "radius": 14
+        },
+        "brand": {
+          "x": 54,
+          "y": 1712,
+          "w": 972,
+          "h": 134,
+          "bg": "#FFFDF8",
+          "color": "#4A3428",
+          "border": "#4A3428",
+          "borderW": 5,
+          "hardShadow": "#8EAD78",
+          "radius": 16
+        },
+        "stickers": [
+          {
+            "key": "washiTapeGreen",
+            "x": 810,
+            "y": 64,
+            "w": 210,
+            "h": 60,
+            "rotate": 14
+          },
+          {
+            "key": "washiTape",
+            "x": 210,
+            "y": 540,
+            "w": 190,
+            "h": 52,
+            "rotate": -6
+          },
+          {
+            "key": "washiTapeGreen",
+            "x": 220,
+            "y": 1022,
+            "w": 180,
+            "h": 50,
+            "rotate": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": "garden-fresh",
+      "order": 13,
+      "num": "13",
+      "name": "森系小雏菊",
+      "category": "温馨手账",
+      "pairId": "garden-fresh",
+      "layoutTag": "1大花园横图+2横条 · 右下大人物",
+      "description": "春芽嫩绿 + 鼠尾草绿 + 水彩小雏菊贴图；上方宽幅花园主图 + 左下双 16:9 横条 + 右下大主角。",
+      "swatches": [
+        "#3F7252",
+        "#E8F4E3",
+        "#FFFDF7",
+        "#F4A261"
+      ],
+      "tags": [
+        "森系",
+        "花园",
+        "小雏菊",
+        "旅居",
+        "清新"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "linear",
+          "colors": [
+            "#E8F4E3",
+            "#F8FBF5",
+            "#DFEFE0"
+          ]
+        },
+        "header": {
+          "style": "pill",
+          "x": 64,
+          "y": 80,
+          "bg": "#3F7252",
+          "color": "#FFFDF7",
+          "prefix": "◆ "
+        },
+        "title": {
+          "x": 64,
+          "y": 206,
+          "w": 952,
+          "h": 330,
+          "align": "left",
+          "color": "#234731",
+          "highlightColor": "#E76F51",
+          "highlightMode": "color"
+        },
+        "photos": [
+          {
+            "idx": 2,
+            "x": 56,
+            "y": 574,
+            "w": 968,
+            "h": 476,
+            "r": 36,
+            "border": 10,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 2,
+            "labelPos": "tl"
+          },
+          {
+            "idx": 0,
+            "x": 56,
+            "y": 1074,
+            "w": 486,
+            "h": 244,
+            "r": 26,
+            "border": 8,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 0,
+            "labelPos": "bl"
+          },
+          {
+            "idx": 1,
+            "x": 56,
+            "y": 1338,
+            "w": 486,
+            "h": 244,
+            "r": 26,
+            "border": 8,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 1,
+            "labelPos": "tl"
+          }
+        ],
+        "tagStyle": {
+          "bg": "#FFFDF7F0",
+          "color": "#234731",
+          "border": "#6FA37A",
+          "borderW": 4,
+          "radius": 99
+        },
+        "host": {
+          "pos": "right",
+          "top": 830,
+          "maxW": 640,
+          "maxH": 890,
+          "outline": "#FFFFFF"
+        },
+        "identity": {
+          "x": 108,
+          "y": 1544,
+          "bg": "#F4A261",
+          "color": "#FFFDF7",
+          "border": "#FFFFFF",
+          "borderW": 5,
+          "radius": 99
+        },
+        "brand": {
+          "x": 48,
+          "y": 1712,
+          "w": 984,
+          "h": 134,
+          "bg": "#3F7252",
+          "color": "#FFFDF7",
+          "radius": 28
+        },
+        "stickers": [
+          {
+            "key": "daisyCluster",
+            "x": 856,
+            "y": 18,
+            "w": 230,
+            "h": 195
+          }
+        ]
+      }
+    },
+    {
+      "id": "creamy-latte",
+      "order": 14,
+      "num": "14",
+      "name": "奶茶甜暖风",
+      "category": "温馨手账",
+      "pairId": "creamy-latte",
+      "layoutTag": "1张顶部宽幅圆角横图 · 左下大人物",
+      "description": "奶油米黄 + 蜜桃粉橘 + 顶部 16:9 大圆角横图 + 软萌云朵贴纸 + 左下大主角与右侧卖点卡。",
+      "swatches": [
+        "#FFF7EF",
+        "#F3947A",
+        "#5E3A2F",
+        "#FDE2D2"
+      ],
+      "tags": [
+        "奶茶",
+        "甜暖",
+        "蜜桃",
+        "单图",
+        "左下人物"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "linear",
+          "colors": [
+            "#FDE8DC",
+            "#FFF8F2",
+            "#FCE5D6"
+          ]
+        },
+        "header": {
+          "style": "pill",
+          "x": 540,
+          "y": 548,
+          "align": "center",
+          "bg": "#FFF8F2F2",
+          "color": "#5E3A2F",
+          "border": "#F3947A",
+          "borderW": 4,
+          "prefix": "◇ "
+        },
+        "title": {
+          "x": 56,
+          "y": 672,
+          "w": 968,
+          "h": 290,
+          "align": "center",
+          "color": "#5E3A2F",
+          "highlightMode": "pill",
+          "highlightBg": "#F3947A",
+          "highlightColor": "#FFFFFF"
+        },
+        "photos": [
+          {
+            "idx": 0,
+            "x": 56,
+            "y": 50,
+            "w": 968,
+            "h": 580,
+            "r": 64,
+            "border": 14,
+            "borderColor": "#FFFFFF",
+            "labelIdx": -1
+          }
+        ],
+        "extraTags": [
+          {
+            "labelIdx": 0,
+            "x": 584,
+            "y": 1072,
+            "w": 440,
+            "prefix": "◆ "
+          },
+          {
+            "labelIdx": 1,
+            "x": 584,
+            "y": 1184,
+            "w": 440,
+            "prefix": "◆ "
+          },
+          {
+            "labelIdx": 2,
+            "x": 584,
+            "y": 1296,
+            "w": 440,
+            "prefix": "◆ "
+          }
+        ],
+        "tagStyle": {
+          "bg": "#FFFFFF",
+          "color": "#5E3A2F",
+          "border": "#F3947A",
+          "borderW": 4,
+          "radius": 24
+        },
+        "host": {
+          "pos": "left",
+          "top": 960,
+          "maxW": 640,
+          "maxH": 840,
+          "outline": "#FFFFFF"
+        },
+        "identity": {
+          "x": 584,
+          "y": 1420,
+          "w": 440,
+          "bg": "#5E3A2F",
+          "color": "#FFF7EF",
+          "radius": 99
+        },
+        "brand": {
+          "x": 48,
+          "y": 1712,
+          "w": 984,
+          "h": 134,
+          "bg": "#F3947A",
+          "color": "#FFFFFF",
+          "border": "#FFFFFF",
+          "borderW": 6,
+          "radius": 99
+        },
+        "stickers": [
+          {
+            "key": "peachCloud",
+            "x": 864,
+            "y": 524,
+            "w": 190,
+            "h": 140
+          }
+        ]
+      }
+    },
+    {
+      "id": "sticky-note",
+      "order": 15,
+      "num": "15",
+      "name": "阳光便签墙",
+      "category": "温馨手账",
+      "pairId": "sticky-note",
+      "layoutTag": "3张横图彩色便利贴 · 右下大人物",
+      "description": "浅鹅黄格子手账底 + 3 张图钉横版彩色便利贴（4:3 完整画面）+ 右下大主角；轻快活泼。",
+      "swatches": [
+        "#FFFBE6",
+        "#3D2C20",
+        "#E95747",
+        "#4B9CE2"
+      ],
+      "tags": [
+        "便签",
+        "手账",
+        "格子",
+        "图钉",
+        "活泼"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "solid",
+          "color": "#FFFBE6",
+          "pattern": "grid",
+          "gridColor": "#3D2C2014"
+        },
+        "header": {
+          "style": "hard-shadow",
+          "x": 56,
+          "y": 74,
+          "bg": "#4B9CE2",
+          "color": "#FFFFFF",
+          "border": "#3D2C20",
+          "borderW": 5,
+          "shadow": "#3D2C20",
+          "prefix": "◆ "
+        },
+        "title": {
+          "x": 56,
+          "y": 198,
+          "w": 968,
+          "h": 330,
+          "align": "center",
+          "color": "#3D2C20",
+          "highlightMode": "outline-pill",
+          "highlightColor": "#E95747",
+          "highlightBorder": "#E95747"
+        },
+        "photos": [
+          {
+            "idx": 0,
+            "x": 50,
+            "y": 582,
+            "w": 468,
+            "h": 386,
+            "polaroid": true,
+            "cardBg": "#FFE89E",
+            "border": 5,
+            "borderColor": "#3D2C20",
+            "pad": 16,
+            "footH": 68,
+            "rotate": -2,
+            "labelIdx": 0,
+            "labelPrefix": "# "
+          },
+          {
+            "idx": 1,
+            "x": 562,
+            "y": 590,
+            "w": 468,
+            "h": 386,
+            "polaroid": true,
+            "cardBg": "#D6F0FF",
+            "border": 5,
+            "borderColor": "#3D2C20",
+            "pad": 16,
+            "footH": 68,
+            "rotate": 2,
+            "labelIdx": 1,
+            "labelPrefix": "# "
+          },
+          {
+            "idx": 2,
+            "x": 50,
+            "y": 1030,
+            "w": 500,
+            "h": 406,
+            "polaroid": true,
+            "cardBg": "#DDF5D2",
+            "border": 5,
+            "borderColor": "#3D2C20",
+            "pad": 16,
+            "footH": 68,
+            "rotate": 1.5,
+            "labelIdx": 2,
+            "labelPrefix": "# "
+          }
+        ],
+        "tagStyle": {
+          "bg": "#FFE89E",
+          "color": "#3D2C20",
+          "radius": 8
+        },
+        "host": {
+          "pos": "right",
+          "top": 830,
+          "maxW": 640,
+          "maxH": 890,
+          "outline": "#FFFBE6"
+        },
+        "identity": {
+          "x": 108,
+          "y": 1510,
+          "bg": "#E95747",
+          "color": "#FFFFFF",
+          "border": "#3D2C20",
+          "borderW": 5,
+          "hardShadow": "#3D2C20",
+          "radius": 99
+        },
+        "brand": {
+          "x": 48,
+          "y": 1712,
+          "w": 984,
+          "h": 134,
+          "bg": "#3D2C20",
+          "color": "#FFFBE6",
+          "border": "#FFE89E",
+          "borderW": 6,
+          "radius": 22
+        },
+        "stickers": [
+          {
+            "key": "pushPin",
+            "x": 900,
+            "y": 50,
+            "w": 116,
+            "h": 116
+          }
+        ]
+      }
+    },
+    {
+      "id": "oriental-jade",
+      "order": 16,
+      "num": "16",
+      "name": "雅韵新中式",
+      "category": "新中式信赖",
+      "pairId": "oriental-jade",
+      "layoutTag": "3张横版雅框 · 朱砂印章 · 右下大人物",
+      "description": "宣纸米底 + 黛青墨绿 + 朱砂印章与水墨竹影贴图 + 3 张 4:3 横版画框 + 右下大主角。",
+      "swatches": [
+        "#F5EFE2",
+        "#1E433E",
+        "#C23A2B",
+        "#C89B54"
+      ],
+      "tags": [
+        "新中式",
+        "国风",
+        "印章",
+        "长辈",
+        "视频号"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "radial",
+          "colors": [
+            "#FAF5EA",
+            "#EFE6D5",
+            "#E8DEC8"
+          ],
+          "doubleFrame": [
+            "#C89B54",
+            "#1E433E55"
+          ]
+        },
+        "header": {
+          "style": "seal-underline",
+          "x": 82,
+          "y": 84,
+          "color": "#1E433E",
+          "lineColor": "#C89B54",
+          "sealKey": "chineseSeal"
+        },
+        "title": {
+          "x": 76,
+          "y": 210,
+          "w": 928,
+          "h": 330,
+          "align": "center",
+          "color": "#1E433E",
+          "highlightColor": "#C23A2B",
+          "highlightMode": "color"
+        },
+        "photos": [
+          {
+            "idx": 0,
+            "x": 76,
+            "y": 584,
+            "w": 500,
+            "h": 390,
+            "r": 4,
+            "border": 8,
+            "borderColor": "#FAF6ED",
+            "outerBorder": "#C89B54",
+            "labelIdx": 0,
+            "labelPos": "bl"
+          },
+          {
+            "idx": 1,
+            "x": 600,
+            "y": 584,
+            "w": 404,
+            "h": 320,
+            "r": 4,
+            "border": 8,
+            "borderColor": "#FAF6ED",
+            "outerBorder": "#C89B54",
+            "labelIdx": 1,
+            "labelPos": "tr"
+          },
+          {
+            "idx": 2,
+            "x": 76,
+            "y": 1010,
+            "w": 480,
+            "h": 366,
+            "r": 4,
+            "border": 8,
+            "borderColor": "#FAF6ED",
+            "outerBorder": "#C89B54",
+            "labelIdx": 2,
+            "labelPos": "tl"
+          }
+        ],
+        "tagStyle": {
+          "bg": "#F5EFE2",
+          "color": "#1E433E",
+          "border": "#C89B54",
+          "borderW": 3,
+          "radius": 4
+        },
+        "host": {
+          "pos": "right",
+          "top": 820,
+          "maxW": 640,
+          "maxH": 890,
+          "outline": "#FAF6ED"
+        },
+        "identity": {
+          "x": 108,
+          "y": 1510,
+          "bg": "#C23A2B",
+          "color": "#FAF5EA",
+          "border": "#F5EFE2",
+          "borderW": 4,
+          "radius": 6
+        },
+        "brand": {
+          "x": 76,
+          "y": 1712,
+          "w": 928,
+          "h": 134,
+          "bg": "#1E433E",
+          "color": "#F5EFE2",
+          "border": "#C89B54",
+          "borderW": 4,
+          "radius": 6
+        },
+        "stickers": [
+          {
+            "key": "inkBamboo",
+            "x": 800,
+            "y": 40,
+            "w": 280,
+            "h": 330,
+            "behind": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "festive-warmth",
+      "order": 17,
+      "num": "17",
+      "name": "暖红喜庆福韵",
+      "category": "新中式信赖",
+      "pairId": "festive-warmth",
+      "layoutTag": "2张横版金框对称 · 居中大人物",
+      "description": "故宫暖红 + 暖金边 + 红金双灯笼 + 2 张 4:3 横版金框大图 + 居中大主角；热闹喜庆、长辈一眼停留。",
+      "swatches": [
+        "#B8282E",
+        "#F8CE62",
+        "#FFF8EC",
+        "#6E1216"
+      ],
+      "tags": [
+        "暖红",
+        "喜庆",
+        "灯笼",
+        "长辈",
+        "居中人物"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "radial",
+          "colors": [
+            "#D4373D",
+            "#A61E24",
+            "#7A1217"
+          ],
+          "frameBorder": "#F8CE62E0",
+          "frameInset": 28,
+          "frameRadius": 26,
+          "frameW": 5
+        },
+        "header": {
+          "style": "pill",
+          "x": 540,
+          "y": 84,
+          "align": "center",
+          "bg": "#F8CE62",
+          "color": "#7A1217"
+        },
+        "title": {
+          "x": 64,
+          "y": 206,
+          "w": 952,
+          "h": 330,
+          "align": "center",
+          "color": "#FFF8EC",
+          "highlightColor": "#F8CE62",
+          "highlightMode": "color"
+        },
+        "photos": [
+          {
+            "idx": 0,
+            "x": 58,
+            "y": 584,
+            "w": 468,
+            "h": 390,
+            "r": 24,
+            "border": 7,
+            "borderColor": "#F8CE62",
+            "labelIdx": 0,
+            "labelPos": "tl"
+          },
+          {
+            "idx": 1,
+            "x": 554,
+            "y": 584,
+            "w": 468,
+            "h": 390,
+            "r": 24,
+            "border": 7,
+            "borderColor": "#F8CE62",
+            "labelIdx": 1,
+            "labelPos": "tr"
+          }
+        ],
+        "extraTags": [
+          {
+            "labelIdx": 2,
+            "x": 58,
+            "y": 1010
+          }
+        ],
+        "tagStyle": {
+          "bg": "#FFF8EC",
+          "color": "#991B20",
+          "border": "#F8CE62",
+          "borderW": 4,
+          "radius": 14
+        },
+        "host": {
+          "pos": "center",
+          "top": 840,
+          "maxW": 680,
+          "maxH": 910,
+          "outline": "#F8CE62"
+        },
+        "identity": {
+          "x": 540,
+          "y": 1524,
+          "align": "center",
+          "bg": "#F8CE62",
+          "color": "#7A1217",
+          "border": "#FFF8EC",
+          "borderW": 5,
+          "radius": 99
+        },
+        "brand": {
+          "x": 56,
+          "y": 1712,
+          "w": 968,
+          "h": 134,
+          "bg": "#FFF8EC",
+          "color": "#8F181D",
+          "border": "#F8CE62",
+          "borderW": 6,
+          "radius": 24
+        },
+        "stickers": [
+          {
+            "key": "lantern",
+            "x": 42,
+            "y": 24,
+            "w": 136,
+            "h": 168
+          },
+          {
+            "key": "lantern",
+            "x": 902,
+            "y": 24,
+            "w": 136,
+            "h": 168
+          }
+        ]
+      }
+    },
+    {
+      "id": "porcelain-blue",
+      "order": 18,
+      "num": "18",
+      "name": "青花素瓷",
+      "category": "新中式信赖",
+      "pairId": "porcelain-blue",
+      "layoutTag": "1宽幅横图+2左横图 · 右下大人物",
+      "description": "素瓷白底 + 青花靛蓝缠枝莲贴图 + 3 张标准横版青花画框（告别竖裁切）+ 右下大主角。",
+      "swatches": [
+        "#FAFBFD",
+        "#1E4D8C",
+        "#C9A25B",
+        "#DCE7F5"
+      ],
+      "tags": [
+        "青花",
+        "素瓷",
+        "国风",
+        "靛蓝",
+        "雅致"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "linear",
+          "colors": [
+            "#F4F8FC",
+            "#FFFFFF",
+            "#EDF3FA"
+          ],
+          "frameBorder": "#1E4D8C",
+          "frameInset": 32,
+          "frameRadius": 18,
+          "frameW": 4
+        },
+        "header": {
+          "style": "rect",
+          "x": 74,
+          "y": 80,
+          "bg": "#1E4D8C",
+          "color": "#FFFFFF",
+          "radius": 8
+        },
+        "title": {
+          "x": 74,
+          "y": 202,
+          "w": 932,
+          "h": 330,
+          "align": "left",
+          "color": "#143563",
+          "highlightColor": "#1E4D8C",
+          "highlightMode": "underline",
+          "underlineColor": "#C9A25B"
+        },
+        "photos": [
+          {
+            "idx": 2,
+            "x": 70,
+            "y": 566,
+            "w": 940,
+            "h": 466,
+            "r": 16,
+            "border": 6,
+            "borderColor": "#1E4D8C",
+            "labelIdx": 2,
+            "labelPos": "tl"
+          },
+          {
+            "idx": 0,
+            "x": 70,
+            "y": 1056,
+            "w": 476,
+            "h": 256,
+            "r": 16,
+            "border": 5,
+            "borderColor": "#1E4D8C",
+            "labelIdx": 0,
+            "labelPos": "bl"
+          },
+          {
+            "idx": 1,
+            "x": 70,
+            "y": 1332,
+            "w": 476,
+            "h": 256,
+            "r": 16,
+            "border": 5,
+            "borderColor": "#1E4D8C",
+            "labelIdx": 1,
+            "labelPos": "tl"
+          }
+        ],
+        "tagStyle": {
+          "bg": "#FAFBFD",
+          "color": "#1E4D8C",
+          "border": "#1E4D8C",
+          "borderW": 3,
+          "radius": 8
+        },
+        "host": {
+          "pos": "right",
+          "top": 830,
+          "maxW": 640,
+          "maxH": 890,
+          "outline": "#FAFBFD"
+        },
+        "identity": {
+          "x": 110,
+          "y": 1544,
+          "bg": "#FAFBFD",
+          "color": "#1E4D8C",
+          "border": "#1E4D8C",
+          "borderW": 5,
+          "radius": 99
+        },
+        "brand": {
+          "x": 64,
+          "y": 1712,
+          "w": 952,
+          "h": 134,
+          "bg": "#1E4D8C",
+          "color": "#FAFBFD",
+          "border": "#C9A25B",
+          "borderW": 3,
+          "radius": 16
+        },
+        "stickers": [
+          {
+            "key": "porcelainFlower",
+            "x": 864,
+            "y": 52,
+            "w": 168,
+            "h": 168
+          }
+        ]
+      }
+    },
+    {
+      "id": "misty-moongate",
+      "order": 19,
+      "num": "19",
+      "name": "江南月洞门",
+      "category": "新中式信赖",
+      "pairId": "misty-moongate",
+      "layoutTag": "1张巨幅圆窗实景 · 左下大人物",
+      "description": "淡青烟雨宣纸 + 1 张巨幅 1:1 圆形月洞门实景窗（对横图极友好）+ 左下大主角；东方诗意。",
+      "swatches": [
+        "#EBF0EC",
+        "#274C47",
+        "#A94132",
+        "#BFA065"
+      ],
+      "tags": [
+        "月洞门",
+        "江南",
+        "圆窗",
+        "国风",
+        "单图"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "linear",
+          "colors": [
+            "#DFE7E2",
+            "#F2F5F1",
+            "#D8E2DC"
+          ]
+        },
+        "header": {
+          "style": "plain-center",
+          "x": 540,
+          "y": 84,
+          "color": "#274C47"
+        },
+        "title": {
+          "x": 64,
+          "y": 182,
+          "w": 952,
+          "h": 330,
+          "align": "center",
+          "color": "#1D3834",
+          "highlightColor": "#A94132",
+          "highlightMode": "color"
+        },
+        "photos": [
+          {
+            "idx": 2,
+            "x": 130,
+            "y": 552,
+            "w": 820,
+            "h": 820,
+            "circle": true,
+            "border": 16,
+            "borderColor": "#FAF9F4",
+            "outerBorder": "#BFA065",
+            "labelIdx": 2,
+            "labelPos": "tc",
+            "labelOffsetY": 48
+          }
+        ],
+        "extraTags": [
+          {
+            "labelIdx": 0,
+            "x": 640,
+            "y": 1310
+          },
+          {
+            "labelIdx": 1,
+            "x": 640,
+            "y": 1404
+          }
+        ],
+        "tagStyle": {
+          "bg": "#F2F5F1F0",
+          "color": "#1D3834",
+          "border": "#BFA065",
+          "borderW": 3,
+          "radius": 99
+        },
+        "host": {
+          "pos": "left",
+          "top": 830,
+          "maxW": 640,
+          "maxH": 890,
+          "outline": "#FAF9F4"
+        },
+        "identity": {
+          "x": 640,
+          "y": 1510,
+          "bg": "#274C47",
+          "color": "#F2F5F1",
+          "border": "#BFA065",
+          "borderW": 4,
+          "radius": 99
+        },
+        "brand": {
+          "x": 56,
+          "y": 1712,
+          "w": 968,
+          "h": 134,
+          "bg": "#FAF9F4",
+          "color": "#1D3834",
+          "border": "#274C47",
+          "borderW": 5,
+          "radius": 20
+        },
+        "stickers": [
+          {
+            "key": "inkBamboo",
+            "x": -10,
+            "y": 36,
+            "w": 260,
+            "h": 310,
+            "behind": true,
+            "flipX": true
+          },
+          {
+            "key": "chineseSeal",
+            "x": 908,
+            "y": 64,
+            "w": 110,
+            "h": 110
+          }
+        ]
+      }
+    },
+    {
+      "id": "song-gold",
+      "order": 20,
+      "num": "20",
+      "name": "鎏金宋韵画卷",
+      "category": "新中式信赖",
+      "pairId": "song-gold",
+      "layoutTag": "上部2横图横卷 · 中部大标题 · 居中大人物",
+      "description": "温润茶褐绢布底 + 上部 2 张横版卷轴实景（4:3 完整保留）+ 中央鎏金大字 + 居中大半身主角。",
+      "swatches": [
+        "#3A2D24",
+        "#E5C384",
+        "#F8F1E3",
+        "#A8382B"
+      ],
+      "tags": [
+        "宋韵",
+        "鎏金",
+        "画卷",
+        "双图",
+        "居中人物"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "linear",
+          "colors": [
+            "#2C221B",
+            "#3F3126",
+            "#281F18"
+          ],
+          "frameBorder": "#E5C384",
+          "frameInset": 32,
+          "frameRadius": 12,
+          "frameW": 3
+        },
+        "header": {
+          "style": "plain-center",
+          "x": 540,
+          "y": 62,
+          "color": "#E5C384",
+          "prefix": "◆ ",
+          "suffix": " ◆"
+        },
+        "title": {
+          "x": 64,
+          "y": 546,
+          "w": 952,
+          "h": 300,
+          "align": "center",
+          "color": "#F8F1E3",
+          "line2Color": "#E5C384",
+          "highlightColor": "#E5C384",
+          "highlightMode": "color"
+        },
+        "photos": [
+          {
+            "idx": 0,
+            "x": 64,
+            "y": 142,
+            "w": 462,
+            "h": 360,
+            "r": 4,
+            "border": 5,
+            "borderColor": "#E5C384",
+            "labelIdx": 0,
+            "labelPos": "bl"
+          },
+          {
+            "idx": 1,
+            "x": 554,
+            "y": 142,
+            "w": 462,
+            "h": 360,
+            "r": 4,
+            "border": 5,
+            "borderColor": "#E5C384",
+            "labelIdx": 1,
+            "labelPos": "br"
+          }
+        ],
+        "extraTags": [
+          {
+            "labelIdx": 2,
+            "x": 64,
+            "y": 1140
+          }
+        ],
+        "tagStyle": {
+          "bg": "#2C221BDC",
+          "color": "#E5C384",
+          "border": "#E5C384",
+          "borderW": 2,
+          "radius": 4
+        },
+        "host": {
+          "pos": "center",
+          "top": 840,
+          "maxW": 700,
+          "maxH": 920,
+          "outline": "#E5C384"
+        },
+        "identity": {
+          "x": 540,
+          "y": 1524,
+          "align": "center",
+          "bg": "#A8382B",
+          "color": "#F8F1E3",
+          "border": "#E5C384",
+          "borderW": 4,
+          "radius": 6
+        },
+        "brand": {
+          "x": 64,
+          "y": 1712,
+          "w": 952,
+          "h": 134,
+          "bg": "#18120EE0",
+          "color": "#F8F1E3",
+          "topBottomLine": "#E5C384",
+          "radius": 0
+        },
+        "stickers": []
+      }
+    },
+    {
+      "id": "cinema-gold",
+      "order": 21,
+      "num": "21",
+      "name": "黑金臻选大片",
+      "category": "高端专业",
+      "pairId": "cinema-gold",
+      "layoutTag": "1宽银幕横主图+2横浮窗 · 右下大人物",
+      "description": "黑曜金底 + 电影宽银幕 16:9 横主图 + 左下 2 张横浮窗 + 香槟流金星芒角饰 + 右下大主角。",
+      "swatches": [
+        "#141518",
+        "#E5C07B",
+        "#FAF8F5",
+        "#8E6F3E"
+      ],
+      "tags": [
+        "黑金",
+        "高端",
+        "大片",
+        "康养",
+        "院长"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "radial",
+          "colors": [
+            "#23252C",
+            "#121317",
+            "#0B0C0F"
+          ]
+        },
+        "header": {
+          "style": "rect-border",
+          "x": 540,
+          "y": 82,
+          "align": "center",
+          "bg": "#141518AA",
+          "color": "#E5C07B",
+          "border": "#E5C07B",
+          "borderW": 3
+        },
+        "title": {
+          "x": 64,
+          "y": 198,
+          "w": 952,
+          "h": 330,
+          "align": "center",
+          "color": "#FAF8F5",
+          "highlightColor": "#E5C07B",
+          "highlightMode": "color"
+        },
+        "photos": [
+          {
+            "idx": 0,
+            "x": 60,
+            "y": 554,
+            "w": 960,
+            "h": 470,
+            "r": 18,
+            "border": 4,
+            "borderColor": "#E5C07B",
+            "labelIdx": 0,
+            "labelPos": "tl"
+          },
+          {
+            "idx": 1,
+            "x": 60,
+            "y": 1050,
+            "w": 468,
+            "h": 248,
+            "r": 16,
+            "border": 4,
+            "borderColor": "#E5C07B",
+            "labelIdx": 1,
+            "labelPos": "bl"
+          },
+          {
+            "idx": 2,
+            "x": 60,
+            "y": 1322,
+            "w": 468,
+            "h": 248,
+            "r": 16,
+            "border": 4,
+            "borderColor": "#E5C07B",
+            "labelIdx": 2,
+            "labelPos": "tl"
+          }
+        ],
+        "tagStyle": {
+          "bg": "#101114DC",
+          "color": "#E5C07B",
+          "accentBar": "#E5C07B",
+          "radius": 6
+        },
+        "host": {
+          "pos": "right",
+          "top": 820,
+          "maxW": 640,
+          "maxH": 890,
+          "outline": "#E5C07B"
+        },
+        "identity": {
+          "x": 108,
+          "y": 1536,
+          "bg": "#DFBD76",
+          "color": "#141518",
+          "radius": 10
+        },
+        "brand": {
+          "x": 56,
+          "y": 1712,
+          "w": 968,
+          "h": 134,
+          "bg": "#141518EB",
+          "color": "#FAF8F5",
+          "topBottomLine": "#E5C07B",
+          "radius": 0
+        },
+        "stickers": [
+          {
+            "key": "goldCorner",
+            "x": 36,
+            "y": 36,
+            "w": 150,
+            "h": 150
+          },
+          {
+            "key": "goldCorner",
+            "x": 894,
+            "y": 36,
+            "w": 150,
+            "h": 150,
+            "flipX": true
+          },
+          {
+            "key": "goldSparkle",
+            "x": 848,
+            "y": 184,
+            "w": 165,
+            "h": 165
+          }
+        ]
+      }
+    },
+    {
+      "id": "sky-care",
+      "order": 22,
+      "num": "22",
+      "name": "晴空医养守护",
+      "category": "高端专业",
+      "pairId": "sky-care",
+      "layoutTag": "1宽幅全景横图+2横卡片 · 右下大人物",
+      "description": "医疗天蓝 + 冰蓝白 + 3D 守护盾牌贴图 + 3 张宽幅横图宣传册版式 + 右下大主角；洁净安心。",
+      "swatches": [
+        "#1967A3",
+        "#EDF6FC",
+        "#38B2AC",
+        "#F6C945"
+      ],
+      "tags": [
+        "医养",
+        "失智",
+        "守护",
+        "晴空蓝",
+        "专业"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "split",
+          "topColor": "#165C94",
+          "topEnd": "#2279B8",
+          "splitY": 730,
+          "bottomColor": "#F4FAFF"
+        },
+        "header": {
+          "style": "pill",
+          "x": 64,
+          "y": 80,
+          "bg": "#FFFFFF2E",
+          "color": "#FFFFFF",
+          "border": "#FFFFFF99",
+          "borderW": 3
+        },
+        "title": {
+          "x": 64,
+          "y": 202,
+          "w": 952,
+          "h": 330,
+          "align": "left",
+          "color": "#FFFFFF",
+          "highlightColor": "#F6C945",
+          "highlightMode": "color"
+        },
+        "photos": [
+          {
+            "idx": 1,
+            "x": 56,
+            "y": 564,
+            "w": 968,
+            "h": 460,
+            "r": 30,
+            "border": 8,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 1,
+            "labelPos": "tl",
+            "tagBg": "#38B2AC"
+          },
+          {
+            "idx": 0,
+            "x": 56,
+            "y": 1050,
+            "w": 486,
+            "h": 256,
+            "r": 26,
+            "border": 8,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 0,
+            "labelPos": "bl"
+          },
+          {
+            "idx": 2,
+            "x": 56,
+            "y": 1328,
+            "w": 486,
+            "h": 256,
+            "r": 26,
+            "border": 8,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 2,
+            "labelPos": "tl"
+          }
+        ],
+        "tagStyle": {
+          "bg": "#1967A3",
+          "color": "#FFFFFF",
+          "radius": 99
+        },
+        "host": {
+          "pos": "right",
+          "top": 830,
+          "maxW": 640,
+          "maxH": 890,
+          "outline": "#FFFFFF"
+        },
+        "identity": {
+          "x": 108,
+          "y": 1544,
+          "bg": "#38B2AC",
+          "color": "#FFFFFF",
+          "border": "#FFFFFF",
+          "borderW": 6,
+          "radius": 99
+        },
+        "brand": {
+          "x": 48,
+          "y": 1712,
+          "w": 984,
+          "h": 134,
+          "bg": "#FFFFFF",
+          "color": "#144D7A",
+          "border": "#1967A3",
+          "borderW": 6,
+          "radius": 26
+        },
+        "stickers": [
+          {
+            "key": "careShield",
+            "x": 876,
+            "y": 52,
+            "w": 155,
+            "h": 155
+          }
+        ]
+      }
+    },
+    {
+      "id": "blueprint-tech",
+      "order": 23,
+      "num": "23",
+      "name": "建筑蓝图极客",
+      "category": "高端专业",
+      "pairId": "blueprint-tech",
+      "layoutTag": "3张横版工程蓝图框 · 右下大人物",
+      "description": "深普鲁士蓝图网格 + 罗盘标尺贴图 + 3 张标准 4:3 横版实测图（彻底取消竖裁切）+ 右下大主角。",
+      "swatches": [
+        "#102542",
+        "#5CE1E6",
+        "#FFFFFF",
+        "#F8D448"
+      ],
+      "tags": [
+        "蓝图",
+        "硬核",
+        "户型",
+        "适老设施",
+        "科技蓝"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "solid",
+          "color": "#102542",
+          "pattern": "grid",
+          "gridColor": "#5CE1E620"
+        },
+        "header": {
+          "style": "rect-border",
+          "x": 60,
+          "y": 78,
+          "bg": "#102542CC",
+          "color": "#5CE1E6",
+          "border": "#5CE1E6",
+          "borderW": 3,
+          "prefix": "◇ "
+        },
+        "title": {
+          "x": 60,
+          "y": 196,
+          "w": 960,
+          "h": 330,
+          "align": "left",
+          "color": "#FFFFFF",
+          "highlightColor": "#5CE1E6",
+          "highlightMode": "color"
+        },
+        "photos": [
+          {
+            "idx": 0,
+            "x": 56,
+            "y": 580,
+            "w": 472,
+            "h": 340,
+            "r": 4,
+            "border": 4,
+            "borderColor": "#5CE1E6",
+            "labelIdx": 0,
+            "labelPos": "bl",
+            "labelPrefix": "A · "
+          },
+          {
+            "idx": 1,
+            "x": 552,
+            "y": 580,
+            "w": 472,
+            "h": 340,
+            "r": 4,
+            "border": 4,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 1,
+            "labelPos": "tl",
+            "labelPrefix": "B · "
+          },
+          {
+            "idx": 2,
+            "x": 56,
+            "y": 956,
+            "w": 486,
+            "h": 356,
+            "r": 4,
+            "border": 4,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 2,
+            "labelPos": "bl",
+            "labelPrefix": "C · "
+          }
+        ],
+        "tagStyle": {
+          "bg": "#102542E8",
+          "color": "#5CE1E6",
+          "border": "#5CE1E6",
+          "borderW": 2,
+          "radius": 4
+        },
+        "host": {
+          "pos": "right",
+          "top": 820,
+          "maxW": 640,
+          "maxH": 890,
+          "outline": "#5CE1E6"
+        },
+        "identity": {
+          "x": 84,
+          "y": 1510,
+          "bg": "#102542",
+          "color": "#5CE1E6",
+          "border": "#5CE1E6",
+          "borderW": 5,
+          "radius": 6
+        },
+        "brand": {
+          "x": 56,
+          "y": 1712,
+          "w": 968,
+          "h": 134,
+          "bg": "#5CE1E6",
+          "color": "#102542",
+          "radius": 6
+        },
+        "stickers": [
+          {
+            "key": "blueprintCompass",
+            "x": 880,
+            "y": 48,
+            "w": 156,
+            "h": 156
+          }
+        ]
+      }
+    },
+    {
+      "id": "emerald-luxury",
+      "order": 24,
+      "num": "24",
+      "name": "翡翠奢华私邸",
+      "category": "高端专业",
+      "pairId": "emerald-luxury",
+      "layoutTag": "1宽幅奢华横图+1右横副图 · 左下大人物",
+      "description": "深祖母绿丝绒 + 玫瑰金菱形星标 + 宽幅 16:9 横主图 + 右侧横副图 + 左下大主角立绘。",
+      "swatches": [
+        "#0B3B2E",
+        "#E4B395",
+        "#FAF6F0",
+        "#165947"
+      ],
+      "tags": [
+        "翡翠绿",
+        "玫瑰金",
+        "高端",
+        "私邸",
+        "左下人物"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "radial",
+          "colors": [
+            "#165947",
+            "#0B3B2E",
+            "#06251D"
+          ],
+          "frameBorder": "#E4B395",
+          "frameInset": 34,
+          "frameRadius": 22,
+          "frameW": 3
+        },
+        "header": {
+          "style": "plain-left",
+          "x": 76,
+          "y": 88,
+          "color": "#E4B395",
+          "prefix": "◆ "
+        },
+        "title": {
+          "x": 76,
+          "y": 194,
+          "w": 928,
+          "h": 330,
+          "align": "left",
+          "color": "#FAF6F0",
+          "highlightColor": "#E4B395",
+          "highlightMode": "color"
+        },
+        "photos": [
+          {
+            "idx": 1,
+            "x": 66,
+            "y": 564,
+            "w": 948,
+            "h": 500,
+            "r": 28,
+            "border": 5,
+            "borderColor": "#E4B395",
+            "labelIdx": 1,
+            "labelPos": "tr"
+          },
+          {
+            "idx": 0,
+            "x": 538,
+            "y": 1096,
+            "w": 476,
+            "h": 336,
+            "r": 24,
+            "border": 5,
+            "borderColor": "#E4B395",
+            "labelIdx": 0,
+            "labelPos": "br"
+          }
+        ],
+        "extraTags": [
+          {
+            "labelIdx": 2,
+            "x": 538,
+            "y": 1448
+          }
+        ],
+        "tagStyle": {
+          "bg": "#0B3B2EE0",
+          "color": "#E4B395",
+          "border": "#E4B395",
+          "borderW": 3,
+          "radius": 99
+        },
+        "host": {
+          "pos": "left",
+          "top": 840,
+          "maxW": 640,
+          "maxH": 890,
+          "outline": "#E4B395"
+        },
+        "identity": {
+          "x": 616,
+          "y": 1524,
+          "bg": "#E4B395",
+          "color": "#0B3B2E",
+          "radius": 99
+        },
+        "brand": {
+          "x": 64,
+          "y": 1712,
+          "w": 952,
+          "h": 134,
+          "bg": "#06251DEB",
+          "color": "#FAF6F0",
+          "border": "#E4B395",
+          "borderW": 4,
+          "radius": 18
+        },
+        "stickers": [
+          {
+            "key": "roseDiamond",
+            "x": 874,
+            "y": 64,
+            "w": 142,
+            "h": 142
+          }
+        ]
+      }
+    },
+    {
+      "id": "timber-warmth",
+      "order": 25,
+      "num": "25",
+      "name": "暖棕实木康养",
+      "category": "高端专业",
+      "pairId": "timber-warmth",
+      "layoutTag": "1宽幅居室横图+2右横图 · 左下大人物",
+      "description": "胡桃木深棕 + 暖麦金 + 3 张标准横版实景（顶部实木居室主图 + 右侧双横图）+ 左下大主角。",
+      "swatches": [
+        "#362419",
+        "#E8C17C",
+        "#F7F1E6",
+        "#8E5F3D"
+      ],
+      "tags": [
+        "实木",
+        "暖棕",
+        "麦金",
+        "沉稳",
+        "左下人物"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "split",
+          "topColor": "#2E1E14",
+          "topEnd": "#3F2A1D",
+          "splitY": 880,
+          "bottomColor": "#F3EBDC"
+        },
+        "header": {
+          "style": "plain-left",
+          "x": 64,
+          "y": 76,
+          "color": "#E8C17C",
+          "prefix": "■ "
+        },
+        "title": {
+          "x": 64,
+          "y": 172,
+          "w": 952,
+          "h": 330,
+          "align": "left",
+          "color": "#F7F1E6",
+          "line2Color": "#E8C17C",
+          "highlightColor": "#E8C17C",
+          "highlightMode": "color"
+        },
+        "photos": [
+          {
+            "idx": 0,
+            "x": 60,
+            "y": 564,
+            "w": 960,
+            "h": 476,
+            "r": 24,
+            "border": 8,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 0,
+            "labelPos": "tr"
+          },
+          {
+            "idx": 1,
+            "x": 538,
+            "y": 1064,
+            "w": 486,
+            "h": 248,
+            "r": 20,
+            "border": 8,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 1,
+            "labelPos": "tr"
+          },
+          {
+            "idx": 2,
+            "x": 538,
+            "y": 1334,
+            "w": 486,
+            "h": 248,
+            "r": 20,
+            "border": 8,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 2,
+            "labelPos": "tr"
+          }
+        ],
+        "tagStyle": {
+          "bg": "#362419",
+          "color": "#E8C17C",
+          "radius": 10
+        },
+        "host": {
+          "pos": "left",
+          "top": 830,
+          "maxW": 640,
+          "maxH": 890,
+          "outline": "#FFFFFF"
+        },
+        "identity": {
+          "x": 616,
+          "y": 1544,
+          "bg": "#362419",
+          "color": "#E8C17C",
+          "border": "#E8C17C",
+          "borderW": 5,
+          "radius": 14
+        },
+        "brand": {
+          "x": 56,
+          "y": 1712,
+          "w": 968,
+          "h": 134,
+          "bg": "#362419",
+          "color": "#F7F1E6",
+          "bottomBar": "#E8C17C",
+          "radius": 20
+        },
+        "stickers": []
+      }
+    },
+    {
+      "id": "retro-film",
+      "order": 26,
+      "num": "26",
+      "name": "35mm 复古胶片",
+      "category": "纪实潮流",
+      "pairId": "retro-film",
+      "layoutTag": "3张横版胶片格 · 左下大人物",
+      "description": "暗房暖黑 + 35mm 胶片齿孔 + REC 红点 + 3 张标准 3:2 胶片横幅 + 左下大主角；故事感拉满。",
+      "swatches": [
+        "#1B1917",
+        "#E8A64A",
+        "#F4ECD8",
+        "#D94E41"
+      ],
+      "tags": [
+        "胶片",
+        "35mm",
+        "纪实",
+        "电影感",
+        "左下人物"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "solid",
+          "color": "#1B1917",
+          "sprockets": "#322E29"
+        },
+        "header": {
+          "style": "rec-bar",
+          "x": 64,
+          "y": 92,
+          "color": "#F4ECD8",
+          "dotColor": "#D94E41",
+          "rightText": "35MM",
+          "rightColor": "#E8A64A"
+        },
+        "title": {
+          "x": 64,
+          "y": 204,
+          "w": 952,
+          "h": 330,
+          "align": "left",
+          "color": "#F4ECD8",
+          "highlightColor": "#E8A64A",
+          "highlightMode": "color"
+        },
+        "photos": [
+          {
+            "idx": 1,
+            "x": 56,
+            "y": 584,
+            "w": 430,
+            "h": 316,
+            "r": 4,
+            "border": 5,
+            "borderColor": "#F4ECD8",
+            "labelIdx": 1,
+            "labelPos": "tl",
+            "labelPrefix": "01 "
+          },
+          {
+            "idx": 0,
+            "x": 512,
+            "y": 584,
+            "w": 512,
+            "h": 386,
+            "r": 4,
+            "border": 5,
+            "borderColor": "#E8A64A",
+            "labelIdx": 0,
+            "labelPos": "br",
+            "labelPrefix": "02 "
+          },
+          {
+            "idx": 2,
+            "x": 528,
+            "y": 1002,
+            "w": 496,
+            "h": 356,
+            "r": 4,
+            "border": 5,
+            "borderColor": "#F4ECD8",
+            "labelIdx": 2,
+            "labelPos": "tr",
+            "labelPrefix": "03 "
+          }
+        ],
+        "tagStyle": {
+          "bg": "#1B1917DB",
+          "color": "#E8A64A",
+          "border": "#E8A64A",
+          "borderW": 2,
+          "radius": 4
+        },
+        "host": {
+          "pos": "left",
+          "top": 830,
+          "maxW": 640,
+          "maxH": 890,
+          "outline": "#F4ECD8"
+        },
+        "identity": {
+          "x": 616,
+          "y": 1510,
+          "bg": "#D94E41",
+          "color": "#F4ECD8",
+          "radius": 6
+        },
+        "brand": {
+          "x": 48,
+          "y": 1712,
+          "w": 984,
+          "h": 134,
+          "bg": "#26231F",
+          "color": "#F4ECD8",
+          "border": "#E8A64A",
+          "borderW": 4,
+          "radius": 6
+        },
+        "stickers": []
+      }
+    },
+    {
+      "id": "wisteria-grace",
+      "order": 27,
+      "num": "27",
+      "name": "紫藤温柔治愈",
+      "category": "纪实潮流",
+      "pairId": "wisteria-grace",
+      "layoutTag": "2张横版错落圆角大图 · 居中大人物",
+      "description": "薰衣草浅紫渐变 + 水彩紫藤花串贴图 + 2 张 4:3 横版错落圆角大图 + 居中大主角；柔和治愈。",
+      "swatches": [
+        "#684F94",
+        "#F2ECFA",
+        "#FFFFFF",
+        "#F7D060"
+      ],
+      "tags": [
+        "紫藤",
+        "薰衣草",
+        "温柔",
+        "治愈",
+        "居中人物"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "linear",
+          "colors": [
+            "#EDE4F8",
+            "#FAF7FE",
+            "#E5D9F5"
+          ]
+        },
+        "header": {
+          "style": "pill",
+          "x": 64,
+          "y": 80,
+          "bg": "#684F94",
+          "color": "#FFFFFF",
+          "prefix": "◆ "
+        },
+        "title": {
+          "x": 64,
+          "y": 206,
+          "w": 952,
+          "h": 330,
+          "align": "left",
+          "color": "#3E2B61",
+          "highlightMode": "pill",
+          "highlightBg": "#7B5FB0",
+          "highlightColor": "#FFFFFF"
+        },
+        "photos": [
+          {
+            "idx": 0,
+            "x": 48,
+            "y": 578,
+            "w": 480,
+            "h": 390,
+            "r": 36,
+            "border": 10,
+            "borderColor": "#FFFFFF",
+            "rotate": -2,
+            "labelIdx": 0,
+            "labelPos": "tl"
+          },
+          {
+            "idx": 1,
+            "x": 552,
+            "y": 622,
+            "w": 480,
+            "h": 390,
+            "r": 36,
+            "border": 10,
+            "borderColor": "#FFFFFF",
+            "rotate": 2,
+            "labelIdx": 1,
+            "labelPos": "tr"
+          }
+        ],
+        "extraTags": [
+          {
+            "labelIdx": 2,
+            "x": 54,
+            "y": 1014
+          }
+        ],
+        "tagStyle": {
+          "bg": "#FFFFFFF0",
+          "color": "#4D3775",
+          "border": "#9F86CE",
+          "borderW": 3,
+          "radius": 99
+        },
+        "host": {
+          "pos": "center",
+          "top": 840,
+          "maxW": 680,
+          "maxH": 910,
+          "outline": "#FFFFFF"
+        },
+        "identity": {
+          "x": 540,
+          "y": 1524,
+          "align": "center",
+          "bg": "#F7D060",
+          "color": "#3E2B61",
+          "border": "#FFFFFF",
+          "borderW": 5,
+          "radius": 99
+        },
+        "brand": {
+          "x": 48,
+          "y": 1712,
+          "w": 984,
+          "h": 134,
+          "bg": "#4D3775",
+          "color": "#FAF7FE",
+          "radius": 28
+        },
+        "stickers": [
+          {
+            "key": "wisteria",
+            "x": 854,
+            "y": 18,
+            "w": 210,
+            "h": 250
+          }
+        ]
+      }
+    },
+    {
+      "id": "live-monitor",
+      "order": 28,
+      "num": "28",
+      "name": "实探取景直播感",
+      "category": "纪实潮流",
+      "pairId": "live-monitor",
+      "layoutTag": "横屏Pad取景器(1主+2横副) · 右下大人物",
+      "description": "薄荷浅绿底 + 拟真横屏平板实拍取景框（16:9 零裁切）+ 「LIVE 实探」徽标 + 右下大主角。",
+      "swatches": [
+        "#E5F6EE",
+        "#0D5C46",
+        "#FF3B5C",
+        "#162420"
+      ],
+      "tags": [
+        "实探",
+        "直播感",
+        "薄荷绿",
+        "横屏",
+        "原生"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "linear",
+          "colors": [
+            "#E2F5EC",
+            "#F5FBF8",
+            "#D7EFE4"
+          ]
+        },
+        "header": {
+          "style": "live-pill",
+          "x": 64,
+          "y": 74,
+          "bg": "#162420",
+          "color": "#FFFFFF",
+          "dotColor": "#FF3B5C",
+          "prefix": "实探现场 · "
+        },
+        "title": {
+          "x": 64,
+          "y": 194,
+          "w": 952,
+          "h": 330,
+          "align": "left",
+          "color": "#162420",
+          "highlightColor": "#0D5C46",
+          "highlightMode": "underline",
+          "underlineColor": "#59D2A2"
+        },
+        "photos": [
+          {
+            "idx": 1,
+            "x": 60,
+            "y": 560,
+            "w": 960,
+            "h": 510,
+            "r": 38,
+            "border": 18,
+            "borderColor": "#162420",
+            "liveBadge": "● LIVE 实景镜头",
+            "labelIdx": 1,
+            "labelPos": "tr",
+            "tagBg": "#162420D8",
+            "tagColor": "#59D2A2"
+          },
+          {
+            "idx": 0,
+            "x": 56,
+            "y": 1096,
+            "w": 476,
+            "h": 242,
+            "r": 24,
+            "border": 8,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 0,
+            "labelPos": "bl"
+          },
+          {
+            "idx": 2,
+            "x": 56,
+            "y": 1356,
+            "w": 476,
+            "h": 242,
+            "r": 24,
+            "border": 8,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 2,
+            "labelPos": "tl"
+          }
+        ],
+        "tagStyle": {
+          "bg": "#0D5C46",
+          "color": "#FFFFFF",
+          "radius": 12
+        },
+        "host": {
+          "pos": "right",
+          "top": 830,
+          "maxW": 640,
+          "maxH": 890,
+          "outline": "#FFFFFF"
+        },
+        "identity": {
+          "x": 108,
+          "y": 1544,
+          "bg": "#162420",
+          "color": "#59D2A2",
+          "border": "#59D2A2",
+          "borderW": 5,
+          "radius": 99
+        },
+        "brand": {
+          "x": 48,
+          "y": 1712,
+          "w": 984,
+          "h": 134,
+          "bg": "#0D5C46",
+          "color": "#FFFFFF",
+          "radius": 24
+        },
+        "stickers": []
+      }
+    },
+    {
+      "id": "coastal-resort",
+      "order": 29,
+      "num": "29",
+      "name": "蔚蓝海岸旅居",
+      "category": "纪实潮流",
+      "pairId": "coastal-resort",
+      "layoutTag": "2张横幅度假大片 · 海浪暖日 · 右下大人物",
+      "description": "地中海蔚蓝 + 暖沙白 + 海浪暖日贴图 + 2 张宽幅横图（16:9 花园 + 4:3 卧室）+ 右下大主角。",
+      "swatches": [
+        "#1D6FA5",
+        "#FAF3E3",
+        "#FF8C5A",
+        "#4CA9DF"
+      ],
+      "tags": [
+        "蔚蓝",
+        "旅居",
+        "度假",
+        "候鸟",
+        "暖沙"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "linear",
+          "colors": [
+            "#FAF3E3",
+            "#FFFDF7"
+          ]
+        },
+        "header": {
+          "style": "pill",
+          "x": 58,
+          "y": 74,
+          "bg": "#1D6FA5",
+          "color": "#FFFFFF",
+          "prefix": "☀ "
+        },
+        "title": {
+          "x": 58,
+          "y": 202,
+          "w": 964,
+          "h": 330,
+          "align": "left",
+          "color": "#134B73",
+          "highlightColor": "#FF7340",
+          "highlightMode": "color"
+        },
+        "photos": [
+          {
+            "idx": 2,
+            "x": 56,
+            "y": 574,
+            "w": 968,
+            "h": 490,
+            "r": 36,
+            "border": 10,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 2,
+            "labelPos": "tl"
+          },
+          {
+            "idx": 0,
+            "x": 56,
+            "y": 1094,
+            "w": 510,
+            "h": 380,
+            "r": 32,
+            "border": 10,
+            "borderColor": "#FFFFFF",
+            "labelIdx": 0,
+            "labelPos": "tl",
+            "tagBg": "#FF8C5A"
+          }
+        ],
+        "extraTags": [
+          {
+            "labelIdx": 1,
+            "x": 56,
+            "y": 1420
+          }
+        ],
+        "tagStyle": {
+          "bg": "#1D6FA5",
+          "color": "#FFFFFF",
+          "radius": 99
+        },
+        "host": {
+          "pos": "right",
+          "top": 830,
+          "maxW": 640,
+          "maxH": 890,
+          "outline": "#FFFFFF"
+        },
+        "identity": {
+          "x": 108,
+          "y": 1516,
+          "bg": "#FF8C5A",
+          "color": "#FFFFFF",
+          "border": "#FFFFFF",
+          "borderW": 5,
+          "radius": 99
+        },
+        "brand": {
+          "x": 48,
+          "y": 1712,
+          "w": 984,
+          "h": 134,
+          "bg": "#1D6FA5",
+          "color": "#FAF3E3",
+          "border": "#FFFFFF",
+          "borderW": 6,
+          "radius": 99
+        },
+        "stickers": [
+          {
+            "key": "waveSun",
+            "x": 858,
+            "y": 42,
+            "w": 180,
+            "h": 160
+          }
+        ]
+      }
+    },
+    {
+      "id": "dopamine-pop",
+      "order": 30,
+      "num": "30",
+      "name": "多巴胺元气撞色",
+      "category": "纪实潮流",
+      "pairId": "dopamine-pop",
+      "layoutTag": "4张横版潮流拼贴 · 闪电 · 右下大人物",
+      "description": "电光克莱因蓝 + 荧光酸橙绿 + 4 张横版潮流实景卡片 + 闪电贴纸 + 右下大主角；年轻撞色超吸睛。",
+      "swatches": [
+        "#1B4BFF",
+        "#C6FF3D",
+        "#FFFFFF",
+        "#0D1A52"
+      ],
+      "tags": [
+        "多巴胺",
+        "撞色",
+        "克莱因蓝",
+        "四图",
+        "年轻"
+      ],
+      "baseline": false,
+      "coverSpec": {
+        "bg": {
+          "type": "linear",
+          "colors": [
+            "#1B4BFF",
+            "#1232C4",
+            "#0D1A52"
+          ]
+        },
+        "header": {
+          "style": "pill",
+          "x": 56,
+          "y": 74,
+          "bg": "#C6FF3D",
+          "color": "#0D1A52",
+          "shadow": "#0D1A52",
+          "prefix": "★ "
+        },
+        "title": {
+          "x": 56,
+          "y": 200,
+          "w": 968,
+          "h": 330,
+          "align": "left",
+          "color": "#FFFFFF",
+          "line2Color": "#C6FF3D",
+          "highlightColor": "#C6FF3D",
+          "highlightMode": "color"
+        },
+        "photos": [
+          {
+            "idx": 0,
+            "x": 50,
+            "y": 574,
+            "w": 466,
+            "h": 316,
+            "r": 28,
+            "border": 8,
+            "borderColor": "#C6FF3D",
+            "rotate": -2,
+            "labelIdx": 0,
+            "labelPos": "bl"
+          },
+          {
+            "idx": 1,
+            "x": 564,
+            "y": 588,
+            "w": 466,
+            "h": 316,
+            "r": 28,
+            "border": 8,
+            "borderColor": "#FFFFFF",
+            "rotate": 2,
+            "labelIdx": 1,
+            "labelPos": "tr",
+            "tagBg": "#C6FF3D",
+            "tagColor": "#0D1A52"
+          },
+          {
+            "idx": 2,
+            "x": 50,
+            "y": 934,
+            "w": 466,
+            "h": 264,
+            "r": 24,
+            "border": 7,
+            "borderColor": "#FFFFFF",
+            "rotate": 1.5,
+            "labelIdx": 2,
+            "labelPos": "tl",
+            "tagBg": "#1B4BFF",
+            "tagColor": "#FFFFFF"
+          },
+          {
+            "idx": 3,
+            "x": 50,
+            "y": 1230,
+            "w": 466,
+            "h": 264,
+            "r": 24,
+            "border": 7,
+            "borderColor": "#C6FF3D",
+            "rotate": -1.5,
+            "labelIdx": -1
+          }
+        ],
+        "tagStyle": {
+          "bg": "#0D1A52",
+          "color": "#C6FF3D",
+          "radius": 99
+        },
+        "host": {
+          "pos": "right",
+          "top": 820,
+          "maxW": 640,
+          "maxH": 890,
+          "outline": "#C6FF3D"
+        },
+        "identity": {
+          "x": 108,
+          "y": 1524,
+          "bg": "#C6FF3D",
+          "color": "#0D1A52",
+          "border": "#0D1A52",
+          "borderW": 6,
+          "radius": 99
+        },
+        "brand": {
+          "x": 48,
+          "y": 1712,
+          "w": 984,
+          "h": 134,
+          "bg": "#FFFFFF",
+          "color": "#0D1A52",
+          "border": "#C6FF3D",
+          "borderW": 7,
+          "radius": 26
+        },
+        "stickers": [
+          {
+            "key": "lightning",
+            "x": 878,
+            "y": 36,
+            "w": 165,
+            "h": 180
+          }
+        ]
+      }
+    }
+  ],
+  "videos": [
+    {
+      "id": "fullscreen-orange",
+      "order": 1,
+      "num": "01",
+      "name": "经典青绿 · 暖橙",
+      "category": "经典基线",
+      "pairId": "teal-adaptive",
+      "layoutTag": "左侧人物 · 手撕暖橙条 + 描边手写字幕",
+      "description": "现版认可基线（青绿斜切拼贴封面 + 全屏手撕暖橙视频），永久作为默认 1 号基线。",
+      "swatches": [
+        "#06757B",
+        "#FF8569",
+        "#FF941F",
+        "#FDD722"
+      ],
+      "tags": [
+        "默认",
+        "基线",
+        "青绿",
+        "暖橙",
+        "通用"
+      ],
+      "baseline": true,
+      "videoSpec": {
+        "engine": "fullscreen-orange",
+        "avatarSide": "left",
+        "headerSummary": "手撕暖橙条 + 描边手写字幕"
+      }
+    },
+    {
+      "id": "viral-4grid",
+      "order": 2,
+      "num": "02",
+      "name": "爆款四宫格",
+      "category": "爆款吸睛",
+      "pairId": "viral-4grid",
+      "layoutTag": "左侧人物 · 黑黄爆款看板 + 深底条幅字幕",
+      "description": "上方 4 张 4:3 横版实景四宫格零裁切看全院，中部黑黄炸裂横幅标题 + 底部正中大半身主角。",
+      "swatches": [
+        "#14161A",
+        "#FFE135",
+        "#FF453A",
+        "#FFFFFF"
+      ],
+      "tags": [
+        "爆款",
+        "抖音",
+        "四宫格",
+        "黑黄",
+        "高点击"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "黑黄爆款看板 + 深底条幅字幕",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "rgba(20,22,26,0.52)",
+          "bottom": "rgba(20,22,26,0.68)"
+        },
+        "header": {
+          "variant": "card-border",
+          "bg": "#14161AE8",
+          "border": "#FFE135",
+          "borderW": 6,
+          "radius": 22,
+          "titleColor": "#FFE135",
+          "brandColor": "#FFFFFF",
+          "prefix": "★ "
+        },
+        "chapter": {
+          "variant": "solid-border",
+          "bg": "#FFE135",
+          "border": "#14161A",
+          "color": "#14161A",
+          "radius": 12
+        },
+        "caption": {
+          "color": "#FFFFFF",
+          "stroke": "#14161A",
+          "strokeW": 10,
+          "focusColor": "#FFE135",
+          "focusRatio": 1.15,
+          "backdrop": "#14161AE0",
+          "backdropRadius": 14,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "coral-pop",
+      "order": 3,
+      "num": "03",
+      "name": "活力漫画风",
+      "category": "爆款吸睛",
+      "pairId": "coral-pop",
+      "layoutTag": "左侧人物 · 斜切红黑漫画旗 + 亮黄块综艺字幕",
+      "description": "高饱和珊瑚红 + 柠檬亮黄 + 粗黑漫画硬投影 + 3 张横版漫画格（零竖裁切）+ 爆发星贴图。",
+      "swatches": [
+        "#FF4D3D",
+        "#FFE033",
+        "#FFFFFF",
+        "#181818"
+      ],
+      "tags": [
+        "抖音",
+        "漫画",
+        "爆款",
+        "珊瑚红",
+        "高反差"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "斜切红黑漫画旗 + 亮黄块综艺字幕",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "",
+          "bottom": ""
+        },
+        "header": {
+          "variant": "comic-flag",
+          "bg": "#FF4D3D",
+          "border": "#181818",
+          "shadow": "#181818",
+          "titleColor": "#FFFFFF",
+          "brandColor": "#FFFFFF",
+          "sticker": "popBurst"
+        },
+        "chapter": {
+          "variant": "comic-shadow",
+          "bg": "#FFE033",
+          "border": "#181818",
+          "color": "#181818",
+          "radius": 14
+        },
+        "caption": {
+          "color": "#FFFFFF",
+          "stroke": "#181818",
+          "strokeW": 16,
+          "focusMode": "pill",
+          "focusBg": "#FFE033",
+          "focusColor": "#181818",
+          "focusBorder": "#181818",
+          "focusRatio": 1.12,
+          "angle": 3
+        }
+      }
+    },
+    {
+      "id": "impact-hero",
+      "order": 4,
+      "num": "04",
+      "name": "震撼单图大特写",
+      "category": "爆款吸睛",
+      "pairId": "impact-hero",
+      "layoutTag": "右侧人物 · 橙焰渐隐横幅 + 右侧人物 + 大黄高亮",
+      "description": "1 张 4:3 全景横图居中铺开 + 居中超大前景主角 + 顶部白黄双色立体标题；抖音探店高点击王炸。",
+      "swatches": [
+        "#FF6B1A",
+        "#FFE347",
+        "#181412",
+        "#FFFFFF"
+      ],
+      "tags": [
+        "抖音",
+        "单图",
+        "居中人物",
+        "大标题",
+        "王炸"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "橙焰渐隐横幅 + 右侧人物 + 大黄高亮",
+        "avatarSide": "right",
+        "scrim": {
+          "top": "rgba(16,12,10,0.52)",
+          "bottom": "rgba(16,12,10,0.72)"
+        },
+        "header": {
+          "variant": "glow-band",
+          "bg": "#FF6B1A",
+          "titleColor": "#FFE347",
+          "brandColor": "#FFFFFF",
+          "stroke": "#181412"
+        },
+        "chapter": {
+          "variant": "solid-border",
+          "bg": "#FF6B1A",
+          "border": "#FFFFFF",
+          "color": "#FFFFFF",
+          "radius": 16
+        },
+        "caption": {
+          "color": "#FFFFFF",
+          "stroke": "#181412",
+          "strokeW": 15,
+          "focusColor": "#FFE347",
+          "focusRatio": 1.2,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "amber-checklist",
+      "order": 5,
+      "num": "05",
+      "name": "避坑红黑榜",
+      "category": "爆款吸睛",
+      "pairId": "amber-checklist",
+      "layoutTag": "左侧人物 · 黑黄警示斜纹报告头 + 深底条幅字幕",
+      "description": "炭黑网格 + 01/02/03 纵向核查清单卡（内置 4:3 横图不裁切）+ 实测对勾徽章贴图 + 右下大主角。",
+      "swatches": [
+        "#181A1E",
+        "#FFD426",
+        "#FF5C35",
+        "#FFFFFF"
+      ],
+      "tags": [
+        "避坑",
+        "干货",
+        "清单",
+        "测评",
+        "黑黄"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "黑黄警示斜纹报告头 + 深底条幅字幕",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "",
+          "bottom": "rgba(24,26,30,0.45)"
+        },
+        "header": {
+          "variant": "hazard-card",
+          "bg": "#181A1E",
+          "border": "#FFD426",
+          "titleColor": "#FFD426",
+          "brandColor": "#FFFFFF",
+          "prefix": "实测报告 · ",
+          "sticker": "checkBadge"
+        },
+        "chapter": {
+          "variant": "solid-border",
+          "bg": "#181A1E",
+          "border": "#FFD426",
+          "color": "#FFD426",
+          "radius": 10,
+          "prefix": "01 · "
+        },
+        "caption": {
+          "color": "#FFFFFF",
+          "stroke": "#181A1E",
+          "strokeW": 8,
+          "focusColor": "#FFD426",
+          "focusRatio": 1.15,
+          "backdrop": "#181A1EE0",
+          "backdropRadius": 14,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "vogue-editorial",
+      "order": 6,
+      "num": "06",
+      "name": "时尚大刊封面",
+      "category": "小红书画报",
+      "pairId": "vogue-editorial",
+      "layoutTag": "右侧人物 · 刊头双细线标题 + 右侧人物 + 电影白字",
+      "description": "刊头式大标题 + 1 张 4:3 杂志实景大画框（零裁切）+ 右下大半身主角 + 底部磨砂杂志院名卡。",
+      "swatches": [
+        "#1B2420",
+        "#FFFFFF",
+        "#DCEABC",
+        "#D8B77C"
+      ],
+      "tags": [
+        "小红书",
+        "杂志",
+        "大刊",
+        "单图",
+        "高级"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "刊头双细线标题 + 右侧人物 + 电影白字",
+        "avatarSide": "right",
+        "scrim": {
+          "top": "rgba(16,22,20,0.52)",
+          "bottom": "rgba(16,22,20,0.72)"
+        },
+        "header": {
+          "variant": "editorial-lines",
+          "lineColor": "#FFFFFFBF",
+          "titleColor": "#DCEABC",
+          "brandColor": "#FFFFFF"
+        },
+        "chapter": {
+          "variant": "solid-pill",
+          "bg": "#FFFFFFE6",
+          "color": "#16241F",
+          "radius": 99
+        },
+        "caption": {
+          "color": "#FFFFFF",
+          "stroke": "#141C19",
+          "strokeW": 8,
+          "focusColor": "#DCEABC",
+          "focusRatio": 1.16,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "pine-editorial",
+      "order": 7,
+      "num": "07",
+      "name": "松青画报",
+      "category": "小红书画报",
+      "pairId": "pine-editorial",
+      "layoutTag": "左侧人物 · 深松青磨砂竖条卡 + 浅叶绿重点词",
+      "description": "工作台同款深松青 + 浅叶绿 + 水彩松枝贴图；3 张标准横版实景完整呈现 + 右下大主角。",
+      "swatches": [
+        "#163D37",
+        "#DCEABC",
+        "#F5F7F1",
+        "#285E4C"
+      ],
+      "tags": [
+        "松青",
+        "专业",
+        "测评",
+        "画报",
+        "小红书"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "深松青磨砂竖条卡 + 浅叶绿重点词",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "rgba(16,49,44,0.34)",
+          "bottom": "rgba(16,49,44,0.58)"
+        },
+        "header": {
+          "variant": "glass-left-bar",
+          "bg": "#163D37E0",
+          "border": "#DCEABC88",
+          "bar": "#DCEABC",
+          "titleColor": "#DCEABC",
+          "brandColor": "#FFFFFF",
+          "sticker": "pineBranch"
+        },
+        "chapter": {
+          "variant": "dot-pill",
+          "bg": "#10312CE0",
+          "border": "#DCEABC",
+          "dot": "#DCEABC",
+          "color": "#FFFFFF",
+          "radius": 99
+        },
+        "caption": {
+          "color": "#FFFFFF",
+          "stroke": "#10312C",
+          "strokeW": 12,
+          "focusColor": "#DCEABC",
+          "focusRatio": 1.18,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "minimal-ceramic",
+      "order": 8,
+      "num": "08",
+      "name": "瑞士留白画廊",
+      "category": "小红书画报",
+      "pairId": "minimal-ceramic",
+      "layoutTag": "左侧人物 · 左上极简轻白瓷标（90% 无遮挡）",
+      "description": "美术馆白瓷大留白 + 3 张标准 4:3 横版画廊框 + 浮雕圆章 + 右下大主角；视频几乎零遮挡突出实拍。",
+      "swatches": [
+        "#FAF9F6",
+        "#1E2022",
+        "#3D6B58",
+        "#D9D5CD"
+      ],
+      "tags": [
+        "极简",
+        "白瓷",
+        "高级",
+        "留白",
+        "纪实"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "左上极简轻白瓷标（90% 无遮挡）",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "rgba(20,22,24,0.34)",
+          "bottom": "rgba(20,22,24,0.68)"
+        },
+        "header": {
+          "variant": "minimal-corner",
+          "bg": "#FFFFFFE6",
+          "titleColor": "#3D6B58",
+          "brandColor": "#1E2022",
+          "sticker": "ceramicSeal"
+        },
+        "chapter": {
+          "variant": "left-bar",
+          "bg": "#FFFFFFDC",
+          "bar": "#3D6B58",
+          "color": "#1E2022",
+          "radius": 10
+        },
+        "caption": {
+          "color": "#FFFFFF",
+          "stroke": "#1E2022",
+          "strokeW": 6,
+          "focusColor": "#B7E4C7",
+          "focusRatio": 1.14,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "split-contrast",
+      "order": 9,
+      "num": "09",
+      "name": "上下双拼对比",
+      "category": "小红书画报",
+      "pairId": "split-contrast",
+      "layoutTag": "右侧人物 · 双色分割实探横牌 + 右侧人物",
+      "description": "2 张全宽 16:9 横版实景上下对比（室内 vs 园林），中央斜带大标题 + 右下大半身主角。",
+      "swatches": [
+        "#1F4E5F",
+        "#F9A03F",
+        "#FFFDF8",
+        "#E9F3F5"
+      ],
+      "tags": [
+        "对比",
+        "双拼",
+        "小红书",
+        "测评",
+        "横图"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "双色分割实探横牌 + 右侧人物",
+        "avatarSide": "right",
+        "scrim": {
+          "top": "rgba(20,50,62,0.42)",
+          "bottom": "rgba(20,50,62,0.68)"
+        },
+        "header": {
+          "variant": "split-badge",
+          "badgeText": "实探",
+          "badgeBg": "#F9A03F",
+          "bg": "#1F4E5FEB",
+          "border": "#FFFDF8",
+          "titleColor": "#FFE2B5",
+          "brandColor": "#FFFFFF"
+        },
+        "chapter": {
+          "variant": "solid-border",
+          "bg": "#1F4E5F",
+          "border": "#F9A03F",
+          "color": "#FFFDF8",
+          "radius": 99
+        },
+        "caption": {
+          "color": "#FFFFFF",
+          "stroke": "#153947",
+          "strokeW": 12,
+          "focusColor": "#FFB95A",
+          "focusRatio": 1.18,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "mocha-arch",
+      "order": 10,
+      "num": "10",
+      "name": "杂志拱门画廊",
+      "category": "小红书画报",
+      "pairId": "mocha-arch",
+      "layoutTag": "左侧人物 · 奶咖金线卡片 + 香槟金重点字幕",
+      "description": "亚麻拿铁 + 焦糖深棕 + 宽幅拱形画廊横窗（零竖裁切）+ 金丝带结贴图 + 右下大主角。",
+      "swatches": [
+        "#EFE6DA",
+        "#8C5E3C",
+        "#2C1C13",
+        "#D8A86E"
+      ],
+      "tags": [
+        "奶咖",
+        "轻奢",
+        "拱门",
+        "知性",
+        "画廊"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "奶咖金线卡片 + 香槟金重点字幕",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "rgba(44,28,19,0.34)",
+          "bottom": "rgba(44,28,19,0.58)"
+        },
+        "header": {
+          "variant": "card-border",
+          "bg": "#F5EFE6EB",
+          "border": "#B68754",
+          "borderW": 3,
+          "radius": 20,
+          "titleColor": "#8C5E3C",
+          "brandColor": "#2C1C13",
+          "sticker": "mochaRibbon"
+        },
+        "chapter": {
+          "variant": "solid-border",
+          "bg": "#2C1C13E0",
+          "border": "#D8A86E",
+          "color": "#F5EFE6",
+          "radius": 12
+        },
+        "caption": {
+          "color": "#FFFDF9",
+          "stroke": "#2C1C13",
+          "strokeW": 12,
+          "focusColor": "#F0C987",
+          "focusRatio": 1.18,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "warm-sunshine",
+      "order": 11,
+      "num": "11",
+      "name": "暖阳居家",
+      "category": "温馨手账",
+      "pairId": "warm-sunshine",
+      "layoutTag": "右侧人物 · 暖阳双层圆角牌 + 右侧人物 + 蜜橘高亮块",
+      "description": "奶杏暖白 + 蜜橘琥珀 + 暖阳云朵贴图；大主角人物改站左下角反位构图，右侧错落展现 3 张标准横图。",
+      "swatches": [
+        "#FFF5E6",
+        "#F48C2E",
+        "#5A341C",
+        "#FFE47A"
+      ],
+      "tags": [
+        "温馨",
+        "暖阳",
+        "居家",
+        "亲和",
+        "左下人物"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "暖阳双层圆角牌 + 右侧人物 + 蜜橘高亮块",
+        "avatarSide": "right",
+        "scrim": {
+          "top": "rgba(90,52,28,0.26)",
+          "bottom": "rgba(62,34,14,0.44)"
+        },
+        "header": {
+          "variant": "double-pill",
+          "topBg": "#FFF7EA",
+          "topBorder": "#F48C2E",
+          "topColor": "#5A341C",
+          "botBg": "#F48C2E",
+          "botBorder": "#FFF7EA",
+          "botColor": "#FFFDF8",
+          "sticker": "sun"
+        },
+        "chapter": {
+          "variant": "dot-pill",
+          "bg": "#FFF7EA",
+          "border": "#F48C2E",
+          "dot": "#F48C2E",
+          "color": "#5A341C",
+          "radius": 99
+        },
+        "caption": {
+          "color": "#FFFDF7",
+          "stroke": "#5A341C",
+          "strokeW": 14,
+          "focusMode": "pill",
+          "focusBg": "#F48C2E",
+          "focusColor": "#FFFDF7",
+          "focusRatio": 1.12,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "polaroid-journal",
+      "order": 12,
+      "num": "12",
+      "name": "温情拍立得手账",
+      "category": "温馨手账",
+      "pairId": "polaroid-journal",
+      "layoutTag": "左侧人物 · 和纸胶带手账纸条 + 陶土红高亮块字幕",
+      "description": "复古牛皮纸点底 + 2 张大横版拍立得实景（4:3 零裁切）+ 和纸胶带贴纸 + 右下大主角人物。",
+      "swatches": [
+        "#F4ECE0",
+        "#D96B43",
+        "#4A3428",
+        "#8EAD78"
+      ],
+      "tags": [
+        "拍立得",
+        "手账",
+        "胶带",
+        "复古",
+        "小红书"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "和纸胶带手账纸条 + 陶土红高亮块字幕",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "rgba(60,40,26,0.28)",
+          "bottom": "rgba(48,30,18,0.52)"
+        },
+        "header": {
+          "variant": "taped-card",
+          "bg": "#FFFDF8",
+          "border": "#4A3428",
+          "shadow": "#D96B43",
+          "titleColor": "#D96B43",
+          "brandColor": "#4A3428",
+          "tapeLeft": "washiTapeGreen",
+          "tapeRight": "washiTape"
+        },
+        "chapter": {
+          "variant": "comic-shadow",
+          "bg": "#FFFDF8",
+          "border": "#4A3428",
+          "shadow": "#8EAD78",
+          "color": "#4A3428",
+          "radius": 10
+        },
+        "caption": {
+          "color": "#FFFDF8",
+          "stroke": "#4A3428",
+          "strokeW": 14,
+          "focusMode": "pill",
+          "focusBg": "#D96B43",
+          "focusColor": "#FFFDF8",
+          "focusRatio": 1.12,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "garden-fresh",
+      "order": 13,
+      "num": "13",
+      "name": "森系小雏菊",
+      "category": "温馨手账",
+      "pairId": "garden-fresh",
+      "layoutTag": "左侧人物 · 清爽定位绿叶下划线 + 柠檬黄高亮",
+      "description": "春芽嫩绿 + 鼠尾草绿 + 水彩小雏菊贴图；上方宽幅花园主图 + 左下双 16:9 横条 + 右下大主角。",
+      "swatches": [
+        "#3F7252",
+        "#E8F4E3",
+        "#FFFDF7",
+        "#F4A261"
+      ],
+      "tags": [
+        "森系",
+        "花园",
+        "小雏菊",
+        "旅居",
+        "清新"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "清爽定位绿叶下划线 + 柠檬黄高亮",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "rgba(24,52,35,0.42)",
+          "bottom": "rgba(20,46,30,0.58)"
+        },
+        "header": {
+          "variant": "vlog-underline",
+          "titleColor": "#E8F4E3",
+          "brandColor": "#FFFDF7",
+          "stroke": "#234731",
+          "lineColor": "#A7D796",
+          "prefix": "◆ ",
+          "sticker": "daisyCluster"
+        },
+        "chapter": {
+          "variant": "solid-border",
+          "bg": "#E8F4E3",
+          "border": "#3F7252",
+          "color": "#234731",
+          "radius": 99,
+          "prefix": "◆ "
+        },
+        "caption": {
+          "color": "#FFFDF7",
+          "stroke": "#234731",
+          "strokeW": 14,
+          "focusColor": "#FDE068",
+          "focusRatio": 1.18,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "creamy-latte",
+      "order": 14,
+      "num": "14",
+      "name": "奶茶甜暖风",
+      "category": "温馨手账",
+      "pairId": "creamy-latte",
+      "layoutTag": "左侧人物 · 蜜桃奶油圆角牌 + 蜜桃胶囊高亮字幕",
+      "description": "奶油米黄 + 蜜桃粉橘 + 顶部 16:9 大圆角横图 + 软萌云朵贴纸 + 左下大主角与右侧卖点卡。",
+      "swatches": [
+        "#FFF7EF",
+        "#F3947A",
+        "#5E3A2F",
+        "#FDE2D2"
+      ],
+      "tags": [
+        "奶茶",
+        "甜暖",
+        "蜜桃",
+        "单图",
+        "左下人物"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "蜜桃奶油圆角牌 + 蜜桃胶囊高亮字幕",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "rgba(94,58,47,0.28)",
+          "bottom": "rgba(94,58,47,0.52)"
+        },
+        "header": {
+          "variant": "card-border",
+          "bg": "#FFF7EF",
+          "border": "#F3947A",
+          "borderW": 6,
+          "radius": 42,
+          "titleColor": "#E0765B",
+          "brandColor": "#5E3A2F",
+          "prefix": "◇ ",
+          "sticker": "peachCloud"
+        },
+        "chapter": {
+          "variant": "solid-border",
+          "bg": "#F3947A",
+          "border": "#FFF7EF",
+          "color": "#FFFFFF",
+          "radius": 99
+        },
+        "caption": {
+          "color": "#FFFDFB",
+          "stroke": "#5E3A2F",
+          "strokeW": 14,
+          "focusMode": "pill",
+          "focusBg": "#F3947A",
+          "focusColor": "#FFFFFF",
+          "focusRatio": 1.12,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "sticky-note",
+      "order": 15,
+      "num": "15",
+      "name": "阳光便签墙",
+      "category": "温馨手账",
+      "pairId": "sticky-note",
+      "layoutTag": "左侧人物 · 手账硬投影图钉卡片 + 鹅黄框重点字幕",
+      "description": "浅鹅黄格子手账底 + 3 张图钉横版彩色便利贴（4:3 完整画面）+ 右下大主角；轻快活泼。",
+      "swatches": [
+        "#FFFBE6",
+        "#3D2C20",
+        "#E95747",
+        "#4B9CE2"
+      ],
+      "tags": [
+        "便签",
+        "手账",
+        "格子",
+        "图钉",
+        "活泼"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "手账硬投影图钉卡片 + 鹅黄框重点字幕",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "",
+          "bottom": ""
+        },
+        "header": {
+          "variant": "comic-card",
+          "bg": "#FFFBE6",
+          "border": "#3D2C20",
+          "shadow": "#4B9CE2",
+          "titleColor": "#E95747",
+          "brandColor": "#3D2C20",
+          "prefix": "◆ ",
+          "sticker": "pushPin"
+        },
+        "chapter": {
+          "variant": "comic-shadow",
+          "bg": "#FFE89E",
+          "border": "#3D2C20",
+          "shadow": "#3D2C20",
+          "color": "#3D2C20",
+          "radius": 14,
+          "prefix": "# "
+        },
+        "caption": {
+          "color": "#FFFBE6",
+          "stroke": "#3D2C20",
+          "strokeW": 14,
+          "focusMode": "pill",
+          "focusBg": "#FFE89E",
+          "focusColor": "#3D2C20",
+          "focusBorder": "#3D2C20",
+          "focusRatio": 1.12,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "oriental-jade",
+      "order": 16,
+      "num": "16",
+      "name": "雅韵新中式",
+      "category": "新中式信赖",
+      "pairId": "oriental-jade",
+      "layoutTag": "左侧人物 · 宣纸细金框朱砂印章 + 暖金重点词",
+      "description": "宣纸米底 + 黛青墨绿 + 朱砂印章与水墨竹影贴图 + 3 张 4:3 横版画框 + 右下大主角。",
+      "swatches": [
+        "#F5EFE2",
+        "#1E433E",
+        "#C23A2B",
+        "#C89B54"
+      ],
+      "tags": [
+        "新中式",
+        "国风",
+        "印章",
+        "长辈",
+        "视频号"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "宣纸细金框朱砂印章 + 暖金重点词",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "rgba(20,40,36,0.36)",
+          "bottom": "rgba(18,38,34,0.62)"
+        },
+        "header": {
+          "variant": "icon-card",
+          "bg": "#F5EFE2ED",
+          "border": "#C89B54",
+          "borderW": 5,
+          "radius": 8,
+          "titleColor": "#C23A2B",
+          "brandColor": "#1E433E",
+          "icon": "chineseSeal"
+        },
+        "chapter": {
+          "variant": "left-bar-border",
+          "bg": "#F5EFE2",
+          "border": "#C89B54",
+          "bar": "#C23A2B",
+          "color": "#1E433E",
+          "radius": 6
+        },
+        "caption": {
+          "color": "#FAF5EA",
+          "stroke": "#1E433E",
+          "strokeW": 13,
+          "focusColor": "#F3CF7A",
+          "focusRatio": 1.18,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "festive-warmth",
+      "order": 17,
+      "num": "17",
+      "name": "暖红喜庆福韵",
+      "category": "新中式信赖",
+      "pairId": "festive-warmth",
+      "layoutTag": "左侧人物 · 故宫红金卷轴牌 + 灯笼角饰 + 亮金高亮",
+      "description": "故宫暖红 + 暖金边 + 红金双灯笼 + 2 张 4:3 横版金框大图 + 居中大主角；热闹喜庆、长辈一眼停留。",
+      "swatches": [
+        "#B8282E",
+        "#F8CE62",
+        "#FFF8EC",
+        "#6E1216"
+      ],
+      "tags": [
+        "暖红",
+        "喜庆",
+        "灯笼",
+        "长辈",
+        "居中人物"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "故宫红金卷轴牌 + 灯笼角饰 + 亮金高亮",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "rgba(95,12,16,0.34)",
+          "bottom": "rgba(80,10,14,0.55)"
+        },
+        "header": {
+          "variant": "card-border",
+          "bg": "#B3242AE8",
+          "border": "#F8CE62",
+          "borderW": 5,
+          "radius": 24,
+          "titleColor": "#F8CE62",
+          "brandColor": "#FFF8EC",
+          "sticker": "lantern"
+        },
+        "chapter": {
+          "variant": "solid-border",
+          "bg": "#F8CE62",
+          "border": "#9E1C22",
+          "color": "#7A1217",
+          "radius": 16
+        },
+        "caption": {
+          "color": "#FFFDF8",
+          "stroke": "#7A1217",
+          "strokeW": 14,
+          "focusColor": "#F8CE62",
+          "focusRatio": 1.18,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "porcelain-blue",
+      "order": 18,
+      "num": "18",
+      "name": "青花素瓷",
+      "category": "新中式信赖",
+      "pairId": "porcelain-blue",
+      "layoutTag": "右侧人物 · 青花素瓷蓝框头 + 右侧人物 + 暖金高亮",
+      "description": "素瓷白底 + 青花靛蓝缠枝莲贴图 + 3 张标准横版青花画框（告别竖裁切）+ 右下大主角。",
+      "swatches": [
+        "#FAFBFD",
+        "#1E4D8C",
+        "#C9A25B",
+        "#DCE7F5"
+      ],
+      "tags": [
+        "青花",
+        "素瓷",
+        "国风",
+        "靛蓝",
+        "雅致"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "青花素瓷蓝框头 + 右侧人物 + 暖金高亮",
+        "avatarSide": "right",
+        "scrim": {
+          "top": "rgba(20,53,99,0.4)",
+          "bottom": "rgba(20,53,99,0.62)"
+        },
+        "header": {
+          "variant": "icon-card",
+          "bg": "#FAFBFDF0",
+          "border": "#1E4D8C",
+          "borderW": 5,
+          "radius": 18,
+          "titleColor": "#C9A25B",
+          "brandColor": "#143563",
+          "icon": "porcelainFlower"
+        },
+        "chapter": {
+          "variant": "solid-border",
+          "bg": "#FAFBFD",
+          "border": "#1E4D8C",
+          "color": "#1E4D8C",
+          "radius": 10
+        },
+        "caption": {
+          "color": "#FFFFFF",
+          "stroke": "#143563",
+          "strokeW": 14,
+          "focusColor": "#F5D48A",
+          "focusRatio": 1.18,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "misty-moongate",
+      "order": 19,
+      "num": "19",
+      "name": "江南月洞门",
+      "category": "新中式信赖",
+      "pairId": "misty-moongate",
+      "layoutTag": "左侧人物 · 月洞门金边胶囊牌 + 宣纸墨青字幕",
+      "description": "淡青烟雨宣纸 + 1 张巨幅 1:1 圆形月洞门实景窗（对横图极友好）+ 左下大主角；东方诗意。",
+      "swatches": [
+        "#EBF0EC",
+        "#274C47",
+        "#A94132",
+        "#BFA065"
+      ],
+      "tags": [
+        "月洞门",
+        "江南",
+        "圆窗",
+        "国风",
+        "单图"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "月洞门金边胶囊牌 + 宣纸墨青字幕",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "rgba(29,56,52,0.44)",
+          "bottom": "rgba(20,42,38,0.68)"
+        },
+        "header": {
+          "variant": "card-border",
+          "bg": "#F2F5F1EB",
+          "border": "#BFA065",
+          "borderW": 4,
+          "radius": 99,
+          "titleColor": "#A94132",
+          "brandColor": "#1D3834"
+        },
+        "chapter": {
+          "variant": "solid-border",
+          "bg": "#1D3834E0",
+          "border": "#BFA065",
+          "color": "#F2F5F1",
+          "radius": 99
+        },
+        "caption": {
+          "color": "#FAF9F4",
+          "stroke": "#1D3834",
+          "strokeW": 13,
+          "focusColor": "#EED08B",
+          "focusRatio": 1.18,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "song-gold",
+      "order": 20,
+      "num": "20",
+      "name": "鎏金宋韵画卷",
+      "category": "新中式信赖",
+      "pairId": "song-gold",
+      "layoutTag": "左侧人物 · 宋韵茶褐金框匾额 + 温润鎏金字幕",
+      "description": "温润茶褐绢布底 + 上部 2 张横版卷轴实景（4:3 完整保留）+ 中央鎏金大字 + 居中大半身主角。",
+      "swatches": [
+        "#3A2D24",
+        "#E5C384",
+        "#F8F1E3",
+        "#A8382B"
+      ],
+      "tags": [
+        "宋韵",
+        "鎏金",
+        "画卷",
+        "双图",
+        "居中人物"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "宋韵茶褐金框匾额 + 温润鎏金字幕",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "rgba(36,28,22,0.56)",
+          "bottom": "rgba(36,28,22,0.72)"
+        },
+        "header": {
+          "variant": "card-border",
+          "bg": "#2C221BE0",
+          "border": "#E5C384",
+          "borderW": 4,
+          "radius": 8,
+          "titleColor": "#E5C384",
+          "brandColor": "#F8F1E3",
+          "prefix": "◆ ",
+          "suffix": " ◆"
+        },
+        "chapter": {
+          "variant": "solid-border",
+          "bg": "#2C221BE0",
+          "border": "#E5C384",
+          "color": "#E5C384",
+          "radius": 6
+        },
+        "caption": {
+          "color": "#F8F1E3",
+          "stroke": "#2C221B",
+          "strokeW": 13,
+          "focusColor": "#E5C384",
+          "focusRatio": 1.18,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "cinema-gold",
+      "order": 21,
+      "num": "21",
+      "name": "黑金臻选大片",
+      "category": "高端专业",
+      "pairId": "cinema-gold",
+      "layoutTag": "左侧人物 · 黑金磨砂双金线 + 星芒 + 电影香槟字幕",
+      "description": "黑曜金底 + 电影宽银幕 16:9 横主图 + 左下 2 张横浮窗 + 香槟流金星芒角饰 + 右下大主角。",
+      "swatches": [
+        "#141518",
+        "#E5C07B",
+        "#FAF8F5",
+        "#8E6F3E"
+      ],
+      "tags": [
+        "黑金",
+        "高端",
+        "大片",
+        "康养",
+        "院长"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "黑金磨砂双金线 + 星芒 + 电影香槟字幕",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "rgba(12,13,16,0.62)",
+          "bottom": "rgba(12,13,16,0.78)"
+        },
+        "header": {
+          "variant": "top-bottom-bar",
+          "bg": "#121317CC",
+          "border": "#E5C07B",
+          "titleColor": "#E5C07B",
+          "brandColor": "#FAF8F5",
+          "sticker": "goldSparkle"
+        },
+        "chapter": {
+          "variant": "solid-border",
+          "bg": "#121317D4",
+          "border": "#E5C07B",
+          "color": "#E5C07B",
+          "radius": 6
+        },
+        "caption": {
+          "color": "#FAF8F5",
+          "stroke": "#141518",
+          "strokeW": 10,
+          "focusColor": "#E5C07B",
+          "focusRatio": 1.18,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "sky-care",
+      "order": 22,
+      "num": "22",
+      "name": "晴空医养守护",
+      "category": "高端专业",
+      "pairId": "sky-care",
+      "layoutTag": "左侧人物 · 冰蓝守护盾牌横卡 + 深蓝胶囊章节",
+      "description": "医疗天蓝 + 冰蓝白 + 3D 守护盾牌贴图 + 3 张宽幅横图宣传册版式 + 右下大主角；洁净安心。",
+      "swatches": [
+        "#1967A3",
+        "#EDF6FC",
+        "#38B2AC",
+        "#F6C945"
+      ],
+      "tags": [
+        "医养",
+        "失智",
+        "守护",
+        "晴空蓝",
+        "专业"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "冰蓝守护盾牌横卡 + 深蓝胶囊章节",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "rgba(16,64,106,0.36)",
+          "bottom": "rgba(14,52,88,0.56)"
+        },
+        "header": {
+          "variant": "icon-card",
+          "bg": "#EDF6FCEB",
+          "border": "#1967A3",
+          "borderW": 4,
+          "radius": 24,
+          "titleColor": "#38B2AC",
+          "brandColor": "#144D7A",
+          "icon": "careShield"
+        },
+        "chapter": {
+          "variant": "dot-pill",
+          "bg": "#1967A3",
+          "border": "#EDF6FC",
+          "dot": "#38B2AC",
+          "color": "#FFFFFF",
+          "radius": 99
+        },
+        "caption": {
+          "color": "#FFFFFF",
+          "stroke": "#11436C",
+          "strokeW": 14,
+          "focusColor": "#F6C945",
+          "focusRatio": 1.18,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "blueprint-tech",
+      "order": 23,
+      "num": "23",
+      "name": "建筑蓝图极客",
+      "category": "高端专业",
+      "pairId": "blueprint-tech",
+      "layoutTag": "右侧人物 · 建筑蓝图实测 HUD + 右侧人物 + 科技青高亮",
+      "description": "深普鲁士蓝图网格 + 罗盘标尺贴图 + 3 张标准 4:3 横版实测图（彻底取消竖裁切）+ 右下大主角。",
+      "swatches": [
+        "#102542",
+        "#5CE1E6",
+        "#FFFFFF",
+        "#F8D448"
+      ],
+      "tags": [
+        "蓝图",
+        "硬核",
+        "户型",
+        "适老设施",
+        "科技蓝"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "建筑蓝图实测 HUD + 右侧人物 + 科技青高亮",
+        "avatarSide": "right",
+        "scrim": {
+          "top": "rgba(16,37,66,0.52)",
+          "bottom": "rgba(16,37,66,0.72)"
+        },
+        "header": {
+          "variant": "card-border",
+          "bg": "#102542DC",
+          "border": "#5CE1E6",
+          "borderW": 3,
+          "radius": 6,
+          "titleColor": "#5CE1E6",
+          "brandColor": "#FFFFFF",
+          "prefix": "◇ ",
+          "sticker": "blueprintCompass"
+        },
+        "chapter": {
+          "variant": "solid-border",
+          "bg": "#102542E6",
+          "border": "#5CE1E6",
+          "color": "#5CE1E6",
+          "radius": 6,
+          "prefix": "ZONE · "
+        },
+        "caption": {
+          "color": "#FFFFFF",
+          "stroke": "#102542",
+          "strokeW": 13,
+          "focusColor": "#5CE1E6",
+          "focusRatio": 1.18,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "emerald-luxury",
+      "order": 24,
+      "num": "24",
+      "name": "翡翠奢华私邸",
+      "category": "高端专业",
+      "pairId": "emerald-luxury",
+      "layoutTag": "左侧人物 · 翡翠玫瑰金菱框 + 珍珠玫瑰金字幕",
+      "description": "深祖母绿丝绒 + 玫瑰金菱形星标 + 宽幅 16:9 横主图 + 右侧横副图 + 左下大主角立绘。",
+      "swatches": [
+        "#0B3B2E",
+        "#E4B395",
+        "#FAF6F0",
+        "#165947"
+      ],
+      "tags": [
+        "翡翠绿",
+        "玫瑰金",
+        "高端",
+        "私邸",
+        "左下人物"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "翡翠玫瑰金菱框 + 珍珠玫瑰金字幕",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "rgba(6,37,29,0.52)",
+          "bottom": "rgba(6,37,29,0.74)"
+        },
+        "header": {
+          "variant": "card-border",
+          "bg": "#0B3B2EE0",
+          "border": "#E4B395",
+          "borderW": 4,
+          "radius": 20,
+          "titleColor": "#E4B395",
+          "brandColor": "#FAF6F0",
+          "prefix": "◆ ",
+          "suffix": " ◆",
+          "sticker": "roseDiamond"
+        },
+        "chapter": {
+          "variant": "solid-border",
+          "bg": "#0B3B2EE6",
+          "border": "#E4B395",
+          "color": "#E4B395",
+          "radius": 99
+        },
+        "caption": {
+          "color": "#FAF6F0",
+          "stroke": "#06251D",
+          "strokeW": 13,
+          "focusColor": "#E4B395",
+          "focusRatio": 1.18,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "timber-warmth",
+      "order": 25,
+      "num": "25",
+      "name": "暖棕实木康养",
+      "category": "高端专业",
+      "pairId": "timber-warmth",
+      "layoutTag": "右侧人物 · 胡桃木麦金横牌 + 右侧人物 + 麦金高亮",
+      "description": "胡桃木深棕 + 暖麦金 + 3 张标准横版实景（顶部实木居室主图 + 右侧双横图）+ 左下大主角。",
+      "swatches": [
+        "#362419",
+        "#E8C17C",
+        "#F7F1E6",
+        "#8E5F3D"
+      ],
+      "tags": [
+        "实木",
+        "暖棕",
+        "麦金",
+        "沉稳",
+        "左下人物"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "胡桃木麦金横牌 + 右侧人物 + 麦金高亮",
+        "avatarSide": "right",
+        "scrim": {
+          "top": "rgba(46,30,20,0.44)",
+          "bottom": "rgba(46,30,20,0.68)"
+        },
+        "header": {
+          "variant": "bottom-bar-card",
+          "bg": "#362419E6",
+          "bar": "#E8C17C",
+          "titleColor": "#E8C17C",
+          "brandColor": "#F7F1E6"
+        },
+        "chapter": {
+          "variant": "solid-border",
+          "bg": "#362419",
+          "border": "#E8C17C",
+          "color": "#E8C17C",
+          "radius": 12
+        },
+        "caption": {
+          "color": "#F7F1E6",
+          "stroke": "#2E1E14",
+          "strokeW": 13,
+          "focusColor": "#E8C17C",
+          "focusRatio": 1.18,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "retro-film",
+      "order": 26,
+      "num": "26",
+      "name": "35mm 复古胶片",
+      "category": "纪实潮流",
+      "pairId": "retro-film",
+      "layoutTag": "左侧人物 · 35mm 电影取景框 HUD + 琥珀金字幕",
+      "description": "暗房暖黑 + 35mm 胶片齿孔 + REC 红点 + 3 张标准 3:2 胶片横幅 + 左下大主角；故事感拉满。",
+      "swatches": [
+        "#1B1917",
+        "#E8A64A",
+        "#F4ECD8",
+        "#D94E41"
+      ],
+      "tags": [
+        "胶片",
+        "35mm",
+        "纪实",
+        "电影感",
+        "左下人物"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "35mm 电影取景框 HUD + 琥珀金字幕",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "rgba(16,14,12,0.72)",
+          "bottom": "rgba(16,14,12,0.78)"
+        },
+        "header": {
+          "variant": "viewfinder",
+          "bg": "#181613BA",
+          "cornerColor": "#E8A64A",
+          "dotColor": "#D94E41",
+          "titleColor": "#E8A64A",
+          "brandColor": "#F4ECD8",
+          "prefix": "REC · ",
+          "rightTag": "35MM"
+        },
+        "chapter": {
+          "variant": "solid-border",
+          "bg": "#1B1917DC",
+          "border": "#E8A64A",
+          "color": "#E8A64A",
+          "radius": 4,
+          "prefix": "[ ",
+          "suffix": " ]"
+        },
+        "caption": {
+          "color": "#F4ECD8",
+          "stroke": "#1B1917",
+          "strokeW": 12,
+          "focusColor": "#E8A64A",
+          "focusRatio": 1.18,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "wisteria-grace",
+      "order": 27,
+      "num": "27",
+      "name": "紫藤温柔治愈",
+      "category": "纪实潮流",
+      "pairId": "wisteria-grace",
+      "layoutTag": "左侧人物 · 薰衣草磨砂紫藤牌 + 柔鹅黄高亮",
+      "description": "薰衣草浅紫渐变 + 水彩紫藤花串贴图 + 2 张 4:3 横版错落圆角大图 + 居中大主角；柔和治愈。",
+      "swatches": [
+        "#684F94",
+        "#F2ECFA",
+        "#FFFFFF",
+        "#F7D060"
+      ],
+      "tags": [
+        "紫藤",
+        "薰衣草",
+        "温柔",
+        "治愈",
+        "居中人物"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "薰衣草磨砂紫藤牌 + 柔鹅黄高亮",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "rgba(62,43,97,0.34)",
+          "bottom": "rgba(48,32,78,0.58)"
+        },
+        "header": {
+          "variant": "card-border",
+          "bg": "#F2ECFAEB",
+          "border": "#7B5FB0",
+          "borderW": 4,
+          "radius": 28,
+          "titleColor": "#7B5FB0",
+          "brandColor": "#3E2B61",
+          "prefix": "◆ ",
+          "sticker": "wisteria"
+        },
+        "chapter": {
+          "variant": "solid-border",
+          "bg": "#684F94",
+          "border": "#F2ECFA",
+          "color": "#FFFFFF",
+          "radius": 99
+        },
+        "caption": {
+          "color": "#FFFFFF",
+          "stroke": "#3E2B61",
+          "strokeW": 13,
+          "focusColor": "#F7D060",
+          "focusRatio": 1.18,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "live-monitor",
+      "order": 28,
+      "num": "28",
+      "name": "实探取景直播感",
+      "category": "纪实潮流",
+      "pairId": "live-monitor",
+      "layoutTag": "左侧人物 · 实时探访红点胶囊 + 薄荷绿高亮块",
+      "description": "薄荷浅绿底 + 拟真横屏平板实拍取景框（16:9 零裁切）+ 「LIVE 实探」徽标 + 右下大主角。",
+      "swatches": [
+        "#E5F6EE",
+        "#0D5C46",
+        "#FF3B5C",
+        "#162420"
+      ],
+      "tags": [
+        "实探",
+        "直播感",
+        "薄荷绿",
+        "横屏",
+        "原生"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "实时探访红点胶囊 + 薄荷绿高亮块",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "rgba(13,92,70,0.34)",
+          "bottom": "rgba(16,36,32,0.62)"
+        },
+        "header": {
+          "variant": "live-pill",
+          "bg": "#162420E0",
+          "border": "#59D2A2",
+          "dotColor": "#FF3B5C",
+          "titleColor": "#59D2A2",
+          "brandColor": "#FFFFFF"
+        },
+        "chapter": {
+          "variant": "solid-border",
+          "bg": "#0D5C46",
+          "border": "#59D2A2",
+          "color": "#FFFFFF",
+          "radius": 99,
+          "prefix": "● "
+        },
+        "caption": {
+          "color": "#FFFFFF",
+          "stroke": "#162420",
+          "strokeW": 13,
+          "focusMode": "pill",
+          "focusBg": "#59D2A2",
+          "focusColor": "#162420",
+          "focusRatio": 1.12,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "coastal-resort",
+      "order": 29,
+      "num": "29",
+      "name": "蔚蓝海岸旅居",
+      "category": "纪实潮流",
+      "pairId": "coastal-resort",
+      "layoutTag": "右侧人物 · 暖沙蔚蓝度假牌 + 右侧人物 + 阳光黄高亮",
+      "description": "地中海蔚蓝 + 暖沙白 + 海浪暖日贴图 + 2 张宽幅横图（16:9 花园 + 4:3 卧室）+ 右下大主角。",
+      "swatches": [
+        "#1D6FA5",
+        "#FAF3E3",
+        "#FF8C5A",
+        "#4CA9DF"
+      ],
+      "tags": [
+        "蔚蓝",
+        "旅居",
+        "度假",
+        "候鸟",
+        "暖沙"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "暖沙蔚蓝度假牌 + 右侧人物 + 阳光黄高亮",
+        "avatarSide": "right",
+        "scrim": {
+          "top": "rgba(19,75,115,0.38)",
+          "bottom": "rgba(19,75,115,0.6)"
+        },
+        "header": {
+          "variant": "card-border",
+          "bg": "#FAF3E3F0",
+          "border": "#1D6FA5",
+          "borderW": 5,
+          "radius": 36,
+          "titleColor": "#FF7340",
+          "brandColor": "#134B73",
+          "prefix": "☀ ",
+          "sticker": "waveSun"
+        },
+        "chapter": {
+          "variant": "solid-border",
+          "bg": "#1D6FA5",
+          "border": "#FAF3E3",
+          "color": "#FAF3E3",
+          "radius": 99
+        },
+        "caption": {
+          "color": "#FFFFFF",
+          "stroke": "#134B73",
+          "strokeW": 14,
+          "focusColor": "#FFD95A",
+          "focusRatio": 1.18,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "id": "dopamine-pop",
+      "order": 30,
+      "num": "30",
+      "name": "多巴胺元气撞色",
+      "category": "纪实潮流",
+      "pairId": "dopamine-pop",
+      "layoutTag": "左侧人物 · 电光蓝绿撞色招牌 + 荧光绿高亮块",
+      "description": "电光克莱因蓝 + 荧光酸橙绿 + 4 张横版潮流实景卡片 + 闪电贴纸 + 右下大主角；年轻撞色超吸睛。",
+      "swatches": [
+        "#1B4BFF",
+        "#C6FF3D",
+        "#FFFFFF",
+        "#0D1A52"
+      ],
+      "tags": [
+        "多巴胺",
+        "撞色",
+        "克莱因蓝",
+        "四图",
+        "年轻"
+      ],
+      "baseline": false,
+      "videoSpec": {
+        "headerSummary": "电光蓝绿撞色招牌 + 荧光绿高亮块",
+        "avatarSide": "left",
+        "scrim": {
+          "top": "",
+          "bottom": ""
+        },
+        "header": {
+          "variant": "comic-card",
+          "bg": "#1B4BFF",
+          "border": "#C6FF3D",
+          "shadow": "#0D1A52",
+          "titleColor": "#C6FF3D",
+          "brandColor": "#FFFFFF",
+          "prefix": "★ ",
+          "sticker": "lightning"
+        },
+        "chapter": {
+          "variant": "solid-border",
+          "bg": "#C6FF3D",
+          "border": "#0D1A52",
+          "color": "#0D1A52",
+          "radius": 99,
+          "prefix": "★ "
+        },
+        "caption": {
+          "color": "#FFFFFF",
+          "stroke": "#0D1A52",
+          "strokeW": 15,
+          "focusMode": "pill",
+          "focusBg": "#C6FF3D",
+          "focusColor": "#0D1A52",
+          "focusBorder": "#0D1A52",
+          "focusRatio": 1.12,
+          "angle": 0
+        }
+      }
+    }
+  ]
+}

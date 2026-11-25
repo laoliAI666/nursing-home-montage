@@ -143,6 +143,16 @@ class VideoEdits:
         payload = copy.deepcopy(payload)
         # Assets and identity remain server-owned; browsers select only same-institution photos.
         payload.pop('provided_cover',None)
+        plan_tpl = self.read(root / 'plan.json', {}).get('settings', {}).get('cover', {}).get('template')
+        cover_tpl = self.read(job / 'cover.json', {}).get('template')
+        tid = payload.get('template') or plan_tpl or cover_tpl or self.app.styles.DEFAULT_COVER_ID
+        payload['template'] = tid
+        if tid != self.app.styles.DEFAULT_COVER_ID and self.app.styles.cover_exists(tid, self.app.skill):
+            entry = self.app.styles.get_cover(tid, self.app.skill)
+            payload['styleName'] = entry['name']
+            payload['styleSpec'] = entry['coverSpec']
+        elif tid == self.app.styles.DEFAULT_COVER_ID:
+            payload.pop('styleSpec', None)
         return {'payload':payload,'baseVersion':edition['id'],'draft':self.read(folder/'cover-draft.json',{})}
 
     def save_draft(self, ident,index, values, cover=False):
@@ -153,7 +163,7 @@ class VideoEdits:
     def _save_draft(self, ident,index, values, cover=False):
         self.app.acceptance.ensure_editable(ident)
         _,_,_,folder,_ = self.current(ident,index)
-        allowed = ('title','highlights','labels','photos','baseVersion') if cover else ('narration','requirements','publicationTitle','publicationDescription')
+        allowed = ('title','highlights','labels','photos','template','baseVersion') if cover else ('narration','requirements','publicationTitle','publicationDescription')
         clean = {k:values[k] for k in allowed if k in values}
         if len(json.dumps(clean,ensure_ascii=False)) > 100000:
             raise ValueError('草稿过长')
@@ -211,7 +221,17 @@ class VideoEdits:
                 raise ValueError('请填写主标题和三枚简短标签')
             if not isinstance(highlights,list) or any(not str(x) or str(x) not in title.replace('\n','') for x in highlights):
                 raise ValueError('高亮词必须来自主标题')
-            payload.update(title=title,labels=list(map(str,labels)),highlights=highlights)
+            template_id = str(values.get('template') or payload.get('template') or self.app.styles.DEFAULT_COVER_ID).strip()
+            if not self.app.styles.cover_exists(template_id, self.app.skill):
+                raise ValueError(f'未知封面样式：{template_id}')
+            payload.update(title=title,labels=list(map(str,labels)),highlights=highlights,template=template_id)
+            if template_id == self.app.styles.DEFAULT_COVER_ID:
+                payload.pop('styleSpec', None)
+                payload.pop('styleName', None)
+            else:
+                entry = self.app.styles.get_cover(template_id, self.app.skill)
+                payload['styleName'] = entry['name']
+                payload['styleSpec'] = entry['coverSpec']
             chosen = values.get('photos',[])
             if chosen and len(chosen)!=3:
                 raise ValueError('请选择三张同机构素材')
@@ -233,11 +253,12 @@ class VideoEdits:
             self.write(out/'cover-input.json',payload)
             plan=copy.deepcopy(self.read(Path(edition['job'])/'plan.json',{}))
             plan.setdefault('cover',{})['main_title']={'text':title.replace('\n',''),'lines':title.split('\n') if '\n' in title else None,'highlights':highlights}
+            plan.setdefault('settings',{}).setdefault('cover',{})['template']=template_id
             for i,text in enumerate(labels):
                 if len(plan['cover'].get('labels',[]))>i:
                     plan['cover']['labels'][i]['text']=text
             self.write(out/'plan.json',plan)
-            submitted={k:values[k] for k in ('title','highlights','labels','photos','baseVersion') if k in values}
+            submitted={k:values[k] for k in ('title','highlights','labels','photos','template','baseVersion') if k in values}
             operation={'id':key,'status':'queued','message':'已加入队尾，等待更新视频首帧','created':time.time(),'baseVersion':edition['id'],'submittedDraft':submitted}
             queued=self.app.queue.enqueue_cover(ident,int(index),operation,video,out)
             operation['sequence']=queued['sequence']

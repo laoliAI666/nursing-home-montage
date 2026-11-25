@@ -175,9 +175,20 @@ def build(job):
     levels=json.loads(levels[levels.rfind('{'):levels.rfind('}')+1]);gain=cfg['voice']['target_lufs']-float(levels['input_i'])
     run(['ffmpeg','-y','-v','error','-i',raw,'-af',f'volume={gain:.4f}dB,alimiter=limit=0.7943:attack=3:release=40:level=false','-ar','48000','-ac','2','-c:a','pcm_s16le',voice_dir/'narration-master.wav'])
     import project_config as pc
-    font=find_font(cfg)
-    cap=pc.merge(read(SKILL/'assets/templates/fullscreen-orange.json'),cfg['template'].get('overrides',{}))['caption']
-    typography=Typography(font,cfg['typography']['collection_index'],cap)
+    import style_registry as sr
+    template_id=cfg.get('template',{}).get('id',sr.DEFAULT_VIDEO_ID)
+    if template_id==sr.DEFAULT_VIDEO_ID:
+        font=find_font(cfg)
+        cap=pc.merge(read(SKILL/'assets/templates/fullscreen-orange.json'),cfg['template'].get('overrides',{}))['caption']
+        typography=Typography(font,cfg['typography']['collection_index'],cap)
+        avatar_x=cfg['avatar']['x']
+    else:
+        video_entry=sr.get_video(template_id)
+        font=SKILL/'assets/NotoSansSC-Black.otf'
+        cap=sr.style_caption_spec(video_entry)
+        typography=Typography(font,None,cap)
+        avatar_side=(video_entry.get('videoSpec') or {}).get('avatarSide','left')
+        avatar_x=(1080-cfg['avatar']['width']-cfg['avatar']['x']) if avatar_side=='right' else cfg['avatar']['x']
     inst=plan['institution']
     inst_parts=tuple(part for field in ('displayName','name') for part in re.split(r'[·•（）()\s]+',inst[field]) if part)
     protected={*CARE_TERMS,*inst_parts}
@@ -284,7 +295,7 @@ def build(job):
         start=math.floor(start*fps)/fps;ident='opening' if si==0 else 'closing';out=job/'assets'/('avatar-'+ident);out.mkdir(exist_ok=True)
         run(['ffmpeg','-y','-v','error','-ss',start,'-i',raw,'-t',end-start,'-vn','-ar','24000','-ac','1','-c:a','pcm_s16le',out/'driver.wav'])
         is_last=si==len(ranges)-1 and si!=0;display_end=total if is_last else offset+end
-        avatars.append({'id':ident,'video':str((out/'avatar-outlined.webm').relative_to(job)),'audio':str((out/'driver.wav').relative_to(job)),'start':offset+start,'duration':display_end-offset-start,'x':cfg['avatar']['x'],'y':cfg['avatar']['bottom']-cfg['avatar']['height'],'width':cfg['avatar']['width'],'height':cfg['avatar']['height'],'fadeIn':cfg['avatar']['fade_in'],'fadeOut':0 if is_last else min(cfg['avatar']['fade_out'],max(.04,end-last_char_end)),'text':avatar_text,'sourceNarrationStart':start})
+        avatars.append({'id':ident,'video':str((out/'avatar-outlined.webm').relative_to(job)),'audio':str((out/'driver.wav').relative_to(job)),'start':offset+start,'duration':display_end-offset-start,'x':avatar_x,'y':cfg['avatar']['bottom']-cfg['avatar']['height'],'width':cfg['avatar']['width'],'height':cfg['avatar']['height'],'fadeIn':cfg['avatar']['fade_in'],'fadeOut':0 if is_last else min(cfg['avatar']['fade_out'],max(.04,end-last_char_end)),'text':avatar_text,'sourceNarrationStart':start})
     write(job/'avatars.json',avatars)
     write(job/'build-inputs.json',{'planSha256':sha(job/'plan.json'),'voiceSha256':v['sha256'],'sourceHashes':{p:r['sha256'] for p,r in files.items()},'noPostTtsTimeStretch':True})
     state(job,phase='timed',next='avatars',duration=total)

@@ -120,8 +120,13 @@ def resolved(job):
         out['avatar']['portrait']=str(asset_path(p.get('portrait')))
         if p.get('music_resource'):
             out.setdefault('music',{})['resource']=p['music_resource']
+        if p.get('cover_template_id'):
+            out.setdefault('cover',{})['template']=p['cover_template_id']
+        if p.get('video_style_id'):
+            out.setdefault('template',{})['id']=p['video_style_id']
         out['person']={'id':p['id'],'name':p['name'],'spokenName':p.get('spoken_name',p['name']),'connection':p['connection'],
             'socialMediaName':p.get('social_media_name'),'coverPortrait':str(asset_path(p['cover_portrait'])) if p.get('cover_portrait') else None,
+            'coverTemplateId':p.get('cover_template_id'),'videoStyleId':p.get('video_style_id'),
             'closingHooks':copy.deepcopy(p.get('closing_hooks',{}))}
     out=merge(out,plan.get('settings',{}))
     for role,font in out.get('template',{}).get('overrides',{}).get('fonts',{}).items():
@@ -192,6 +197,17 @@ def freeze(job):
         container[key]=str(dest.resolve())
     plan=read(job/'plan.json') if (job/'plan.json').exists() else {}
     if plan.get('closingHookSelection'):cfg['closingHookSelection']=copy.deepcopy(plan['closingHookSelection'])
+    import style_registry as sr
+    for sec, key, getter, kind in (('cover','template',sr.get_cover,'covers'),('template','id',sr.get_video,'videos')):
+        sid=cfg.get(sec,{}).get(key)
+        if sid:
+            entry=getter(sid)
+            if not entry.get('builtin'):
+                src=sr.style_source_file(entry)
+                if src and src.is_file():
+                    dest=job/'assets/styles'/kind/src.name;dest.parent.mkdir(parents=True,exist_ok=True)
+                    if src.resolve()!=dest.resolve():shutil.copy2(src,dest)
+                cfg.setdefault(sec,{})['_frozenEntry']=sr.public_entry(entry)
     files=runtime_files(include_workbench=False)
     manifest={str(p.relative_to(SKILL)):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(files)}
     ident=hashlib.sha256(json.dumps(manifest,sort_keys=True).encode()).hexdigest()[:20]

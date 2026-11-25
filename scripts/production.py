@@ -251,7 +251,7 @@ def verify(job):
     for i,t in enumerate(sorted(set(max(0,min(total-1/30,x)) for x in times))):
         out=qc/f'frame-{i:02}-{t:.3f}s.png';run(['ffmpeg','-y','-v','error','-ss',t,'-i',video,'-frames:v','1',out]);frames.append(str(out))
     report={'video':str(video),'sha256':sha(video),'duration':float(m['format']['duration']),'frames':round(total*30),'width':1080,'height':1920,'fps':30,'audio':lev,'tailAfterAudio':tail,'fullDecode':True,'centralFootageBlackEvents':events,'renderedReviewFrames':frames,'visualReviewPending':True,'humanListeningPerformed':False}
-    report['footageBlackCheckCrop']=crop;report['template']='fullscreen-orange'
+    report['footageBlackCheckCrop']=crop;report['template']=settings(job).get('template',{}).get('id','fullscreen-orange')
     report['reviewCoverage']={'shots':len(read(job/'shot-list.json')),'captions':len(read(job/'captions.json')),'allSampleFramesRequired':True}
     report['reviewStatus']={'speechContent':'independent-ASR','listening':'not-recorded','visualLipSync':'not-recorded','providerAudioAlignment':'separate-from-visual-lip-sync'}
     music=read(job/'bgm-timeline.json');report['music']={'enabled':music.get('enabled',False),'audio':music.get('audio'),'sourceFrozen':bool(settings(job).get('music',{}).get('resource'))}

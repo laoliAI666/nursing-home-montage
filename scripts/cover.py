@@ -2,6 +2,7 @@
 from pathlib import Path
 import base64,html,json,mimetypes,re,shutil,os
 from workflow import read,write,sha,digest,run,settings,probe,hyperframes_cli,SKILL
+import style_registry as sr
 
 def title_text(plan):
     value=plan.get('cover',{}).get('main_title','')
@@ -16,7 +17,8 @@ def title_text(plan):
 def validate_content(plan,cfg,inventory):
     options=cfg.get('cover',{})
     if not options.get('enabled'):return
-    if options.get('template','teal-adaptive')!='teal-adaptive':raise ValueError('未知封面模板')
+    template_id=options.get('template',sr.DEFAULT_COVER_ID)
+    if not sr.cover_exists(template_id) and not options.get('_frozenEntry'):raise ValueError('未知封面模板：'+str(template_id))
     person=cfg.get('person',{})
     if not person.get('socialMediaName'):raise ValueError('缺少与数字人绑定的社交媒体名，请用户指定名字，无需平台或 ID。')
     if not person.get('id'):raise ValueError('封面需要明确数字人身份')
@@ -102,25 +104,51 @@ def prepare(job):
         from publish_assets import link_or_copy
         link_or_copy(cached,webfont)
         write(font_record,{'key':font_key})
+    template_id=cfg.get('cover',{}).get('template',sr.DEFAULT_COVER_ID)
+    cover_entry=sr.get_cover(template_id) if sr.cover_exists(template_id) else cfg.get('cover',{}).get('_frozenEntry')
+    if not cover_entry:raise ValueError('未知封面模板：'+str(template_id))
     value=plan['cover']['main_title'];highlights=value.get('highlights',[]) if isinstance(value,dict) else plan['cover'].get('highlights',[])
     payload={'header_text':cfg['cover']['header_text'],'title':title_text(plan),'highlights':highlights,'labels':[x['text'] for x in plan['cover']['labels']],
         'institution_name':plan['institution']['name'],'identity':{'person_id':person['id'],'person_name':person['name'],'social_media_name':person['socialMediaName']},
         'avatar':data_uri(avatar),'avatar_box':avbox,'font':data_uri(webfont),'photos':photos}
+    if template_id!=sr.DEFAULT_COVER_ID:
+        payload['template']=template_id
+        payload['styleName']=cover_entry['name']
+        payload['styleSpec']=cover_entry['coverSpec']
     if cfg['cover'].get('image'):
         payload['provided_cover']=data_uri(cfg['cover']['image'])
     elif os.environ.get('MONTAGE_WORKBENCH_DELIVERY'):
         # Keep the entire main title by reflowing first; if it is too long,
         # use the short, fact-checked video headline already in the plan.
         payload['automaticTitleFallback'] = plan['institution']['headline']
-    record={'template':'teal-adaptive','content':{k:v for k,v in payload.items() if k not in ('avatar','font','photos','provided_cover')},'sources':sources,'avatarSha256':sha(avatar),'fontSha256':sha(font),'imageGenerationUsed':False}
-    record['inputFingerprint']=digest({'plan':plan.get('cover'),'identity':payload['identity'],'automaticTitleFallback':payload.get('automaticTitleFallback'),'avatarBox':avbox,'institution':plan['institution']['name'],'header':payload['header_text'],'sources':sources,'avatar':record['avatarSha256'],'font':record['fontSha256'],
-        'provided':sha(cfg['cover']['image']) if cfg['cover'].get('image') else None,'layout':sha(SKILL/'assets/covers/teal-adaptive/layout.mjs'),'editor':sha(SKILL/'assets/covers/teal-adaptive/cover.html'),'renderer':sha(SKILL/'scripts/cover_renderer.mjs'),'browserRuntime':sha(SKILL/'scripts/browser_runtime.mjs')})
+    record={'template':template_id,'content':{k:v for k,v in payload.items() if k not in ('avatar','font','photos','provided_cover','styleSpec')},'sources':sources,'avatarSha256':sha(avatar),'fontSha256':sha(font),'imageGenerationUsed':False}
+    fp_data={'plan':plan.get('cover'),'identity':payload['identity'],'automaticTitleFallback':payload.get('automaticTitleFallback'),'avatarBox':avbox,'institution':plan['institution']['name'],'header':payload['header_text'],'sources':sources,'avatar':record['avatarSha256'],'font':record['fontSha256'],
+        'provided':sha(cfg['cover']['image']) if cfg['cover'].get('image') else None,'layout':sha(SKILL/'assets/covers/teal-adaptive/layout.mjs'),'editor':sha(SKILL/'assets/covers/teal-adaptive/cover.html'),'renderer':sha(SKILL/'scripts/cover_renderer.mjs'),'browserRuntime':sha(SKILL/'scripts/browser_runtime.mjs')}
+    if template_id!=sr.DEFAULT_COVER_ID:
+        fp_data.update({
+            'template':template_id,
+            'styleSpec':cover_entry['coverSpec'],
+            'engine':sha(SKILL/'assets/covers/engine/cover_engine.mjs'),
+            'stickers':sha(SKILL/'assets/styles/stickers.mjs'),
+            'engineEditor':sha(SKILL/'assets/covers/engine/cover.html'),
+        })
+    record['inputFingerprint']=digest(fp_data)
     return cfg,payload,record
 
-def editor_html(payload):
-    layout=(SKILL/'assets/covers/teal-adaptive/layout.mjs').read_text(encoding='utf-8').replace('export const ','const ').replace('export async function ','async function ')
-    template=(SKILL/'assets/covers/teal-adaptive/cover.html').read_text(encoding='utf-8')
-    return template.replace('__LAYOUT__',layout).replace('__DATA__',json.dumps(payload,ensure_ascii=False).replace('<','\\u003c'))
+def editor_html(payload, template_id=None):
+    tid=template_id or payload.get('template') or sr.DEFAULT_COVER_ID
+    if tid==sr.DEFAULT_COVER_ID:
+        layout=(SKILL/'assets/covers/teal-adaptive/layout.mjs').read_text(encoding='utf-8').replace('export const ','const ').replace('export async function ','async function ')
+        template=(SKILL/'assets/covers/teal-adaptive/cover.html').read_text(encoding='utf-8')
+        return template.replace('__LAYOUT__',layout).replace('__DATA__',json.dumps(payload,ensure_ascii=False).replace('<','\\u003c'))
+    stickers=(SKILL/'assets/styles/stickers.mjs').read_text(encoding='utf-8').replace('export const STICKERS','const BUILTIN_STICKERS')
+    teal=(SKILL/'assets/covers/teal-adaptive/layout.mjs').read_text(encoding='utf-8')
+    teal=teal.replace('export const BOUNDS=','const _TEAL_BOUNDS=').replace('export async function mountCover(','async function mountTealAdaptive(')
+    engine=(SKILL/'assets/covers/engine/cover_engine.mjs').read_text(encoding='utf-8')
+    engine=re.sub(r'^import\s+.*?;?\s*$','',engine,flags=re.M).replace('export const ','const ').replace('export async function ','async function ')
+    combined='\n'.join([stickers,teal,engine])
+    template=(SKILL/'assets/covers/engine/cover.html').read_text(encoding='utf-8')
+    return template.replace('__LAYOUT__',combined).replace('__DATA__',json.dumps(payload,ensure_ascii=False).replace('<','\\u003c'))
 
 def generate(job):
     cfg=settings(job)
@@ -128,7 +156,7 @@ def generate(job):
     cfg,payload,record=prepare(job);out=job/'cover.png';previous=read(job/'cover.json') if (job/'cover.json').exists() else {}
     if previous.get('inputFingerprint')==record['inputFingerprint'] and out.is_file() and sha(out)==previous.get('pngSha256') and (job/'cover-editor.html').is_file() and sha(job/'cover-editor.html')==previous.get('editorSha256'):
         return {'cover':str(out),'reused':True}
-    (job/'cover-editor.html').write_text(editor_html(payload),encoding='utf-8')
+    (job/'cover-editor.html').write_text(editor_html(payload, record['template']),encoding='utf-8')
     temp=job/'assets/cover/layout.json'
     import project_config as pc
     run(['node',SKILL/'scripts/cover_renderer.mjs',job/'cover-editor.html',out,temp,browser_package(cfg,job)],env=pc.render_env(job))

@@ -1,6 +1,6 @@
-# 唯一正文样式
+# 正文视频样式库
 
-新版只提供 fullscreen-orange：1080×1920、30fps、实拍全屏，橙色机构牌、白／粉手写字幕和黄色重点词。青绿封面是同一成片方案的首帧，不是第二套正文模板。默认值来自 preset.json 与 assets/templates/fullscreen-orange.json，不在文档复制参数表。
+默认正文样式为 01 号认可基线 `fullscreen-orange`（1080×1920、30fps、实拍全屏、手撕橙条机构牌、白／粉手写字幕与黄色重点词），保留其完整锁定渲染路径以确保零漂移。同时内置 30 套与封面样式配套的视频样式（`assets/styles/catalog.json`），统一使用包内 `NotoSansSC-Black.otf`，支持左/右出镜人物、多风格顶栏/章节牌与描边/胶囊高亮/半透底条字幕，并支持通过 `.montage/styles/videos/` 放入 JSON 扩展更多样式。每位数字人可在工作台「数字人」编辑页或「风格库」页面绑定专属封面与视频样式，优先级为 `plan.settings > 数字人绑定 > project.json > preset.json`。默认值来自 preset.json 与 assets/templates/fullscreen-orange.json，不在文档复制参数表。
 
 ## 字体与字形
 

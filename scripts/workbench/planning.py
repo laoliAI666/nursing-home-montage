@@ -44,6 +44,7 @@ class BatchPlanning:
                 'music': task.get('musicTrack', {}),
                 **({'videoMusicTracks': task['videoMusicTracks']} if task.get('videoMusicTracks') else {}),
                 **({'personClosingHooks': task['personClosingHooks']} if task.get('personClosingHooks') else {}),
+                **({'personVisualStyles': task['personVisualStyles']} if task.get('personVisualStyles') else {}),
                 'count': task['count']}
 
     def initialize(self, task):

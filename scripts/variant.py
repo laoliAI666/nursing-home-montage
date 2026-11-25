@@ -18,9 +18,11 @@ def revise(source,out,plan_file=None,platform=None):
     if out.exists():raise ValueError('请使用新的输出目录；原工程保持不变。')
     if source==out or source in out.parents:raise ValueError('新版本必须在原工程目录以外。')
     original=read(source/'plan.json');plan=read(plan_file) if plan_file else copy.deepcopy(original)
-    cfg=copy.deepcopy(pc.resolved(source));cfg['template']['id']='fullscreen-orange'
+    cfg=copy.deepcopy(pc.resolved(source))
+    if cfg.get('template',{}).get('id') in ('legacy-orange','orange','green'):cfg['template']['id']='fullscreen-orange'
     if plan_file:cfg=pc.merge(cfg,plan.get('settings',{}))
-    cfg['template']['id']='fullscreen-orange'
+    import style_registry as sr
+    if not sr.video_exists(cfg.get('template',{}).get('id','fullscreen-orange')):cfg['template']['id']='fullscreen-orange'
     bound=pc.resolved(source)
     if plan.get('person',original.get('person'))!=original.get('person') or cfg.get('person')!=bound.get('person') or any(cfg.get('avatar',{}).get(k)!=bound.get('avatar',{}).get(k) for k in ('portrait','prompt','sentence_padding')):
         raise ValueError('revise保留冻结的人物与生成绑定；更换人物、生成提示或驱动边界请新建任务，不能继承旧口型记录。')
@@ -62,5 +64,11 @@ def revise(source,out,plan_file=None,platform=None):
 
 
 def variant(source,out,template='fullscreen-orange',platform=None):
-    if template!='fullscreen-orange':raise ValueError('新版只提供 fullscreen-orange。')
-    return revise(source,out,platform=platform)
+    import style_registry as sr
+    if not sr.video_exists(template):raise ValueError(f'未知视频样式：{template}。')
+    plan=copy.deepcopy(read(Path(source).resolve()/'plan.json'))
+    plan.setdefault('settings',{}).setdefault('template',{})['id']=template
+    temp=Path(out).resolve().with_name(Path(out).name+'.variant-plan.json')
+    write(temp,plan)
+    try:return revise(source,out,plan_file=temp,platform=platform)
+    finally:temp.unlink(missing_ok=True)

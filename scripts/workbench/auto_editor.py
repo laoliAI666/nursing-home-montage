@@ -812,6 +812,11 @@ class Editor:
             plan['settings']['music']['resource'] = track['resource']
         if bound_hook:
             plan['settings']['closing_hook'] = {'text': bound_hook}
+        visual_style = (task.get('personVisualStyles') or {}).get(person) or {}
+        if visual_style.get('coverTemplateId'):
+            plan['settings'].setdefault('cover', {})['template'] = visual_style['coverTemplateId']
+        if visual_style.get('videoStyleId'):
+            plan['settings'].setdefault('template', {})['id'] = visual_style['videoStyleId']
         if context['institutionName']:
             plan['institution']['name'] = context['institutionName']
         self.fit_institution_labels(plan['institution'], context, result)

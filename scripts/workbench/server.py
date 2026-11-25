@@ -8,6 +8,8 @@ import hashlib
 import importlib
 import json
 import mimetypes
+mimetypes.add_type("text/javascript", ".mjs")
+mimetypes.add_type("font/otf", ".otf")
 import os
 from pathlib import Path
 import re
@@ -172,6 +174,7 @@ class App:
         sys.path.insert(0, str(self.skill / "scripts"))
         self.pc = importlib.import_module("project_config")
         self.people = importlib.import_module("people")
+        self.styles = importlib.import_module("style_registry")
         self.pc.init()
         self.data = self.project / ".montage/workbench"
         ensure_dir(self.data)
@@ -322,7 +325,7 @@ class App:
         for ident, p in cfg["people"].items():
             voice_training = self.voice_training.public({**p, 'id': ident})
             accounts = person_platform_accounts(p)
-            people.append({k: p.get(k) for k in ("name", "social_media_name", "speaker", "custom_speaker_id", "status", "speech_rate", "connection", "sample", "voice_provider", "aliyun_model")} | {"id": ident, "ready": bool(p.get("speaker") and self.pc.asset_path(p.get("portrait")) and self.pc.asset_path(p.get("portrait")).is_file()), "hasPortrait": bool(p.get("portrait")), "isDefault": ident == cfg.get("default_person"), "voiceTraining": voice_training, "music_track_id": p.get("music_track_id") or "", "closing_hook": person_closing_hook(p), "platform_accounts": accounts, "xiaohongshu_account_id": accounts["xiaohongshu"], "douyin_account_id": accounts["douyin"], "channels_account_id": accounts["channels"]})
+            people.append({k: p.get(k) for k in ("name", "social_media_name", "speaker", "custom_speaker_id", "status", "speech_rate", "connection", "sample", "voice_provider", "aliyun_model")} | {"id": ident, "ready": bool(p.get("speaker") and self.pc.asset_path(p.get("portrait")) and self.pc.asset_path(p.get("portrait")).is_file()), "hasPortrait": bool(p.get("portrait")), "isDefault": ident == cfg.get("default_person"), "voiceTraining": voice_training, "music_track_id": p.get("music_track_id") or "", "cover_template_id": p.get("cover_template_id") or "", "video_style_id": p.get("video_style_id") or "", "closing_hook": person_closing_hook(p), "platform_accounts": accounts, "xiaohongshu_account_id": accounts["xiaohongshu"], "douyin_account_id": accounts["douyin"], "channels_account_id": accounts["channels"]})
         storage = self.pc.storage_settings(c.get("storage"))
         voice_settings = cfg.get('settings', {})
         from aliyun_voice import DEFAULT_MODEL
@@ -334,7 +337,114 @@ class App:
                         'aliyunWorkspace': aliyun.get('workspace', ''),
                         'aliyunModel': voice_settings.get('aliyun_model', DEFAULT_MODEL),
                         'project': c.get('voice_project', 'default')}
-        return {"project": str(self.project), "workspace": str(self.workspace()), "workspaceDefault": str(self.workspace_default()), "workspaceSetting": read(self.data/'workspace.json', {}).get('directory', ''), "version": (self.skill / "VERSION").read_text().strip(), "people": people, "defaultPerson": cfg.get("default_person"), "voice": voice_public, "connection": {"speech": bool(keys[0]), "ak": bool(keys[1]), "sk": bool(keys[2]), "storage": storage, "cloneMode": c.get("clone_mode") or self.voice_training.default_mode, "speakerPool": c.get("speaker_pool", [])}, "preferences": {"music": cfg.get("settings", {}).get("music", {}).get("enabled", True), "coverHeader": cfg.get("settings", {}).get("cover", {}).get("header_text", "")}, "agent": self.agent_state(), "model": self.models.public(), "phases": PHASES, "onboarded": read(self.data / "preferences.json", {}).get("onboarded", False)}
+        default_cover = cfg.get("settings", {}).get("cover", {}).get("template") or self.styles.DEFAULT_COVER_ID
+        default_video = cfg.get("settings", {}).get("template", {}).get("id") or self.styles.DEFAULT_VIDEO_ID
+        if not self.styles.cover_exists(default_cover, self.skill):
+            default_cover = self.styles.DEFAULT_COVER_ID
+        if not self.styles.video_exists(default_video, self.skill):
+            default_video = self.styles.DEFAULT_VIDEO_ID
+        return {"project": str(self.project), "workspace": str(self.workspace()), "workspaceDefault": str(self.workspace_default()), "workspaceSetting": read(self.data/'workspace.json', {}).get('directory', ''), "version": (self.skill / "VERSION").read_text().strip(), "people": people, "defaultPerson": cfg.get("default_person"), "voice": voice_public, "connection": {"speech": bool(keys[0]), "ak": bool(keys[1]), "sk": bool(keys[2]), "storage": storage, "cloneMode": c.get("clone_mode") or self.voice_training.default_mode, "speakerPool": c.get("speaker_pool", [])}, "preferences": {"music": cfg.get("settings", {}).get("music", {}).get("enabled", True), "coverHeader": cfg.get("settings", {}).get("cover", {}).get("header_text", ""), "coverTemplate": default_cover, "videoStyle": default_video}, "agent": self.agent_state(), "model": self.models.public(), "phases": PHASES, "onboarded": read(self.data / "preferences.json", {}).get("onboarded", False)}
+
+    def styles_state(self):
+        cfg = self.pc.load()
+        default_cover = cfg.get("settings", {}).get("cover", {}).get("template") or self.styles.DEFAULT_COVER_ID
+        default_video = cfg.get("settings", {}).get("template", {}).get("id") or self.styles.DEFAULT_VIDEO_ID
+        if not self.styles.cover_exists(default_cover, self.skill):
+            default_cover = self.styles.DEFAULT_COVER_ID
+        if not self.styles.video_exists(default_video, self.skill):
+            default_video = self.styles.DEFAULT_VIDEO_ID
+        cover_bound, video_bound = {}, {}
+        for pid, p in cfg.get("people", {}).items():
+            cid = p.get("cover_template_id") or ""
+            vid = p.get("video_style_id") or ""
+            if cid:
+                cover_bound.setdefault(cid, []).append({"id": pid, "name": p.get("name", pid)})
+            if vid:
+                video_bound.setdefault(vid, []).append({"id": pid, "name": p.get("name", pid)})
+        covers = [
+            {**self.styles.public_entry(c), "isDefault": c["id"] == default_cover, "boundPeople": cover_bound.get(c["id"], [])}
+            for c in self.styles.list_covers(self.skill)
+        ]
+        videos = [
+            {**self.styles.public_entry(v), "isDefault": v["id"] == default_video, "boundPeople": video_bound.get(v["id"], [])}
+            for v in self.styles.list_videos(self.skill)
+        ]
+        return {
+            "defaultCoverId": default_cover,
+            "defaultVideoStyleId": default_video,
+            "covers": covers,
+            "videos": videos,
+            "demoAssets": {
+                "host": "/media/style-demo/virtual-host.png",
+                "room": "/media/style-demo/scene-room.jpg",
+                "garden": "/media/style-demo/scene-garden.jpg",
+                "lounge": "/media/style-demo/scene-lounge.jpg",
+                "dining": "/media/style-demo/scene-dining.jpg",
+                "vRoom": "/media/style-demo/video-room.jpg",
+                "vGarden": "/media/style-demo/video-garden.jpg",
+                "vLobby": "/media/style-demo/video-lobby.jpg",
+                "font": "/media/style-demo/font.otf",
+            },
+        }
+
+    def set_default_style(self, values):
+        with self.transaction():
+            kind = str(values.get("kind") or "").strip()
+            ident = str(values.get("id") or "").strip()
+            include_pair = bool(values.get("includePair"))
+            patch = {"settings": {}}
+            if kind == "cover":
+                entry = self.styles.get_cover(ident, self.skill)
+                patch["settings"]["cover"] = {"template": entry["id"]}
+                if include_pair and entry.get("pairId") and self.styles.video_exists(entry["pairId"], self.skill):
+                    patch["settings"]["template"] = {"id": entry["pairId"]}
+            elif kind == "video":
+                entry = self.styles.get_video(ident, self.skill)
+                patch["settings"]["template"] = {"id": entry["id"]}
+                if include_pair and entry.get("pairId") and self.styles.cover_exists(entry["pairId"], self.skill):
+                    patch["settings"]["cover"] = {"template": entry["pairId"]}
+            else:
+                raise ValueError("请选择封面样式或视频样式。")
+            self.pc.save_patch(patch)
+        return {"styles": self.styles_state(), "config": self.config()}
+
+    def bind_style(self, values):
+        with self.transaction():
+            kind = str(values.get("kind") or "").strip()
+            ident = str(values.get("id") or "").strip()
+            bind_pair = bool(values.get("bindPair"))
+            people_ids = values.get("peopleIds")
+            if not isinstance(people_ids, list):
+                raise ValueError("请指定要绑定的数字人列表。")
+            chosen = {str(x) for x in people_ids}
+            cfg = self.pc.load()
+            for pid in chosen:
+                if pid not in cfg["people"]:
+                    raise ValueError("所选数字人不存在。")
+            if kind == "cover":
+                entry = self.styles.get_cover(ident, self.skill)
+                pair_id = entry.get("pairId") if bind_pair and self.styles.video_exists(entry.get("pairId") or "", self.skill) else None
+                for pid, p in cfg["people"].items():
+                    if pid in chosen:
+                        p["cover_template_id"] = entry["id"]
+                        if pair_id:
+                            p["video_style_id"] = pair_id
+                    elif p.get("cover_template_id") == entry["id"]:
+                        p.pop("cover_template_id", None)
+            elif kind == "video":
+                entry = self.styles.get_video(ident, self.skill)
+                pair_id = entry.get("pairId") if bind_pair and self.styles.cover_exists(entry.get("pairId") or "", self.skill) else None
+                for pid, p in cfg["people"].items():
+                    if pid in chosen:
+                        p["video_style_id"] = entry["id"]
+                        if pair_id:
+                            p["cover_template_id"] = pair_id
+                    elif p.get("video_style_id") == entry["id"]:
+                        p.pop("video_style_id", None)
+            else:
+                raise ValueError("请选择封面样式或视频样式。")
+            self.pc.write(self.pc.directory() / "project.json", cfg)
+        return {"styles": self.styles_state(), "config": self.config()}
 
     def agent_state(self):
         if self.workbench_host == 'local':
@@ -513,6 +623,22 @@ class App:
                 person.pop('music_resource', None)
         if 'closing_hook' in values:
             apply_closing_hook(person, values.get('closing_hook'))
+        if 'cover_template_id' in values:
+            cid = str(values.get('cover_template_id') or '').strip()
+            if cid:
+                if not self.styles.cover_exists(cid, self.skill):
+                    raise ValueError(f'所选封面样式不存在：{cid}')
+                person['cover_template_id'] = cid
+            else:
+                person.pop('cover_template_id', None)
+        if 'video_style_id' in values:
+            vid = str(values.get('video_style_id') or '').strip()
+            if vid:
+                if not self.styles.video_exists(vid, self.skill):
+                    raise ValueError(f'所选视频样式不存在：{vid}')
+                person['video_style_id'] = vid
+            else:
+                person.pop('video_style_id', None)
         apply_platform_accounts(person, values)
         if values.get('default') or (speaker and not cfg.get('default_person')):
             cfg['default_person'] = person['id']
@@ -627,10 +753,34 @@ class App:
         if snapshot:
             task.update({k: snapshot[k] for k in ("institutionId", "institutionName", "institutionRevision", "materialSnapshot")})
         task["videoPreferences"] = preferences
-        profiles = self.pc.load()['people']
+        raw_cfg = self.pc.load()
+        profiles = raw_cfg['people']
         person_hooks = {pid: hook for pid in ordered_person_ids if pid in profiles and (hook := person_closing_hook(profiles[pid]))}
         if person_hooks:
             task['personClosingHooks'] = person_hooks
+        default_cover_id = raw_cfg.get('settings', {}).get('cover', {}).get('template') or self.styles.DEFAULT_COVER_ID
+        default_video_id = raw_cfg.get('settings', {}).get('template', {}).get('id') or self.styles.DEFAULT_VIDEO_ID
+        if not self.styles.cover_exists(default_cover_id, self.skill):
+            default_cover_id = self.styles.DEFAULT_COVER_ID
+        if not self.styles.video_exists(default_video_id, self.skill):
+            default_video_id = self.styles.DEFAULT_VIDEO_ID
+        person_visual_styles = {}
+        for pid in ordered_person_ids:
+            prof = profiles.get(pid, {})
+            cid = prof.get('cover_template_id') or default_cover_id
+            vid = prof.get('video_style_id') or default_video_id
+            if not self.styles.cover_exists(cid, self.skill):
+                cid = default_cover_id
+            if not self.styles.video_exists(vid, self.skill):
+                vid = default_video_id
+            person_visual_styles[pid] = {
+                'coverTemplateId': cid,
+                'coverName': self.styles.get_cover(cid, self.skill)['name'],
+                'videoStyleId': vid,
+                'videoStyleName': self.styles.get_video(vid, self.skill)['name'],
+            }
+        if person_visual_styles:
+            task['personVisualStyles'] = person_visual_styles
         if task['music']:
             if original_music or override_track_id:
                 selected = self.music.snapshot(override_track_id, ident, original_music)
@@ -652,6 +802,8 @@ class App:
             task_settings['videoMusicTracks'] = {pid: {'enabled': True, 'resource': row['resource'], 'id': row['id'], 'name': row['name']} for pid, row in task['videoMusicTracks'].items()}
         if task.get('personClosingHooks'):
             task_settings['personClosingHooks'] = task['personClosingHooks']
+        if task.get('personVisualStyles'):
+            task_settings['personVisualStyles'] = task['personVisualStyles']
         write(self.task_path(ident).parent / 'task-settings.json', task_settings)
         write(self.task_path(ident), task)
         return task
@@ -675,6 +827,7 @@ class App:
 原序号恢复：如果本次工程已有 state.json 和 runtime.json，先读取当前工程与已核验资产，从中断阶段继续。不能再次 inventory 或 revise 到这个已存在的目录，不能退回 baseJob 重新生成；baseJob 此时只供查证。仅在首次尚无本次工程时执行下方的首次制作或另存步骤。素材、音频、数字人和供应商任务按已保存的匹配关系复用。
 配乐选择：music=false 时在 plan.settings.music 中显式 enabled=false，music=true 时优先使用 request.videoMusicTracks[person].resource（若无则用 request.musicTrack.resource）合并到 plan.settings.music，必须用该固定副本，不改用最新默认曲。没有 musicTrack 的旧任务沿用已有 runtime。保留音量、人声避让和淡入淡出参数；音乐时长不足或哈希不匹配时提问，不私换曲目。单条重做继承原配乐。
 片尾钩子：若 request.personClosingHooks[person] 非空，口播最后一句（kind=cta）必须原样使用该数字人绑定的片尾钩子，并在 plan.settings.closing_hook.text 中写入同一原文，不要擅自改写。
+视觉风格：若 request.personVisualStyles[person] 存在，将 coverTemplateId 写入 plan.settings.cover.template，将 videoStyleId 写入 plan.settings.template.id，使用任务启动时固定的封面与视频样式。
 内容偏好：requirements 是整批共同偏好；videoPreferences 数组第 i 项仅对应第 i+1 条。单条明确指定的部分优先；未指定的部分继承整批偏好，两者均未填写时才按默认规范制作。两者都只能使用已核验事实。应同时适配本条的封面标题、三枚标签及选图、发布标题和描述、完整口播、分镜。用户只说“重点突出”时保留综合介绍，明确专题时按专题制作，不机械套同一份封面。
 单条重做：revisionFromArchive=true 表示旧任务已验收且中间资产已清理，此时不要执行 revise。按 source 快照新建工程，basePlan 只用于读取原稿和封面主题，使用当前项目人物/服务配置，移除旧计划中指向已清理资产的运行设置；按完整流程重新生成必要配音和数字人。否则 kind=revision 时只做 count=1 的这一条，revisionOf 是原视频，baseJob 是原可编辑工程，basePlan 是选中版本计划，revisedNarration 是用户编辑后的完整口播，publicationOverride 是用户指定的发布字段。读取原工程和以上字段，按 skill 的另存与恢复规范执行 revise SOURCE --out NEW --plan NEW_PLAN；不能修改其他视频或覆盖原工程。非空 revisedNarration 保留用户表述，逐句核对事实和字幕；如不符合事实，在页面提出具体问题。不要把旧配音、旧数字人口型当成新文案资产复用；文案未变时复用匹配资产。新的封面与标题仍须适配修改后的正文和偏好，显式发布字段覆盖自动稿。
 工作台交付：仍执行 skill 的完整核验，封面编辑 HTML 只作为工程内部渲染数据，不额外交给用户。工作台会从实际 MP4、PNG、发布文案组装三个文件的下载包。成功后回到原视频的“单条重做”页面可找到关联的新成品，原视频保留。
@@ -854,7 +1007,7 @@ class Handler(BaseHTTPRequestHandler):
                 from management import Management
                 return self.reply(200, Management(self.app,read,write).state())
             if url.path == "/api/state":
-                return self.reply(200, {"config": self.app.config(), "queue":self.app.queue.public(), "tasks": [self.app.public_task(t) for t in self.app.tasks()], "archives":self.app.archive.public(), "reference": self.app.reference(), "music": self.app.music.public(), "institutions": [self.app.library.public(v) for v in self.app.library.records()], "draft": read(self.app.data / "creation-draft.json", {}), "selectedSource": read(self.app.data / "selected-source.json", {}).get("folder", "")})
+                return self.reply(200, {"config": self.app.config(), "styles": self.app.styles_state(), "queue":self.app.queue.public(), "tasks": [self.app.public_task(t) for t in self.app.tasks()], "archives":self.app.archive.public(), "reference": self.app.reference(), "music": self.app.music.public(), "institutions": [self.app.library.public(v) for v in self.app.library.records()], "draft": read(self.app.data / "creation-draft.json", {}), "selectedSource": read(self.app.data / "selected-source.json", {}).get("folder", "")})
             match = re.fullmatch(r"/api/videos/(reference|[a-f0-9]{12})/(\d+)(?:/(cover|operation))?", url.path)
             if match:
                 ident, index, action = match.groups()
@@ -866,6 +1019,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, self.app.edits.detail(ident, int(index)))
             if url.path == '/cover-layout.mjs':
                 return self.file(self.app.skill / 'assets/covers/teal-adaptive/layout.mjs')
+            if url.path in ('/assets/covers/engine/cover_engine.mjs', '/assets/covers/teal-adaptive/layout.mjs', '/assets/styles/stickers.mjs'):
+                return self.file(self.app.skill / url.path.lstrip('/'))
             match = re.fullmatch(r"/api/library/([a-f0-9]{12})(?:/text/([a-f0-9]{12}))?", url.path)
             if match:
                 ident, aid = match.groups()
@@ -880,7 +1035,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, self.app.public_task(self.app.task(url.path.rsplit("/", 1)[-1])))
             if url.path.startswith("/media/"):
                 return self.media(url.path)
-            filename = {"/": "index.html", "/app.js": "app.js", "/library.js": "library.js", "/video.js": "video.js", "/music.js": "music.js", "/controls.js":"controls.js", "/queue.js":"queue.js", "/style.css": "style.css", "/controls.css":"controls.css", "/queue.css":"queue.css", "/acceptance.js":"acceptance.js", "/acceptance.css":"acceptance.css"}.get(url.path)
+            filename = {"/": "index.html", "/app.js": "app.js", "/library.js": "library.js", "/video.js": "video.js", "/music.js": "music.js", "/controls.js":"controls.js", "/queue.js":"queue.js", "/styles.js":"styles.js", "/styles.css":"styles.css", "/style.css": "style.css", "/controls.css":"controls.css", "/queue.css":"queue.css", "/acceptance.js":"acceptance.js", "/acceptance.css":"acceptance.css"}.get(url.path)
             if filename:
                 return self.file(HERE / "web" / filename)
             return self.reply(404, {"error": "页面不存在"})
@@ -997,6 +1152,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, result)
             if url.path == "/api/config":
                 return self.reply(200, self.app.save_config(v))
+            if url.path == "/api/styles/default":
+                return self.reply(200, self.app.set_default_style(v))
+            if url.path == "/api/styles/bind":
+                return self.reply(200, self.app.bind_style(v))
             if url.path == "/api/model":
                 return self.reply(200, self.app.models.save(v))
             if url.path == "/api/model/test":
@@ -1193,6 +1352,18 @@ class Handler(BaseHTTPRequestHandler):
                     run_command(cmd, capture_output=True, timeout=30)
                 return self.file(thumb)
             raise ValueError("不支持这种素材预览")
+        if parts[2] == "style-demo" and len(parts) == 4:
+            demo_name = parts[3]
+            if demo_name == "font.otf":
+                return self.file(self.app.skill / "assets/NotoSansSC-Black.otf")
+            allowed_demo = {
+                "virtual-host.png", "scene-room.jpg", "scene-garden.jpg",
+                "scene-lounge.jpg", "scene-dining.jpg",
+                "video-room.jpg", "video-garden.jpg", "video-lobby.jpg",
+            }
+            if demo_name not in allowed_demo:
+                raise ValueError("示例资源不存在")
+            return self.file(self.app.skill / "assets/styles/demo" / demo_name)
         if parts[2] == "person" and len(parts) == 4:
             p = self.app.pc.load()["people"].get(parts[3], {})
             return self.file(self.app.pc.asset_path(p.get("portrait")))

@@ -697,7 +697,12 @@ function formatTrackDuration(seconds) {
 }
 function renderPeople() {
   clearVoicePreview();
-  main.innerHTML = `${heading('每条视频，都有自己的主角。','照片、音色、配乐、片尾钩子与分发账号统一归档在人物资料中，选好人物即可制作。',`<button class="secondary" data-action="add-person">${icon('plus')} 添加数字人</button>`)}<div class="people-grid">${state.config.people.map(p => `<article class="person-card"><div class="portrait-area">${p.hasPortrait ? `<img src="/media/person/${E(p.id)}" alt="${E(p.name)}的数字人照片">` : ''}${p.isDefault ? badge('默认出镜') : ''}</div><div class="person-card-content"><h2>${E(p.name)} <span data-person-ready="${E(p.id)}">${personReadiness(p)}</span></h2><button class="secondary" data-action="edit-person" data-id="${E(p.id)}">编辑人物资料 ${icon('arrow-right')}</button></div></article>`).join('')}<button class="add-person" data-action="add-person">${icon('plus')}<strong>添加一位新数字人</strong><small>形象、声音、配乐、钩子与平台账号<br>一次绑好，做片直接复用。</small></button></div><div id="person-editor">${editPerson !== undefined ? personEditor() : ''}</div>`;
+  main.innerHTML = `${heading('每条视频，都有自己的主角。','照片、音色、配乐、封面与视频风格、片尾钩子与分发账号统一归档在人物资料中，选好人物即可制作。',`<button class="secondary" data-action="add-person">${icon('plus')} 添加数字人</button>`)}<div class="people-grid">${state.config.people.map(p => {
+    const cName = p.cover_template_id ? (state.styles?.covers?.find(x => x.id === p.cover_template_id)?.name || p.cover_template_id) : '';
+    const vName = p.video_style_id ? (state.styles?.videos?.find(x => x.id === p.video_style_id)?.name || p.video_style_id) : '';
+    const styleLine = cName || vName ? `封面：${cName || '默认'} · 视频：${vName || '默认'}` : '风格：跟随工作台默认';
+    return `<article class="person-card"><div class="portrait-area">${p.hasPortrait ? `<img src="/media/person/${E(p.id)}" alt="${E(p.name)}的数字人照片">` : ''}${p.isDefault ? badge('默认出镜') : ''}</div><div class="person-card-content"><h2>${E(p.name)} <span data-person-ready="${E(p.id)}">${personReadiness(p)}</span></h2><p class="person-card-styles">${E(styleLine)}</p><button class="secondary" data-action="edit-person" data-id="${E(p.id)}">编辑人物资料 ${icon('arrow-right')}</button></div></article>`;
+  }).join('')}<button class="add-person" data-action="add-person">${icon('plus')}<strong>添加一位新数字人</strong><small>形象、声音、风格、配乐与平台账号<br>一次绑好，做片直接复用。</small></button></div><div id="person-editor">${editPerson !== undefined ? personEditor() : ''}</div>`;
   bindPerson();
 }
 function personUploadFields() {
@@ -825,7 +830,7 @@ function personEditor() {
         </section>
 
         <section class="person-module" id="person-module-visual" data-module="visual">
-          <div class="person-module-head"><span class="person-module-icon">${icon('music')}</span><div><h3>配乐与视觉风格</h3><p>为该数字人绑定专属背景音乐，并预留封面与成片界面风格。</p></div></div>
+          <div class="person-module-head"><span class="person-module-icon">${icon('palette')}</span><div><h3>配乐与视觉风格</h3><p>为该数字人绑定专属背景音乐、封面样式与视频样式，制作时自动套用。</p></div></div>
           <div class="form-group">
             <div class="label-row">
               <label class="field-label" for="person-music-track" style="margin:0">专属背景音乐（BGM）<span class="optional">选填</span></label>
@@ -840,7 +845,9 @@ function personEditor() {
             <div id="person-music-preview" class="person-music-preview">${renderPersonMusicPreview(boundMusicId)}</div>
             <p class="form-help">绑定后，每次选这位数字人制作视频都会自动使用这首配乐；单次新建制作也可临时覆盖。</p>
           </div>
-          <div class="module-roadmap"><span>规划中</span><p>专属视频封面样式与视频 UI 风格将在后续版本加入本模块。</p></div>
+          <input type="hidden" name="cover_template_id" value="${E(p?.cover_template_id || '')}">
+          <input type="hidden" name="video_style_id" value="${E(p?.video_style_id || '')}">
+          <div id="person-style-bindings" class="person-style-bindings"></div>
         </section>
 
         <section class="person-module" id="person-module-platforms" data-module="platforms">
@@ -958,6 +965,7 @@ function bindPerson() {
     hookInput.addEventListener('input', syncHookCount);
     syncHookCount();
   }
+  window.mountPersonStyleSelectors?.(form);
   form.addEventListener('submit', async event => {
     event.preventDefault();
     const errorSlot = form.querySelector('#person-error');
