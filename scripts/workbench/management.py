@@ -165,6 +165,8 @@ class Management:
         kind,ident,parent=item['kind'],item['id'],item['parent']
         if kind=='institution':
             self.app.archive.remove_tree(self.app.library.path(ident).parent)
+            if hasattr(self.app, 'store'):
+                self.app.store.sync_institution(ident)
         elif kind=='asset':
             value=self.app.library.get(parent)
             asset=next(a for a in value['assets'] if a['id']==ident)
@@ -204,6 +206,11 @@ class Management:
             field = values.get('field')
             if field == 'model_key':
                 value = self.app.models.reveal_key(values.get('provider'), values.get('baseUrl'))
+                return {'field': field, 'value': value}
+            if field == 'yixiaoer_api_key':
+                value = self.app.publish.api_key()
+                if not value:
+                    raise ValueError('当前没有保存蚁小二 API Key，请先填写并保存')
                 return {'field': field, 'value': value}
             return self.reveal_credential(field)
         if action == 'preview': return self.preview(values)

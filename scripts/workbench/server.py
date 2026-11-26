@@ -162,6 +162,75 @@ def apply_platform_accounts(person, values):
         person.pop("platform_accounts", None)
 
 
+def person_platform_bindings(person):
+    raw = (person or {}).get("platform_bindings") or {}
+    out = {}
+    for key, _, _ in PLATFORM_ACCOUNT_FIELDS:
+        item = raw.get(key)
+        if isinstance(item, dict) and str(item.get("accountId") or "").strip():
+            out[key] = {
+                "provider": str(item.get("provider") or "yixiaoer"),
+                "accountId": str(item.get("accountId") or "").strip(),
+                "authorId": str(item.get("authorId") or "").strip(),
+                "accountName": str(item.get("accountName") or "").strip(),
+            }
+    return out
+
+
+def apply_platform_bindings(person, values):
+    raw_nested = values.get("platform_bindings")
+    if isinstance(raw_nested, str) and raw_nested.strip():
+        try:
+            raw_nested = json.loads(raw_nested)
+        except json.JSONDecodeError:
+            raw_nested = {}
+    nested = raw_nested if isinstance(raw_nested, dict) else {}
+    flat_keys = {key: f"{key}_binding" for key, _, _ in PLATFORM_ACCOUNT_FIELDS}
+    touched = "platform_bindings" in values or any(f in values for f in flat_keys.values())
+    if not touched:
+        return
+    bindings = person_platform_bindings(person)
+    for key, _, label in PLATFORM_ACCOUNT_FIELDS:
+        flat = flat_keys[key]
+        if flat in values:
+            val = values.get(flat)
+            if isinstance(val, str) and val.strip().startswith("{"):
+                try:
+                    val = json.loads(val)
+                except json.JSONDecodeError:
+                    val = val.strip()
+        elif key in nested:
+            val = nested.get(key)
+        else:
+            continue
+        if not val:
+            bindings.pop(key, None)
+            continue
+        if isinstance(val, str):
+            aid = val.strip()
+            if not aid:
+                bindings.pop(key, None)
+                continue
+            bindings[key] = {"provider": "yixiaoer", "accountId": aid, "authorId": "", "accountName": ""}
+        elif isinstance(val, dict):
+            aid = str(val.get("accountId") or "").strip()
+            if not aid:
+                bindings.pop(key, None)
+                continue
+            if len(aid) > 120 or any(c in aid for c in "\r\n"):
+                raise ValueError(f"{label}绑定标识格式不正确。")
+            bindings[key] = {
+                "provider": str(val.get("provider") or "yixiaoer")[:40],
+                "accountId": aid,
+                "authorId": str(val.get("authorId") or "").strip()[:120],
+                "accountName": str(val.get("accountName") or "").strip()[:120],
+            }
+    if bindings:
+        person["platform_bindings"] = bindings
+    else:
+        person.pop("platform_bindings", None)
+
+
 class App:
     ensure_dir=staticmethod(ensure_dir)
     python_command=staticmethod(python_command)
@@ -211,9 +280,14 @@ class App:
         self.acceptance = Acceptance(self, read, write)
         from product_archive import ProductArchive
         self.archive = ProductArchive(self, read, write)
+        from publish_service import PublishService
+        self.publish = PublishService(self, read, write, recover=recover)
+        from workbench_store import WorkbenchStore
+        self.store = WorkbenchStore(self, read)
         if recover:
             self.library.bootstrap()
             self.queue.migrate()
+            self.store.ensure_synced()
 
     def exit_blocked(self):
         with self.transaction():
@@ -233,6 +307,8 @@ class App:
                 return '正在复刻音色，请等复刻处理完再退出。'
             if self.material_prep.active_any():
                 return '正在后台整理机构素材，请等整理完成后再退出。'
+            if self.publish.has_blocking_active():
+                return '正在上传或提交多平台发布任务，请等当前发布步骤完成后再退出。'
         return None
 
     @contextmanager
@@ -278,6 +354,8 @@ class App:
             t = self.task(ident)
             t.update(patch, updated=time.time())
             write(self.task_path(ident), t)
+            if hasattr(self, "store"):
+                self.store.sync_task(ident)
             return t
 
     def event(self, ident, message, kind="info"):
@@ -295,6 +373,10 @@ class App:
         except Exception: return '本地运行通道不可用，请恢复宿主服务后重试'
         for c in cfg["connections"].values():
             for value in self.pc.connection_keys(c):
+                if value and len(value) > 5:
+                    text = text.replace(value, "[凭据已隐藏]")
+        if hasattr(self, "publish"):
+            for value in self.publish.secret_values():
                 if value and len(value) > 5:
                     text = text.replace(value, "[凭据已隐藏]")
         return re.sub(r"(?i)(Bearer\s+)[\w.\-]+", r"\1[已隐藏]", text)
@@ -329,7 +411,8 @@ class App:
         for ident, p in cfg["people"].items():
             voice_training = self.voice_training.public({**p, 'id': ident})
             accounts = person_platform_accounts(p)
-            people.append({k: p.get(k) for k in ("name", "social_media_name", "speaker", "custom_speaker_id", "status", "speech_rate", "connection", "sample", "voice_provider", "aliyun_model")} | {"id": ident, "ready": bool(p.get("speaker") and self.pc.asset_path(p.get("portrait")) and self.pc.asset_path(p.get("portrait")).is_file()), "hasPortrait": bool(p.get("portrait")), "isDefault": ident == cfg.get("default_person"), "voiceTraining": voice_training, "music_track_id": p.get("music_track_id") or "", "cover_template_id": p.get("cover_template_id") or "", "video_style_id": p.get("video_style_id") or "", "closing_hook": person_closing_hook(p), "platform_accounts": accounts, "xiaohongshu_account_id": accounts["xiaohongshu"], "douyin_account_id": accounts["douyin"], "channels_account_id": accounts["channels"]})
+            bindings = person_platform_bindings(p)
+            people.append({k: p.get(k) for k in ("name", "social_media_name", "speaker", "custom_speaker_id", "status", "speech_rate", "connection", "sample", "voice_provider", "aliyun_model")} | {"id": ident, "ready": bool(p.get("speaker") and self.pc.asset_path(p.get("portrait")) and self.pc.asset_path(p.get("portrait")).is_file()), "hasPortrait": bool(p.get("portrait")), "isDefault": ident == cfg.get("default_person"), "voiceTraining": voice_training, "music_track_id": p.get("music_track_id") or "", "cover_template_id": p.get("cover_template_id") or "", "video_style_id": p.get("video_style_id") or "", "closing_hook": person_closing_hook(p), "platform_accounts": accounts, "platform_bindings": bindings, "xiaohongshu_account_id": accounts["xiaohongshu"], "douyin_account_id": accounts["douyin"], "channels_account_id": accounts["channels"]})
         storage = self.pc.storage_settings(c.get("storage"))
         voice_settings = cfg.get('settings', {})
         from aliyun_voice import DEFAULT_MODEL
@@ -347,7 +430,7 @@ class App:
             default_cover = self.styles.DEFAULT_COVER_ID
         if not self.styles.video_exists(default_video, self.skill):
             default_video = self.styles.DEFAULT_VIDEO_ID
-        return {"project": str(self.project), "workspace": str(self.workspace()), "workspaceDefault": str(self.workspace_default()), "workspaceSetting": read(self.data/'workspace.json', {}).get('directory', ''), "version": (self.skill / "VERSION").read_text().strip(), "people": people, "defaultPerson": cfg.get("default_person"), "voice": voice_public, "connection": {"speech": bool(keys[0]), "ak": bool(keys[1]), "sk": bool(keys[2]), "storage": storage, "cloneMode": c.get("clone_mode") or self.voice_training.default_mode, "speakerPool": c.get("speaker_pool", [])}, "preferences": {"music": cfg.get("settings", {}).get("music", {}).get("enabled", True), "coverHeader": cfg.get("settings", {}).get("cover", {}).get("header_text", ""), "coverTemplate": default_cover, "videoStyle": default_video}, "agent": self.agent_state(), "model": self.models.public(), "phases": PHASES, "onboarded": read(self.data / "preferences.json", {}).get("onboarded", False)}
+        return {"project": str(self.project), "workspace": str(self.workspace()), "workspaceDefault": str(self.workspace_default()), "workspaceSetting": read(self.data/'workspace.json', {}).get('directory', ''), "version": (self.skill / "VERSION").read_text().strip(), "people": people, "defaultPerson": cfg.get("default_person"), "voice": voice_public, "connection": {"speech": bool(keys[0]), "ak": bool(keys[1]), "sk": bool(keys[2]), "storage": storage, "cloneMode": c.get("clone_mode") or self.voice_training.default_mode, "speakerPool": c.get("speaker_pool", [])}, "preferences": {"music": cfg.get("settings", {}).get("music", {}).get("enabled", True), "coverHeader": cfg.get("settings", {}).get("cover", {}).get("header_text", ""), "coverTemplate": default_cover, "videoStyle": default_video}, "publish": self.publish.public_settings(), "agent": self.agent_state(), "model": self.models.public(), "phases": PHASES, "onboarded": read(self.data / "preferences.json", {}).get("onboarded", False)}
 
     def styles_state(self):
         cfg = self.pc.load()
@@ -546,6 +629,8 @@ class App:
             self.pc.save_patch(patch)
             if "workspace" in values:
                 self.save_workspace(values["workspace"])
+            if "publish" in values and isinstance(values["publish"], dict):
+                self.publish.save_settings(values["publish"])
             if "onboarded" in values:
                 write(self.data / "preferences.json", {"onboarded": bool(values["onboarded"])})
         return self.config()
@@ -644,6 +729,7 @@ class App:
             else:
                 person.pop('video_style_id', None)
         apply_platform_accounts(person, values)
+        apply_platform_bindings(person, values)
         if values.get('default') or (speaker and not cfg.get('default_person')):
             cfg['default_person'] = person['id']
 
@@ -812,6 +898,8 @@ class App:
             task_settings['personVisualStyles'] = task['personVisualStyles']
         write(self.task_path(ident).parent / 'task-settings.json', task_settings)
         write(self.task_path(ident), task)
+        if hasattr(self, "store"):
+            self.store.sync_task(ident)
         return task
 
     def check_agent(self):
@@ -1016,7 +1104,55 @@ class Handler(BaseHTTPRequestHandler):
                 from management import Management
                 return self.reply(200, Management(self.app,read,write).state())
             if url.path == "/api/state":
-                return self.reply(200, {"config": self.app.config(), "styles": self.app.styles_state(), "queue":self.app.queue.public(), "tasks": [self.app.public_task(t) for t in self.app.tasks()], "archives":self.app.archive.public(), "reference": self.app.reference(), "music": self.app.music.public(), "institutions": [self.app.library.public(v) for v in self.app.library.records()], "materialPreps": self.app.material_prep.all_jobs(), "draft": read(self.app.data / "creation-draft.json", {}), "selectedSource": read(self.app.data / "selected-source.json", {}).get("folder", "")})
+                return self.reply(200, {
+                    "config": self.app.config(),
+                    "styles": self.app.styles_state(),
+                    "queue": self.app.queue.public(),
+                    "tasks": self.app.store.active_or_recent_tasks(30),
+                    "archives": self.app.archive.public()[:30],
+                    "publish": self.app.store.publish_overview_for_state(15),
+                    "counts": self.app.store.nav_counts(),
+                    "storage": {"engine": "sqlite", "wal": True},
+                    "reference": self.app.reference(),
+                    "music": self.app.music.public(),
+                    "institutions": self.app.store.list_institutions_fast(),
+                    "materialPreps": self.app.material_prep.all_jobs(),
+                    "draft": read(self.app.data / "creation-draft.json", {}),
+                    "selectedSource": read(self.app.data / "selected-source.json", {}).get("folder", ""),
+                })
+            if url.path == "/api/tasks":
+                qs = parse_qs(url.query)
+                return self.reply(200, self.app.store.query_tasks(
+                    page=qs.get("page", [1])[0],
+                    page_size=qs.get("pageSize", [20])[0],
+                    status=qs.get("status", ["all"])[0],
+                    institution_id=qs.get("institutionId", [""])[0],
+                    person_id=qs.get("personId", [""])[0],
+                    q=qs.get("q", [""])[0],
+                ))
+            if url.path == "/api/works":
+                qs = parse_qs(url.query)
+                return self.reply(200, self.app.store.query_works(
+                    page=qs.get("page", [1])[0],
+                    page_size=qs.get("pageSize", [24])[0],
+                    publish_status=qs.get("publishStatus", ["all"])[0],
+                    accepted=qs.get("accepted", [""])[0],
+                    institution_id=qs.get("institutionId", [""])[0],
+                    person_id=qs.get("personId", [""])[0],
+                    q=qs.get("q", [""])[0],
+                ))
+            if url.path == "/api/publish/batches":
+                qs = parse_qs(url.query)
+                return self.reply(200, self.app.store.query_publish_batches(
+                    page=qs.get("page", [1])[0],
+                    page_size=qs.get("pageSize", [15])[0],
+                    status=qs.get("status", ["all"])[0],
+                    platform=qs.get("platform", [""])[0],
+                    person_id=qs.get("personId", [""])[0],
+                    q=qs.get("q", [""])[0],
+                ))
+            if url.path == "/api/publish/state":
+                return self.reply(200, self.app.store.publish_overview_for_state(15))
             match = re.fullmatch(r"/api/videos/(reference|[a-f0-9]{12})/(\d+)(?:/(cover|operation))?", url.path)
             if match:
                 ident, index, action = match.groups()
@@ -1044,7 +1180,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, self.app.public_task(self.app.task(url.path.rsplit("/", 1)[-1])))
             if url.path.startswith("/media/"):
                 return self.media(url.path)
-            filename = {"/": "index.html", "/app.js": "app.js", "/library.js": "library.js", "/video.js": "video.js", "/music.js": "music.js", "/controls.js":"controls.js", "/queue.js":"queue.js", "/styles.js":"styles.js", "/styles.css":"styles.css", "/materials.js":"materials.js", "/materials.css":"materials.css", "/style.css": "style.css", "/controls.css":"controls.css", "/queue.css":"queue.css", "/acceptance.js":"acceptance.js", "/acceptance.css":"acceptance.css"}.get(url.path)
+            filename = {"/": "index.html", "/app.js": "app.js", "/library.js": "library.js", "/video.js": "video.js", "/music.js": "music.js", "/controls.js":"controls.js", "/queue.js":"queue.js", "/styles.js":"styles.js", "/styles.css":"styles.css", "/materials.js":"materials.js", "/materials.css":"materials.css", "/publish.js":"publish.js", "/publish.css":"publish.css", "/pagination.js":"pagination.js", "/style.css": "style.css", "/controls.css":"controls.css", "/queue.css":"queue.css", "/acceptance.js":"acceptance.js", "/acceptance.css":"acceptance.css"}.get(url.path)
             if filename:
                 return self.file(HERE / "web" / filename)
             return self.reply(404, {"error": "页面不存在"})
@@ -1165,6 +1301,25 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, result)
             if url.path == "/api/config":
                 return self.reply(200, self.app.save_config(v))
+            if url.path == "/api/publish/settings":
+                return self.reply(200, {"settings": self.app.publish.save_settings(v), "publish": self.app.publish.public_state()})
+            if url.path == "/api/publish/test":
+                return self.reply(200, self.app.publish.test_and_sync(v))
+            if url.path == "/api/publish/sync-accounts":
+                return self.reply(200, self.app.publish.test_and_sync())
+            if url.path == "/api/publish/prepare":
+                return self.reply(200, self.app.publish.prepare_publish(v.get("items") or [], refresh_accounts=bool(v.get("refreshAccounts"))))
+            if url.path == "/api/publish/batches":
+                return self.reply(201, {"batch": self.app.publish.create_batch(v), "publish": self.app.publish.public_state()})
+            match = re.fullmatch(r"/api/publish/items/([a-f0-9]{12})/([a-f0-9]{12})/(retry|refresh)", url.path)
+            if match:
+                bid, iid, act = match.groups()
+                batch = self.app.publish.retry_item(bid, iid) if act == "retry" else self.app.publish.refresh_item(bid, iid)
+                return self.reply(200, {"batch": batch, "publish": self.app.publish.public_state()})
+            match = re.fullmatch(r"/api/publish/batches/([a-f0-9]{12})/delete", url.path)
+            if match:
+                out = self.app.publish.delete_batch(match[1])
+                return self.reply(200, {**out, "publish": self.app.publish.public_state()})
             if url.path == "/api/styles/default":
                 return self.reply(200, self.app.set_default_style(v))
             if url.path == "/api/styles/bind":
@@ -1517,6 +1672,7 @@ def serve(args):
                     app.acceptance.tick()
                     app.archive.tick()
                     app.voice_training.tick()
+                    app.publish.tick()
                     coordinator.tick()
                 last_error=None
             except Exception as exc:

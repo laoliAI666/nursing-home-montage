@@ -461,7 +461,7 @@ function renderSettings() {
   $('#settings-form').addEventListener('submit', async e => {
     e.preventDefault(); const next = e.submitter?.dataset.next; const form = e.target, data = Object.fromEntries(new FormData(form)); $('#settings-error').textContent = '';
     await busy(form.querySelector('[type=submit]'), async () => {
-      try { await api('/api/config', {workspace:data.workspace, connection:data, model:state.config.model?modelFields(form):undefined, preferences:{coverHeader:data.coverHeader, music:form.elements.music.checked}}); await refresh(false); if(next)setRoute(next); else renderSettings(); notify('设置已保存到本地项目'); }
+      try { await api('/api/config', {workspace:data.workspace, connection:data, model:state.config.model?modelFields(form):undefined, publish:window.publishSettingsFields?window.publishSettingsFields(form):undefined, preferences:{coverHeader:data.coverHeader, music:form.elements.music.checked}}); await refresh(false); if(next)setRoute(next); else renderSettings(); notify('设置已保存到本地项目'); }
       catch (err) { $('#settings-error').textContent = err.message; }
     });
   });
@@ -980,6 +980,7 @@ function bindPerson() {
     syncHookCount();
   }
   window.mountPersonStyleSelectors?.(form);
+  window.mountPersonPublishBindings?.(form, editing());
   form.addEventListener('submit', async event => {
     event.preventDefault();
     const errorSlot = form.querySelector('#person-error');

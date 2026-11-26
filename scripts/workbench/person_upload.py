@@ -13,7 +13,7 @@ from voice_training import AUDIO_FORMATS, MAX_AUDIO_BYTES
 IMAGE_FORMATS = {'.jpg': 'jpeg_pipe', '.jpeg': 'jpeg_pipe', '.png': 'png_pipe', '.webp': 'webp_pipe'}
 MAX_IMAGE_BYTES = 20_000_000
 MAX_UPLOAD_BYTES = MAX_IMAGE_BYTES + MAX_AUDIO_BYTES + 65_536
-TEXT_FIELDS = {'name', 'social_media_name', 'speaker', 'custom_speaker_id', 'person_voice_provider', 'person_aliyun_model', 'speech_rate', 'default', 'music_track_id', 'closing_hook', 'xiaohongshu_account_id', 'douyin_account_id', 'channels_account_id', 'cover_template_id', 'video_style_id'}
+TEXT_FIELDS = {'name', 'social_media_name', 'speaker', 'custom_speaker_id', 'person_voice_provider', 'person_aliyun_model', 'speech_rate', 'default', 'music_track_id', 'closing_hook', 'xiaohongshu_account_id', 'douyin_account_id', 'channels_account_id', 'xiaohongshu_binding', 'douyin_binding', 'channels_binding', 'platform_bindings', 'cover_template_id', 'video_style_id'}
 
 
 def read_form(content_type, body):

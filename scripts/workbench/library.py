@@ -108,6 +108,8 @@ class Library:
         value["updated"] = time.time()
         value["history"].append({"time": value["updated"], "revision": value["revision"], "message": message})
         self.write(self.path(value["id"]), value)
+        if hasattr(self.app, "store"):
+            self.app.store.sync_institution(value["id"])
 
     def add_source(self, ident, folder, record_source=True):
         source = self.app.scan(folder)

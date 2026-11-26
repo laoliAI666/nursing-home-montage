@@ -50,6 +50,10 @@ class ProductArchive:
             versions=[]
             for p in item['products']:
                 row={k:p[k] for k in ('index','version','label','title')}
+                if p.get('personId'):
+                    row['personId'] = p['personId']
+                if p.get('personName'):
+                    row['personName'] = p['personName']
                 row.update({kind:f"/media/archive/{item['id']}/{p['index']}/{p['version']}/{kind}" for kind in ('video','cover','package')})
                 versions.append(row)
             for index in sorted({p['index'] for p in versions}):
@@ -187,6 +191,8 @@ class ProductArchive:
                     manifest_path.unlink()
             if task:
                 self.app.update(ident, productDeletions={**deletions, str(index): 'deleted'})
+            if hasattr(self.app, 'store'):
+                self.app.store.sync_archive(ident)
 
     def roots(self,task):
         ident=task['id'];self.app.task_path(ident)
@@ -322,7 +328,11 @@ class ProductArchive:
                 target=self.root/ident/str(index)/version
                 hashes={name:self.copy_product(source,target/name) for name,source in [('final.mp4',job/'final.mp4'),('cover.png',job/'cover.png'),('发布包.zip',package)]}
                 (target/'发布文案.txt').write_text(publication_text(publication),encoding='utf-8')
-            products[key]={'index':index,'version':version,'label':label,'title':publication.get('title') or task['title'],'sha256':hashes}
+            vp = task.get('videoSpecs') or task.get('videoPeople') or []
+            p_info = vp[index] if 0 <= index < len(vp) and isinstance(vp[index], dict) else {}
+            p_id = p_info.get('person') or task.get('person') or ''
+            p_name = p_info.get('personName') or task.get('personName') or ''
+            products[key]={'index':index,'version':version,'label':label,'title':publication.get('title') or task['title'],'personId':p_id,'personName':p_name,'sha256':hashes}
         for p in products.values():
             for name,fingerprint in p['sha256'].items():
                 folder=delivery_folder(task,p['index'],p['version']) or self.root/ident/str(p['index'])/p['version']
@@ -336,6 +346,8 @@ class ProductArchive:
         if task.get('workspace'):
             manifest.update(workspace=task['workspace'], job=task['job'])
         if products:self.write(path,manifest)
+        if hasattr(self.app, 'store'):
+            self.app.store.sync_archive(ident)
 
     def remove_tree(self,root):
         if not root.exists():return
@@ -373,3 +385,6 @@ class ProductArchive:
             value=self.read(preview,{})
             if value.get('values',{}).get('kind')=='task' and task['id'] in value['values'].get('ids',[]):preview.unlink(missing_ok=True)
         self.request_path(task['id']).unlink(missing_ok=True)
+        if hasattr(self.app, 'store'):
+            self.app.store.sync_task(task['id'])
+            self.app.store.sync_archive(task['id'])
