@@ -21,6 +21,7 @@
 #task-stages:not([hidden]){margin-bottom:28px}
 #task-stages .workflow{margin-top:0}
 .batch-items{margin:0 0 28px}
+.batch-items>.form-help{max-width:none;margin:0 0 16px;line-height:1.75}
 .batch-items>.section-heading{margin:0 0 20px;flex-wrap:wrap}
 .batch-items .section-heading h2{font-size:18px}
 .batch-items .section-heading>span{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
@@ -54,9 +55,9 @@
   .batch-items{padding:20px 18px}
 }
 
-.batch-cover-operations{margin-top:24px;padding-top:24px;border-top:1px solid var(--line)}.batch-cover-operations>.section-heading{margin-bottom:8px}.batch-cover-operations h3{font-size:16px;font-weight:600;margin:0}.batch-cover-operations>.form-help{margin:0 0 14px;line-height:1.8}.batch-cover-item .queue-number svg{width:20px;height:20px}.batch-cover-item .queue-item-title{font-size:14px}
+.batch-cover-operations{margin-top:24px;padding-top:24px;border-top:1px solid var(--line)}.batch-cover-operations>.section-heading{margin-bottom:8px}.batch-cover-operations h3{font-size:16px;font-weight:600;margin:0}.batch-cover-operations>.form-help{max-width:none;margin:0 0 14px;line-height:1.8}.batch-cover-item .queue-number svg{width:20px;height:20px}.batch-cover-item .queue-item-title{font-size:14px}
 
-.batch-planning-summary{margin-bottom:28px}.batch-planning-summary>.form-help{margin:10px 0 0;line-height:1.8}.queue-connection>.text-button{margin:0 10px}
+.batch-planning-summary{margin-bottom:28px}.batch-planning-summary>.form-help{max-width:none;margin:10px 0 0;line-height:1.8}.queue-connection>.text-button{margin:0 10px}
 
 
 .project-overview {display:grid;gap:14px;margin-bottom:25px}

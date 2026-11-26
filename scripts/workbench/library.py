@@ -55,17 +55,22 @@ class Library:
             indices = [row['index'] for row in rows if row['status'] == 'completed'] if rows else (
                 range(task['count']) if task['status'] == 'completed' else ())
             completed_count += sum(not product_deletion(task, index) for index in indices)
+        prep = getattr(self.app, "material_prep", None)
+        prep_data = prep._load(ident) if prep else None
         result = {k: value.get(k) for k in ("id", "name", "address", "description", "created", "updated", "revision", "reference", "coverAsset")}
         result.update(counts={k: sum(a["kind"] == k for a in enabled) for k in ("video", "image", "text")},
                       fileCount=len(current), enabledCount=len(enabled), taskCount=len(tasks),
                       completedCount=completed_count,
                       thumbnail=f"/media/library/{ident}/{cover['id']}/thumb" if cover else None)
+        if prep:
+            result["materialPrep"] = prep.summary(value, prep_data)
         result['completedCount']+=sum(len(a['results']) for a in self.app.archive.public() if a.get('institutionId')==ident and not any(t['id']==a['id'] for t in tasks))
         if detail:
             result["assets"] = [{k: v for k, v in a.items() if k != "stored"} | {
                 "url": f"/media/library/{ident}/{a['id']}/file",
                 "thumbnail": f"/media/library/{ident}/{a['id']}/thumb" if a["kind"] != "text" else None,
                 "textUrl": f"/api/library/{ident}/text/{a['id']}" if a["kind"] == "text" else None,
+                **({"analysis": prep.asset_view(ident, a, prep_data)} if prep else {}),
             } for a in current]
             result["history"] = value.get("history", [])[-30:]
             result["sources"] = value.get("sources", [])
@@ -141,9 +146,12 @@ class Library:
                 self.commit(value, f"新增 {added} 个素材，更新 {changed} 个文件版本")
             else:
                 self.write(self.path(ident), value)
-            result = self.public(value, True)
-            result["importResult"] = {"added": added, "updated": changed, "unchanged": skipped}
-            return result
+        prep = getattr(self.app, "material_prep", None)
+        if prep and (added or changed or prep.needs_incremental(self.get(ident))):
+            prep.start(ident, mode="incremental", auto=True)
+        result = self.public(self.get(ident), True)
+        result["importResult"] = {"added": added, "updated": changed, "unchanged": skipped}
+        return result
 
     def sync(self, ident):
         value = self.get(ident)
@@ -159,6 +167,7 @@ class Library:
         return result
 
     def enable(self, ident, aid, enabled):
+        changed_to_enabled = False
         with self.app.transaction():
             value = self.get(ident)
             asset = next((a for a in value["assets"] if a["id"] == aid and a["current"]), None)
@@ -166,8 +175,12 @@ class Library:
                 raise ValueError("素材不存在或已被新版本替代")
             if asset["enabled"] != enabled:
                 asset["enabled"] = enabled
+                changed_to_enabled = bool(enabled)
                 self.commit(value, ("纳入新制作：" if enabled else "暂不用于新制作：") + asset["name"])
-            return self.public(value, True)
+        prep = getattr(self.app, "material_prep", None)
+        if changed_to_enabled and prep and prep.needs_incremental(self.get(ident)):
+            prep.start(ident, mode="incremental", auto=True)
+        return self.public(self.get(ident), True)
 
     def snapshot(self, ident, task_id):
         with self.app.transaction():

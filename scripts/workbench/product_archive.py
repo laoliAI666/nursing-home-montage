@@ -191,7 +191,7 @@ class ProductArchive:
     def roots(self,task):
         ident=task['id'];self.app.task_path(ident)
         from workspace import owned_batch, video_job
-        expected = owned_batch(self.app,task)
+        expected = owned_batch(self.app,task,allow_missing=True)
         roots=[self.app.edits.root/ident,self.app.task_path(ident).parent]
         if task.get('workspace'):
             roots += [expected/'batch-planning'] + [video_job(task,i) for i in range(task['count'])]

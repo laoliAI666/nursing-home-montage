@@ -46,6 +46,15 @@ class Acceptance:
         for other in self.app.tasks():
             if other.get('revisionOf', {}).get('taskId') == task['id'] and other['status'] not in TERMINAL | {'partial'}:
                 return False, '有单条重做仍在引用这个工程，请等重做结束后验收'
+        if not task.get('intermediatesCleaned'):
+            job_root = Path(task['job'])
+            if not job_root.is_dir():
+                return False, '本地工程目录已移走或缺失，无法验收；可直接删除这条任务记录'
+            from workspace import video_job
+            indices = [r['index'] for r in rows if r['status'] == 'completed'] if rows else list(range(task['count']))
+            active_indices = [i for i in indices if not product_deletion(task, i)]
+            if active_indices and not any((video_job(task, i) / 'final.mp4').is_file() for i in active_indices):
+                return False, '本地成品文件已移走或缺失，无法验收；可直接删除这条任务记录'
         return True, ''
 
     def submit(self, ident):

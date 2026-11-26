@@ -162,6 +162,9 @@ class Production:
             self.invoke('inventory', job=folder, cli_args=['inventory', task['source'], '--out', folder])
         if task.get('facts'):
             self.app.planning.append_facts(task, folder)
+        prep = getattr(self.app, 'material_prep', None)
+        if prep:
+            prep.seed_media_cache(task, folder)
 
     def execute(self):
         client = self.app.models.client()

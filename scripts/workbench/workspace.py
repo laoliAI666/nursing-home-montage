@@ -38,16 +38,32 @@ def delivery_folder(task, index, version='original'):
     return folder if version == 'original' else folder / ('封面版本_' + version)
 
 
-def owned_batch(app, task):
+def owned_batch(app, task, *, allow_missing=False):
     ident = task['id']
     if task.get('workspace'):
         expected = Path(task['workspace']) / ('批次_' + ident)
-        marker = expected / '.workbench-batch.json'
-        expected_marker = {'id': ident, 'project': str(app.project)}
-        if marker.is_symlink() or not marker.is_file() or json.loads(marker.read_text()) != expected_marker:
-            raise ValueError('工作区批次归属无法验证，不能清理')
     else:
         expected = app.project / '作品' / ('工作台_' + ident)
-    if Path(task['job']) != expected or expected.resolve() != expected.absolute():
+    if Path(task['job']) != expected or expected.is_symlink():
         raise ValueError('只能清理这个任务自己的批次工程')
+    if expected.exists():
+        if expected.resolve() != expected.absolute():
+            raise ValueError('只能清理这个任务自己的批次工程')
+    elif expected.parent.exists() and expected.parent.resolve() != expected.parent.absolute():
+        raise ValueError('只能清理这个任务自己的批次工程')
+    if task.get('workspace'):
+        if not expected.exists():
+            if allow_missing:
+                return expected
+            raise ValueError('工作区工程目录已不存在（可能已被手动移动或删除），无法验收；可直接删除这条任务记录')
+        marker = expected / '.workbench-batch.json'
+        expected_marker = {'id': ident, 'project': str(app.project)}
+        if marker.is_symlink() or not marker.is_file():
+            raise ValueError('工作区批次归属无法验证，不能清理')
+        try:
+            actual_marker = json.loads(marker.read_text(encoding='utf-8'))
+        except (OSError, ValueError) as exc:
+            raise ValueError('工作区批次归属无法验证，不能清理') from exc
+        if actual_marker != expected_marker:
+            raise ValueError('工作区批次归属无法验证，不能清理')
     return expected

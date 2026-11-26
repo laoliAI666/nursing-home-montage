@@ -10,16 +10,17 @@ function acceptanceButton(t){
   if(cleanupBusy(t))return `<button class="secondary accept-task-button" disabled>${cleanupSpinner()}后台清理中</button>`;
   if(t.status==='accepted'&&t.cleanupStatus==='failed')return `<button class="secondary accept-task-button" data-action="review-task" data-id="${t.id}" ${t.canRetryCleanup?'':'disabled'}>${icon('arrow-right')}重试清理</button>`;
   if(t.status!=='awaiting_acceptance')return '';
+  if(t.workspaceMissing)return `<button class="secondary accept-task-button" disabled title="${E(t.acceptanceBlockedReason||'本地工程目录已移走或缺失，可直接删除任务记录')}">工程已移走</button>`;
   return `<button class="secondary accept-task-button" data-action="review-task" data-id="${t.id}" ${t.canAccept?'':`disabled title="${E(t.acceptanceBlockedReason||'等待当前制作完全结束')}"`}>${icon('check')} 验收成品</button>`;
 }
 const taskCurrentBeforeAcceptance=taskCurrent;
 taskCurrent=function(t){
   if(!['accepted','awaiting_acceptance'].includes(t.status))return taskCurrentBeforeAcceptance(t);
-  const accepted=t.status==='accepted',pending=cleanupBusy(t),failed=t.cleanupStatus==='failed';
+  const accepted=t.status==='accepted',pending=cleanupBusy(t),failed=t.cleanupStatus==='failed',missing=!accepted&&t.workspaceMissing;
   const removed=Object.values(t.productDeletions||{}).includes('deleted')&&!t.results.some(r=>r.video||r.deletionPending);
-  const title=removed?'这批成品已删除':pending?'已验收，正在后台清理':failed?'已验收，清理尚未完成':accepted?'已验收，成品已归档':'制作完成，等待你验收';
-  const message=removed?'制作记录仍可查看。':pending?'你可以继续查看或下载成品，清理完成后这里会自动更新。':failed?'成品已保留，可以重试清理。':accepted?'视频、封面和发布包已保留。已释放 '+storageText(t.acceptance?.releasedBytes||0)+' 中间文件空间。':'确认满意后点击验收，中间文件会在后台清理。';
-  return `<div class="current-step"><span>${pending?cleanupSpinner():icon(accepted?'check':'play')}</span><div><h2>${title}</h2><p>${message}</p></div></div>`;
+  const title=missing?'本地工程目录已移走或缺失':removed?'这批成品已删除':pending?'已验收，正在后台清理':failed?'已验收，清理尚未完成':accepted?'已验收，成品已归档':'制作完成，等待你验收';
+  const message=missing?'该任务对应的工作区批次文件夹已不在硬盘上，无法验收；可以直接删除这条历史任务记录。':removed?'制作记录仍可查看。':pending?'你可以继续查看或下载成品，清理完成后这里会自动更新。':failed?'成品已保留，可以重试清理。':accepted?'视频、封面和发布包已保留。已释放 '+storageText(t.acceptance?.releasedBytes||0)+' 中间文件空间。':'确认满意后点击验收，中间文件会在后台清理。';
+  return `<div class="current-step"><span>${pending?cleanupSpinner():icon(missing?'folder':accepted?'check':'play')}</span><div><h2>${title}</h2><p>${message}</p></div></div>`;
 };
 const taskControlsBeforeAcceptance=taskControls;
 taskControls=function(t){

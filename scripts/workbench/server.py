@@ -191,6 +191,8 @@ class App:
                 self.update(t["id"], status="interrupted", message="工作台已重新启动。可以从已有阶段继续。")
         from library import Library
         self.library = Library(self, read, write)
+        from material_prep import MaterialPreparation
+        self.material_prep = MaterialPreparation(self, read, write)
         from job_queue import JobQueue
         self.queue=JobQueue(self,read,write)
         from planning import BatchPlanning
@@ -229,6 +231,8 @@ class App:
                 return '正在清理任务文件，请等清理完成后再退出。'
             if any(self.voice_training.active(ident) for ident in self.pc.load()['people']):
                 return '正在复刻音色，请等复刻处理完再退出。'
+            if self.material_prep.active_any():
+                return '正在后台整理机构素材，请等整理完成后再退出。'
         return None
 
     @contextmanager
@@ -725,6 +729,8 @@ class App:
             raise ValueError('请先在设置中补齐视频 AK / SK')
         ident = uuid.uuid4().hex[:12]
         institution = v.get("institutionId")
+        if institution:
+            self.material_prep.assert_ready_for_task(institution)
         snapshot = self.library.snapshot(institution, ident) if institution else None
         source = {"folder": snapshot["source"], "counts": snapshot["counts"]} if snapshot else self.scan(v.get("source", ""))
         if not source["counts"]["video"]:
@@ -846,6 +852,8 @@ class App:
             self.archive.ensure_available(ident)
             if t.get('revisionReady') is False:
                 raise ValueError('重做资料尚未准备完整，请回原视频重新提交修改')
+            if t.get('status') == 'draft' and t.get('institutionId'):
+                self.material_prep.assert_ready_for_task(t['institutionId'])
             if self.queue.for_task(ident):
                 if t['status'] in ('queued','running','stopping') and not answer:return t
                 return self.queue.task_action(ident,'retry',answer)
@@ -938,6 +946,7 @@ class App:
             if planning['status']=='completed' and planning.get('settled'):out['phase']=max(2,out['phase'])
         eligible, reason = self.acceptance.eligibility(t)
         out['productionStatus'] = t['status']
+        out['workspaceMissing'] = not Path(t['job']).is_dir() and not t.get('intermediatesCleaned')
         out['canAccept'] = eligible
         out['canRetryCleanup'] = t.get('cleanupStatus')=='failed' and self.acceptance.eligibility(t,for_cleanup=True)[0]
         out['acceptanceBlockedReason'] = reason
@@ -1007,7 +1016,7 @@ class Handler(BaseHTTPRequestHandler):
                 from management import Management
                 return self.reply(200, Management(self.app,read,write).state())
             if url.path == "/api/state":
-                return self.reply(200, {"config": self.app.config(), "styles": self.app.styles_state(), "queue":self.app.queue.public(), "tasks": [self.app.public_task(t) for t in self.app.tasks()], "archives":self.app.archive.public(), "reference": self.app.reference(), "music": self.app.music.public(), "institutions": [self.app.library.public(v) for v in self.app.library.records()], "draft": read(self.app.data / "creation-draft.json", {}), "selectedSource": read(self.app.data / "selected-source.json", {}).get("folder", "")})
+                return self.reply(200, {"config": self.app.config(), "styles": self.app.styles_state(), "queue":self.app.queue.public(), "tasks": [self.app.public_task(t) for t in self.app.tasks()], "archives":self.app.archive.public(), "reference": self.app.reference(), "music": self.app.music.public(), "institutions": [self.app.library.public(v) for v in self.app.library.records()], "materialPreps": self.app.material_prep.all_jobs(), "draft": read(self.app.data / "creation-draft.json", {}), "selectedSource": read(self.app.data / "selected-source.json", {}).get("folder", "")})
             match = re.fullmatch(r"/api/videos/(reference|[a-f0-9]{12})/(\d+)(?:/(cover|operation))?", url.path)
             if match:
                 ident, index, action = match.groups()
@@ -1035,7 +1044,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, self.app.public_task(self.app.task(url.path.rsplit("/", 1)[-1])))
             if url.path.startswith("/media/"):
                 return self.media(url.path)
-            filename = {"/": "index.html", "/app.js": "app.js", "/library.js": "library.js", "/video.js": "video.js", "/music.js": "music.js", "/controls.js":"controls.js", "/queue.js":"queue.js", "/styles.js":"styles.js", "/styles.css":"styles.css", "/style.css": "style.css", "/controls.css":"controls.css", "/queue.css":"queue.css", "/acceptance.js":"acceptance.js", "/acceptance.css":"acceptance.css"}.get(url.path)
+            filename = {"/": "index.html", "/app.js": "app.js", "/library.js": "library.js", "/video.js": "video.js", "/music.js": "music.js", "/controls.js":"controls.js", "/queue.js":"queue.js", "/styles.js":"styles.js", "/styles.css":"styles.css", "/materials.js":"materials.js", "/materials.css":"materials.css", "/style.css": "style.css", "/controls.css":"controls.css", "/queue.css":"queue.css", "/acceptance.js":"acceptance.js", "/acceptance.css":"acceptance.css"}.get(url.path)
             if filename:
                 return self.file(HERE / "web" / filename)
             return self.reply(404, {"error": "页面不存在"})
@@ -1138,7 +1147,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, self.app.edits.save_draft(ident,index,v,action=='cover-draft'))
             if url.path == "/api/library":
                 return self.reply(201, self.app.library.save(v))
-            match = re.fullmatch(r"/api/library/([a-f0-9]{12})(?:/(import|sync|asset))?", url.path)
+            match = re.fullmatch(r"/api/library/([a-f0-9]{12})(?:/(import|sync|asset|prep|asset-analysis))?", url.path)
             if match:
                 ident, action = match.groups()
                 if action == "import":
@@ -1147,6 +1156,10 @@ class Handler(BaseHTTPRequestHandler):
                     result = self.app.library.sync(ident)
                 elif action == "asset":
                     result = self.app.library.enable(ident, v.get("id", ""), bool(v.get("enabled")))
+                elif action == "prep":
+                    result = self.app.material_prep.start(ident, mode=v.get("mode") or "incremental", asset_id=v.get("assetId") or None)
+                elif action == "asset-analysis":
+                    result = self.app.material_prep.update_asset_analysis(ident, v.get("assetId", ""), description=v.get("description"), motion=v.get("motion"))
                 else:
                     result = self.app.library.save(v, ident)
                 return self.reply(200, result)
