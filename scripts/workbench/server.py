@@ -234,7 +234,7 @@ def apply_platform_bindings(person, values):
 class App:
     ensure_dir=staticmethod(ensure_dir)
     python_command=staticmethod(python_command)
-    def __init__(self, project, skill=None, recover=True, *, workbench_host='codex'):
+    def __init__(self, project, skill=None, recover=True, *, workbench_host='codex', deploy_mode='local'):
         self.project = Path(project).resolve()
         self.skill = find_skill(self.project, skill)
         if not self.skill:
@@ -255,6 +255,7 @@ class App:
         self.processes = {}
         self.service_mode = 'standalone'
         self.workbench_host = workbench_host
+        self.deploy_mode = deploy_mode if deploy_mode in ('local', 'server') else 'local'
         for t in self.tasks() if recover else []:
             if t["status"] in ("running", "queued") and t.get("executor") == "cli":
                 self.update(t["id"], status="interrupted", message="工作台已重新启动。可以从已有阶段继续。")
@@ -284,6 +285,8 @@ class App:
         self.publish = PublishService(self, read, write, recover=recover)
         from workbench_store import WorkbenchStore
         self.store = WorkbenchStore(self, read)
+        from auth import AuthService
+        self.auth = AuthService(self, self.store)
         if recover:
             self.library.bootstrap()
             self.queue.migrate()
@@ -403,17 +406,20 @@ class App:
         write(self.data/'workspace.json', settings)
         return directory
 
-    def config(self):
+    def config(self, *, actor=None):
         cfg = self.pc.load()
         c = cfg["connections"].get("main", {})
         keys = self.pc.connection_keys(c)
+        can_people = actor is None or actor.can("people.read") or actor.can("tasks.create") or actor.can("tasks.read") or actor.can("works.read")
+        can_settings = actor is None or actor.can("settings.read")
         people = []
-        for ident, p in cfg["people"].items():
-            voice_training = self.voice_training.public({**p, 'id': ident})
-            accounts = person_platform_accounts(p)
-            bindings = person_platform_bindings(p)
-            people.append({k: p.get(k) for k in ("name", "social_media_name", "speaker", "custom_speaker_id", "status", "speech_rate", "connection", "sample", "voice_provider", "aliyun_model")} | {"id": ident, "ready": bool(p.get("speaker") and self.pc.asset_path(p.get("portrait")) and self.pc.asset_path(p.get("portrait")).is_file()), "hasPortrait": bool(p.get("portrait")), "isDefault": ident == cfg.get("default_person"), "voiceTraining": voice_training, "music_track_id": p.get("music_track_id") or "", "cover_template_id": p.get("cover_template_id") or "", "video_style_id": p.get("video_style_id") or "", "closing_hook": person_closing_hook(p), "platform_accounts": accounts, "platform_bindings": bindings, "xiaohongshu_account_id": accounts["xiaohongshu"], "douyin_account_id": accounts["douyin"], "channels_account_id": accounts["channels"]})
-        storage = self.pc.storage_settings(c.get("storage"))
+        if can_people:
+            for ident, p in cfg["people"].items():
+                voice_training = self.voice_training.public({**p, 'id': ident})
+                accounts = person_platform_accounts(p)
+                bindings = person_platform_bindings(p)
+                people.append({k: p.get(k) for k in ("name", "social_media_name", "speaker", "custom_speaker_id", "status", "speech_rate", "connection", "sample", "voice_provider", "aliyun_model")} | {"id": ident, "ready": bool(p.get("speaker") and self.pc.asset_path(p.get("portrait")) and self.pc.asset_path(p.get("portrait")).is_file()), "hasPortrait": bool(p.get("portrait")), "isDefault": ident == cfg.get("default_person"), "voiceTraining": voice_training, "music_track_id": p.get("music_track_id") or "", "cover_template_id": p.get("cover_template_id") or "", "video_style_id": p.get("video_style_id") or "", "closing_hook": person_closing_hook(p), "platform_accounts": accounts, "platform_bindings": bindings, "xiaohongshu_account_id": accounts["xiaohongshu"], "douyin_account_id": accounts["douyin"], "channels_account_id": accounts["channels"]})
+        storage = self.pc.storage_settings(c.get("storage")) if can_settings else {"provider": (c.get("storage") or {}).get("provider", "tmpfile")}
         voice_settings = cfg.get('settings', {})
         from aliyun_voice import DEFAULT_MODEL
         aliyun = cfg['connections'].get('aliyun', {})
@@ -421,16 +427,47 @@ class App:
                         'minimaxConfigured': bool(self.pc.connection_keys(cfg['connections'].get('minimax', {}))[0]),
                         'minimaxModel': voice_settings.get('minimax_model', 'speech-2.8-hd'),
                         'aliyunConfigured': bool(aliyun.get('workspace') and self.pc.connection_keys(aliyun)[0]),
-                        'aliyunWorkspace': aliyun.get('workspace', ''),
+                        'aliyunWorkspace': aliyun.get('workspace', '') if can_settings else '',
                         'aliyunModel': voice_settings.get('aliyun_model', DEFAULT_MODEL),
-                        'project': c.get('voice_project', 'default')}
+                        'project': c.get('voice_project', 'default') if can_settings else ''}
         default_cover = cfg.get("settings", {}).get("cover", {}).get("template") or self.styles.DEFAULT_COVER_ID
         default_video = cfg.get("settings", {}).get("template", {}).get("id") or self.styles.DEFAULT_VIDEO_ID
         if not self.styles.cover_exists(default_cover, self.skill):
             default_cover = self.styles.DEFAULT_COVER_ID
         if not self.styles.video_exists(default_video, self.skill):
             default_video = self.styles.DEFAULT_VIDEO_ID
-        return {"project": str(self.project), "workspace": str(self.workspace()), "workspaceDefault": str(self.workspace_default()), "workspaceSetting": read(self.data/'workspace.json', {}).get('directory', ''), "version": (self.skill / "VERSION").read_text().strip(), "people": people, "defaultPerson": cfg.get("default_person"), "voice": voice_public, "connection": {"speech": bool(keys[0]), "ak": bool(keys[1]), "sk": bool(keys[2]), "storage": storage, "cloneMode": c.get("clone_mode") or self.voice_training.default_mode, "speakerPool": c.get("speaker_pool", [])}, "preferences": {"music": cfg.get("settings", {}).get("music", {}).get("enabled", True), "coverHeader": cfg.get("settings", {}).get("cover", {}).get("header_text", ""), "coverTemplate": default_cover, "videoStyle": default_video}, "publish": self.publish.public_settings(), "agent": self.agent_state(), "model": self.models.public(), "phases": PHASES, "onboarded": read(self.data / "preferences.json", {}).get("onboarded", False)}
+        model_pub = self.models.public()
+        if not can_settings:
+            model_pub = {"configured": bool(model_pub.get("configured")), "provider": model_pub.get("provider", ""), "productionTimeoutMinutes": model_pub.get("productionTimeoutMinutes", 60)}
+        pub_settings = self.publish.public_settings()
+        if not can_settings:
+            pub_settings = {
+                "configured": bool(pub_settings.get("configured")),
+                "channel": pub_settings.get("channel", "local"),
+                "visibility": pub_settings.get("visibility", "private"),
+                "aiDeclaration": bool(pub_settings.get("aiDeclaration", True)),
+                "yxerInstalled": bool(pub_settings.get("yxerInstalled")),
+                "clientId": bool(pub_settings.get("clientId")),
+            }
+        return {
+            "project": str(self.project) if (can_settings and self.deploy_mode == 'local') else "",
+            "workspace": str(self.workspace()) if (can_settings and self.deploy_mode == 'local') else "",
+            "workspaceDefault": str(self.workspace_default()) if (can_settings and self.deploy_mode == 'local') else "",
+            "workspaceSetting": read(self.data/'workspace.json', {}).get('directory', '') if (can_settings and self.deploy_mode == 'local') else "",
+            "deployMode": self.deploy_mode,
+            "version": (self.skill / "VERSION").read_text().strip(),
+            "people": people,
+            "defaultPerson": cfg.get("default_person"),
+            "voice": voice_public,
+            "connection": {"speech": bool(keys[0]), "ak": bool(keys[1]), "sk": bool(keys[2]), "storage": storage, "cloneMode": c.get("clone_mode") or self.voice_training.default_mode, "speakerPool": c.get("speaker_pool", []) if can_settings else []},
+            "preferences": {"music": cfg.get("settings", {}).get("music", {}).get("enabled", True), "coverHeader": cfg.get("settings", {}).get("cover", {}).get("header_text", ""), "coverTemplate": default_cover, "videoStyle": default_video},
+            "publish": pub_settings,
+            "agent": self.agent_state(),
+            "model": model_pub,
+            "authSettings": self.auth.get_settings() if can_settings else {"allowAutoLogin": self.auth.get_settings().get("allowAutoLogin", True), "sessionTtlDays": self.auth.get_settings().get("sessionTtlDays", 7)},
+            "phases": PHASES,
+            "onboarded": read(self.data / "preferences.json", {}).get("onboarded", False),
+        }
 
     def styles_state(self):
         cfg = self.pc.load()
@@ -559,9 +596,9 @@ class App:
                 'connectionRequest':read(self.data/'connection-request.json',{}).get('status'),
                 'instruction':f"请连接本地视频工作台。读取 {HERE/'AGENT.md'}，项目路径为 {self.project}。使用原生文件通道接单并保持协调；命令通道失联时按文档恢复，不重复付费生成。"}
 
-    def save_config(self, values):
+    def save_config(self, values, *, actor=None, ip=""):
         with self.transaction():
-            if 'workspace' in values:
+            if 'workspace' in values and self.deploy_mode == 'local':
                 self.validate_workspace(values['workspace'])
             conn = values.get("connection")
             if conn is not None:
@@ -627,13 +664,15 @@ class App:
             if "coverHeader" in preferences:
                 patch["settings"]["cover"] = {"header_text": str(preferences["coverHeader"]).strip()[:40]}
             self.pc.save_patch(patch)
-            if "workspace" in values:
+            if "workspace" in values and self.deploy_mode == 'local':
                 self.save_workspace(values["workspace"])
             if "publish" in values and isinstance(values["publish"], dict):
                 self.publish.save_settings(values["publish"])
+            if "authSettings" in values and isinstance(values["authSettings"], dict):
+                self.auth.save_settings(values["authSettings"], actor=actor, ip=ip)
             if "onboarded" in values:
                 write(self.data / "preferences.json", {"onboarded": bool(values["onboarded"])})
-        return self.config()
+        return self.config(actor=actor)
 
     def save_person(self, values):
         with self.transaction():
@@ -751,7 +790,7 @@ class App:
         write(self.data / "selected-source.json", {"folder": str(p)})
         return {"folder": str(p), "files": rows, "counts": {k: sum(r["kind"] == k for r in rows) for k in ("video", "image", "text")}}
 
-    def create(self, v, original_music=None):
+    def create(self, v, original_music=None, *, actor=None):
         from management import Management
         Management(self,read,write).ensure_available(v)
         from duration import parse_target
@@ -829,7 +868,7 @@ class App:
         job = workspace / ("批次_" + ident)
         job.mkdir()
         write(job / '.workbench-batch.json', {'id': ident, 'project': str(self.project)})
-        task = {"id": ident, "title": title, "person": person["id"], "personName": '、'.join(dict.fromkeys(x['personName'] for x in specs)) if specs else person["name"], "source": source["folder"], "requirements": str(v.get("requirements", ""))[:20000], "facts": str(v.get("facts", ""))[:40000], "music": music_enabled, "count": count, "status": "draft", "phase": 0, "created": time.time(), "updated": time.time(), "job": str(job), "events": [], "message": "制作要求已保存", "session": str(uuid.uuid4())}
+        task = {"id": ident, "title": title, "person": person["id"], "personName": '、'.join(dict.fromkeys(x['personName'] for x in specs)) if specs else person["name"], "source": source["folder"], "requirements": str(v.get("requirements", ""))[:20000], "facts": str(v.get("facts", ""))[:40000], "music": music_enabled, "count": count, "status": "draft", "phase": 0, "created": time.time(), "updated": time.time(), "job": str(job), "events": [], "message": "制作要求已保存", "session": str(uuid.uuid4()), "createdBy": actor.user_id if actor else "", "createdByName": actor.display_name if actor else ""}
         task["workspace"] = str(workspace)
         if self.workbench_host == 'local':
             task['targetDurationSeconds'] = duration
@@ -1051,8 +1090,17 @@ class App:
         return {"available": path.is_file(), "title": "已认可的项目样片" if current == "original" else "项目样片 · 封面修改版", "duration": delivery.get("durationSeconds"), "video": "/media/video/reference/0/video?version=" + current, "cover": "/media/video/reference/0/cover?version=" + current, "package": "/media/video/reference/0/package?version=" + current, "currentVersion": current}
 
 
+DELETE_KIND_PERMS = {
+    "institution": "library.delete",
+    "asset": "library.delete",
+    "task": "tasks.delete",
+    "person": "people.delete",
+    "music": "music.delete",
+}
+
+
 class Handler(BaseHTTPRequestHandler):
-    server_version = "MontageWorkbench/0.6"
+    server_version = "MontageWorkbench/0.7"
 
     @property
     def app(self):
@@ -1061,100 +1109,324 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-    def reply(self, status, value, content_type="application/json; charset=utf-8"):
+    def _session_cookie_header(self, raw_token: str, max_age: int) -> str:
+        from auth import SESSION_COOKIE_NAME
+        parts = [f"{SESSION_COOKIE_NAME}={raw_token}", "HttpOnly", "SameSite=Lax", "Path=/", f"Max-Age={int(max_age)}"]
+        if self.is_https():
+            parts.append("Secure")
+        return "; ".join(parts)
+
+    def _clear_cookie_header(self) -> str:
+        from auth import SESSION_COOKIE_NAME
+        parts = [f"{SESSION_COOKIE_NAME}=", "HttpOnly", "SameSite=Lax", "Path=/", "Max-Age=0"]
+        if self.is_https():
+            parts.append("Secure")
+        return "; ".join(parts)
+
+    def reply(self, status, value, content_type="application/json; charset=utf-8", *, extra_headers=None):
         data = json.dumps(value, ensure_ascii=False).encode() if not isinstance(value, bytes) else value
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
         self.send_header("Referrer-Policy", "same-origin")
+        pending_cookie = getattr(self, "_pending_cookie_header", None)
+        if pending_cookie:
+            self.send_header("Set-Cookie", pending_cookie)
+            self._pending_cookie_header = None
+        for k, val in (extra_headers or []):
+            self.send_header(k, val)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
 
-    def valid_host(self):
-        return self.headers.get("Host") in {f"127.0.0.1:{self.server.server_port}", f"localhost:{self.server.server_port}"}
+    def reply_auth_error(self, exc):
+        return self.reply(exc.status, {"error": str(exc), "code": exc.code})
 
-    def authenticated(self):
+    def client_ip(self) -> str:
+        peer = self.client_address[0] if self.client_address else ""
+        if getattr(self.server, "trust_proxy", False) and peer in ("127.0.0.1", "::1"):
+            xff = self.headers.get("X-Forwarded-For", "").strip()
+            if xff:
+                parts = [p.strip() for p in xff.split(",") if p.strip()]
+                if parts:
+                    return parts[-1]
+            xri = self.headers.get("X-Real-IP", "").strip()
+            if xri:
+                return xri
+        return peer
+
+    def is_https(self) -> bool:
+        if getattr(self.server, "trust_proxy", False):
+            proto = self.headers.get("X-Forwarded-Proto", "").split(",")[0].strip().lower()
+            if proto == "https":
+                return True
+        origin = self.headers.get("Origin", "").strip().lower()
+        return origin.startswith("https://")
+
+    def allowed_hosts(self) -> set[str]:
+        hosts = {f"127.0.0.1:{self.server.server_port}", f"localhost:{self.server.server_port}"}
+        for origin in getattr(self.server, "public_origins", ()):
+            parsed = urlsplit(origin)
+            if parsed.netloc:
+                hosts.add(parsed.netloc.lower())
+        return hosts
+
+    def valid_host(self):
+        host = (self.headers.get("Host") or "").strip().lower()
+        if not host:
+            return False
+        if host in self.allowed_hosts():
+            return True
+        # In server mode without explicit --public-origin, allow standard host header (protected by HTTPS reverse proxy)
+        if self.app.deploy_mode == "server" and not getattr(self.server, "public_origins", ()):
+            return bool(re.fullmatch(r"[a-z0-9.\-:\[\]]{1,255}", host))
+        return False
+
+    def valid_origin(self):
+        if self.is_internal():
+            return True
+        origin = (self.headers.get("Origin") or "").strip().rstrip("/")
+        host = (self.headers.get("Host") or "").strip().lower()
+        if not origin:
+            return False
+        parsed = urlsplit(origin)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            return False
+        if origin.lower() in {o.lower().rstrip("/") for o in getattr(self.server, "public_origins", ())}:
+            return True
+        expected_scheme = "https" if self.is_https() else "http"
+        return parsed.netloc.lower() == host and (parsed.scheme == expected_scheme or self.app.deploy_mode == "local")
+
+    def is_internal(self) -> bool:
+        peer = self.client_address[0] if self.client_address else ""
+        if peer not in ("127.0.0.1", "::1"):
+            return False
+        token = self.headers.get("X-Workbench-Internal-Token", "")
+        return bool(token) and secrets.compare_digest(token, self.server.token)
+
+    def _cookie_value(self, name: str) -> str:
         cookie = self.headers.get("Cookie", "")
-        return any(part.strip() == f"montage_session_{self.server.server_port}=" + self.server.token for part in cookie.split(";"))
+        prefix = name + "="
+        for part in cookie.split(";"):
+            p = part.strip()
+            if p.startswith(prefix):
+                return p[len(prefix):]
+        return ""
+
+    def resolve_actor(self):
+        from auth import SESSION_COOKIE_NAME
+        raw = self._cookie_value(SESSION_COOKIE_NAME)
+        if not raw:
+            return None
+        actor = self.app.auth.authenticate(raw)
+        if actor and actor.refreshed_max_age:
+            self._pending_cookie_header = self._session_cookie_header(raw, actor.refreshed_max_age)
+        return actor
+
+    def require_auth(self, *, allow_password_change_pending: bool = False):
+        from auth import AuthError
+        actor = self.resolve_actor()
+        if not actor:
+            raise AuthError("请先登录工作台。", status=401, code="unauthorized")
+        if actor.must_change_password and not allow_password_change_pending:
+            raise AuthError("首次登录或密码已重置，请先修改个人密码。", status=403, code="password_change_required")
+        return actor
+
+    def require_perm(self, actor, perm_code: str, message: str = ""):
+        from auth import AuthError, ALL_PERMISSION_META
+        if not actor.can(perm_code):
+            label = ALL_PERMISSION_META.get(perm_code, {}).get("label", perm_code)
+            raise AuthError(message or f"没有「{label}」权限，如需开通请联系超级管理员。", status=403, code="forbidden")
+
+    def require_any_perm(self, actor, *perm_codes: str, message: str = ""):
+        from auth import AuthError
+        if not actor.can_any(*perm_codes):
+            raise AuthError(message or "当前账号没有执行该操作的权限。", status=403, code="forbidden")
+
+    def assert_local_only(self, feature_name: str):
+        from auth import AuthError
+        if self.app.deploy_mode == "server":
+            raise AuthError(f"云端部署模式下已禁用「{feature_name}」，请通过浏览器直接上传或操作。", status=403, code="server_mode_disabled")
+
+    def assert_upload_folder_allowed(self, actor, folder: str):
+        from auth import AuthError
+        if self.app.deploy_mode != "server" or not folder:
+            return
+        sandbox = (self.app.data / "uploads" / actor.user_id).resolve()
+        try:
+            target = Path(folder).expanduser().resolve()
+        except Exception:
+            raise AuthError("上传路径无效。", status=400)
+        if not target.is_relative_to(sandbox):
+            raise AuthError("云端部署模式下仅允许导入通过网页上传的素材，禁止读取服务器任意目录。", status=403, code="forbidden")
+
+    def _state_for_actor(self, actor) -> dict:
+        can_lib = actor.can("library.read")
+        can_tasks = actor.can("tasks.read")
+        can_works = actor.can("works.read")
+        can_pub = actor.can("publish.read")
+        can_styles = actor.can("styles.read")
+        can_music = actor.can("music.read") or actor.can("people.read") or actor.can("tasks.create")
+        counts = self.app.store.nav_counts()
+        return {
+            "config": self.app.config(actor=actor),
+            "styles": self.app.styles_state() if can_styles else {"defaultCoverId": "", "defaultVideoStyleId": "", "covers": [], "videos": [], "demoAssets": {}},
+            "queue": self.app.queue.public() if can_tasks else {"items": [], "headId": None},
+            "tasks": self.app.store.active_or_recent_tasks(30) if can_tasks else [],
+            "archives": self.app.archive.public()[:30] if can_works else [],
+            "publish": self.app.store.publish_overview_for_state(15) if can_pub else {"settings": self.app.publish.public_settings() if actor.can("settings.read") else {}, "accounts": self.app.publish.cached_accounts() if actor.can("people.update") else {"items": []}, "batches": [], "summary": {"activeItems": 0, "publishedItems": 0, "failedItems": 0, "totalBatches": 0}, "productStatuses": {}, "activeCount": 0},
+            "counts": {
+                "activeTasks": counts["activeTasks"] if can_tasks else 0,
+                "totalTasks": counts["totalTasks"] if can_tasks else 0,
+                "totalWorks": counts["totalWorks"] if can_works else 0,
+                "activePublish": counts["activePublish"] if can_pub else 0,
+            },
+            "storage": {"engine": "sqlite", "wal": True},
+            "reference": self.app.reference() if (can_works or can_tasks) else {"available": False},
+            "music": self.app.music.public() if can_music else {"tracks": [], "defaultId": ""},
+            "institutions": self.app.store.list_institutions_fast() if (can_lib or can_tasks) else [],
+            "materialPreps": self.app.material_prep.all_jobs() if (can_lib or can_tasks) else {},
+            "draft": self.app.auth.get_draft(actor.user_id) if actor.can("tasks.create") else {},
+            "selectedSource": "" if self.app.deploy_mode == "server" else read(self.app.data / "selected-source.json", {}).get("folder", ""),
+            "currentUser": actor.public_user(int(self.app.auth.get_settings().get("reauthWindowSeconds", 300))),
+        }
 
     def do_GET(self):
+        from auth import AuthError
         if not self.valid_host():
-            return self.reply(403, {"error": "请使用本地工作台地址"})
+            return self.reply(403, {"error": "请使用允许的工作台访问地址"})
         url = urlsplit(self.path)
         query = parse_qs(url.query)
-        if url.path == "/" and secrets.compare_digest(query.get("access", [""])[0], self.server.token):
-            self.send_response(303)
-            self.send_header("Set-Cookie", f"montage_session_{self.server.server_port}={self.server.token}; HttpOnly; SameSite=Strict; Path=/")
-            self.send_header("Location", "/")
-            self.end_headers()
-            return
-        if not self.authenticated():
-            if url.path == '/':
-                return self.reply(403, (HERE/'web/access.html').read_bytes(), 'text/html; charset=utf-8')
-            return self.reply(403, {'error':'当前浏览器尚未连接工作台，请用启动器的完整地址打开。'})
         try:
+            # 1. Public shell assets (no business data)
+            if url.path == '/cover-layout.mjs':
+                return self.file(self.app.skill / 'assets/covers/teal-adaptive/layout.mjs')
+            if url.path in ('/assets/covers/engine/cover_engine.mjs', '/assets/covers/teal-adaptive/layout.mjs', '/assets/styles/stickers.mjs'):
+                return self.file(self.app.skill / url.path.lstrip('/'))
+            filename = {
+                "/": "index.html", "/app.js": "app.js", "/library.js": "library.js", "/video.js": "video.js",
+                "/music.js": "music.js", "/controls.js": "controls.js", "/queue.js": "queue.js",
+                "/styles.js": "styles.js", "/styles.css": "styles.css", "/materials.js": "materials.js",
+                "/materials.css": "materials.css", "/publish.js": "publish.js", "/publish.css": "publish.css",
+                "/pagination.js": "pagination.js", "/style.css": "style.css", "/controls.css": "controls.css",
+                "/queue.css": "queue.css", "/acceptance.js": "acceptance.js", "/acceptance.css": "acceptance.css",
+                "/auth.js": "auth.js", "/auth.css": "auth.css", "/admin.js": "admin.js",
+            }.get(url.path)
+            if filename:
+                return self.file(HERE / "web" / filename)
+
+            # 2. Public auth bootstrap endpoint
+            if url.path == "/api/auth/status":
+                settings = self.app.auth.get_settings()
+                actor = self.resolve_actor()
+                reauth_win = int(settings.get("reauthWindowSeconds", 300))
+                return self.reply(200, {
+                    "initialized": self.app.auth.has_users(),
+                    "authenticated": actor is not None,
+                    "deployMode": self.app.deploy_mode,
+                    "authSettings": {
+                        "allowAutoLogin": bool(settings.get("allowAutoLogin", True)),
+                        "sessionTtlDays": int(settings.get("sessionTtlDays", 7)),
+                        "shortSessionHours": int(settings.get("shortSessionHours", 12)),
+                        "reauthWindowSeconds": reauth_win,
+                    },
+                    "user": actor.public_user(reauth_win) if actor else None,
+                })
+
+            # 3. Internal launcher health/runtime endpoints (loopback + internal token OR logged-in user)
             if url.path == '/api/runtime':
-                return self.reply(200, {'project':str(self.app.project), 'skill':str(self.app.skill), 'version':'0.6', 'codeFingerprint':self.server.code_fingerprint,'serviceMode':self.app.service_mode, 'workbenchHost':self.app.workbench_host})
+                if not self.is_internal():
+                    self.require_auth(allow_password_change_pending=True)
+                return self.reply(200, {'project': str(self.app.project), 'skill': str(self.app.skill), 'version': '0.7', 'codeFingerprint': self.server.code_fingerprint, 'serviceMode': self.app.service_mode, 'workbenchHost': self.app.workbench_host, 'deployMode': self.app.deploy_mode})
             if url.path == '/api/health':
-                if not isinstance(read(self.app.pc.directory()/'project.json'),dict):raise ValueError('项目配置不可读')
-                return self.reply(200, {'ok':True})
+                if not self.is_internal():
+                    self.require_auth(allow_password_change_pending=True)
+                if not isinstance(read(self.app.pc.directory()/'project.json'), dict):
+                    raise ValueError('项目配置不可读')
+                return self.reply(200, {'ok': True})
+
+            # 4. Authenticated user endpoints
+            if url.path == "/api/auth/me":
+                actor = self.require_auth(allow_password_change_pending=True)
+                settings = self.app.auth.get_settings()
+                return self.reply(200, {
+                    "user": actor.public_user(int(settings.get("reauthWindowSeconds", 300))),
+                    "deployMode": self.app.deploy_mode,
+                    "authSettings": settings if actor.can("settings.read") else {
+                        "allowAutoLogin": settings["allowAutoLogin"],
+                        "sessionTtlDays": settings["sessionTtlDays"],
+                    },
+                })
+
+            actor = self.require_auth()
+
             if url.path == '/api/manage/state':
                 from management import Management
-                return self.reply(200, Management(self.app,read,write).state())
+                mstate = Management(self.app, read, write).state()
+                if not actor.can("tasks.read"):
+                    mstate["deletions"] = []
+                    mstate["activity"] = {}
+                    mstate["diagnostics"] = {}
+                return self.reply(200, mstate)
             if url.path == "/api/state":
-                return self.reply(200, {
-                    "config": self.app.config(),
-                    "styles": self.app.styles_state(),
-                    "queue": self.app.queue.public(),
-                    "tasks": self.app.store.active_or_recent_tasks(30),
-                    "archives": self.app.archive.public()[:30],
-                    "publish": self.app.store.publish_overview_for_state(15),
-                    "counts": self.app.store.nav_counts(),
-                    "storage": {"engine": "sqlite", "wal": True},
-                    "reference": self.app.reference(),
-                    "music": self.app.music.public(),
-                    "institutions": self.app.store.list_institutions_fast(),
-                    "materialPreps": self.app.material_prep.all_jobs(),
-                    "draft": read(self.app.data / "creation-draft.json", {}),
-                    "selectedSource": read(self.app.data / "selected-source.json", {}).get("folder", ""),
-                })
+                return self.reply(200, self._state_for_actor(actor))
+            if url.path == "/api/users":
+                return self.reply(200, self.app.auth.list_users(
+                    actor,
+                    q=query.get("q", [""])[0],
+                    role=query.get("role", [""])[0],
+                    status=query.get("status", [""])[0],
+                ))
+            if url.path == "/api/roles":
+                return self.reply(200, self.app.auth.list_roles(actor))
+            if url.path == "/api/audit-logs":
+                return self.reply(200, self.app.auth.query_audit_logs(
+                    actor,
+                    page=query.get("page", [1])[0],
+                    page_size=query.get("pageSize", [30])[0],
+                    user_id=query.get("userId", [""])[0],
+                    action=query.get("action", [""])[0],
+                    q=query.get("q", [""])[0],
+                ))
             if url.path == "/api/tasks":
-                qs = parse_qs(url.query)
+                self.require_perm(actor, "tasks.read")
                 return self.reply(200, self.app.store.query_tasks(
-                    page=qs.get("page", [1])[0],
-                    page_size=qs.get("pageSize", [20])[0],
-                    status=qs.get("status", ["all"])[0],
-                    institution_id=qs.get("institutionId", [""])[0],
-                    person_id=qs.get("personId", [""])[0],
-                    q=qs.get("q", [""])[0],
+                    page=query.get("page", [1])[0],
+                    page_size=query.get("pageSize", [20])[0],
+                    status=query.get("status", ["all"])[0],
+                    institution_id=query.get("institutionId", [""])[0],
+                    person_id=query.get("personId", [""])[0],
+                    q=query.get("q", [""])[0],
                 ))
             if url.path == "/api/works":
-                qs = parse_qs(url.query)
+                self.require_perm(actor, "works.read")
                 return self.reply(200, self.app.store.query_works(
-                    page=qs.get("page", [1])[0],
-                    page_size=qs.get("pageSize", [24])[0],
-                    publish_status=qs.get("publishStatus", ["all"])[0],
-                    accepted=qs.get("accepted", [""])[0],
-                    institution_id=qs.get("institutionId", [""])[0],
-                    person_id=qs.get("personId", [""])[0],
-                    q=qs.get("q", [""])[0],
+                    page=query.get("page", [1])[0],
+                    page_size=query.get("pageSize", [24])[0],
+                    publish_status=query.get("publishStatus", ["all"])[0],
+                    accepted=query.get("accepted", [""])[0],
+                    institution_id=query.get("institutionId", [""])[0],
+                    person_id=query.get("personId", [""])[0],
+                    q=query.get("q", [""])[0],
                 ))
             if url.path == "/api/publish/batches":
-                qs = parse_qs(url.query)
+                self.require_perm(actor, "publish.read")
                 return self.reply(200, self.app.store.query_publish_batches(
-                    page=qs.get("page", [1])[0],
-                    page_size=qs.get("pageSize", [15])[0],
-                    status=qs.get("status", ["all"])[0],
-                    platform=qs.get("platform", [""])[0],
-                    person_id=qs.get("personId", [""])[0],
-                    q=qs.get("q", [""])[0],
+                    page=query.get("page", [1])[0],
+                    page_size=query.get("pageSize", [15])[0],
+                    status=query.get("status", ["all"])[0],
+                    platform=query.get("platform", [""])[0],
+                    person_id=query.get("personId", [""])[0],
+                    q=query.get("q", [""])[0],
                 ))
             if url.path == "/api/publish/state":
+                self.require_perm(actor, "publish.read")
                 return self.reply(200, self.app.store.publish_overview_for_state(15))
             match = re.fullmatch(r"/api/videos/(reference|[a-f0-9]{12})/(\d+)(?:/(cover|operation))?", url.path)
             if match:
+                self.require_perm(actor, "works.read")
                 ident, index, action = match.groups()
                 if action == 'cover':
                     return self.reply(200, self.app.edits.cover_payload(ident, int(index)))
@@ -1162,12 +1434,9 @@ class Handler(BaseHTTPRequestHandler):
                     _,_,_,folder = self.app.edits.resolve(ident, int(index))
                     return self.reply(200, read(folder / 'operation.json', {}))
                 return self.reply(200, self.app.edits.detail(ident, int(index)))
-            if url.path == '/cover-layout.mjs':
-                return self.file(self.app.skill / 'assets/covers/teal-adaptive/layout.mjs')
-            if url.path in ('/assets/covers/engine/cover_engine.mjs', '/assets/covers/teal-adaptive/layout.mjs', '/assets/styles/stickers.mjs'):
-                return self.file(self.app.skill / url.path.lstrip('/'))
             match = re.fullmatch(r"/api/library/([a-f0-9]{12})(?:/text/([a-f0-9]{12}))?", url.path)
             if match:
+                self.require_perm(actor, "library.read")
                 ident, aid = match.groups()
                 if aid:
                     asset, path = self.app.library.asset(ident, aid)
@@ -1177,13 +1446,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(200, {"name": asset["name"], "text": extract_text(path)[:80000]})
                 return self.reply(200, self.app.library.public(self.app.library.get(ident), True))
             if url.path.startswith("/api/tasks/"):
+                self.require_perm(actor, "tasks.read")
                 return self.reply(200, self.app.public_task(self.app.task(url.path.rsplit("/", 1)[-1])))
             if url.path.startswith("/media/"):
-                return self.media(url.path)
-            filename = {"/": "index.html", "/app.js": "app.js", "/library.js": "library.js", "/video.js": "video.js", "/music.js": "music.js", "/controls.js":"controls.js", "/queue.js":"queue.js", "/styles.js":"styles.js", "/styles.css":"styles.css", "/materials.js":"materials.js", "/materials.css":"materials.css", "/publish.js":"publish.js", "/publish.css":"publish.css", "/pagination.js":"pagination.js", "/style.css": "style.css", "/controls.css":"controls.css", "/queue.css":"queue.css", "/acceptance.js":"acceptance.js", "/acceptance.css":"acceptance.css"}.get(url.path)
-            if filename:
-                return self.file(HERE / "web" / filename)
+                return self.media(url.path, actor)
             return self.reply(404, {"error": "页面不存在"})
+        except AuthError as e:
+            return self.reply_auth_error(e)
         except (ValueError, FileNotFoundError) as e:
             return self.reply(400, {"error": str(e)})
         except (BrokenPipeError, ConnectionResetError):
@@ -1192,8 +1461,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(400, {"error": self.app.redact(str(e))[:500]})
 
     def do_POST(self):
-        if not self.valid_host() or not self.authenticated() or self.headers.get("Origin") != "http://" + self.headers.get("Host", ""):
-            return self.reply(403, {"error": "请从本地工作台操作"})
+        if not self.valid_host() or not self.valid_origin():
+            return self.reply(403, {"error": "请求来源不受信任，请从工作台页面操作"})
         url = urlsplit(self.path)
         shutdown = url.path == '/api/shutdown'
         if not shutdown:
@@ -1223,16 +1492,88 @@ class Handler(BaseHTTPRequestHandler):
         return self.reply(200, {'stopped': True})
 
     def post(self, url):
+        from auth import AuthError
         try:
+            ip = self.client_ip()
+            ua = self.headers.get("User-Agent", "")
+
+            # 1. Internal launcher shutdown
+            if url.path == '/api/shutdown':
+                if self.is_internal():
+                    return self.stop_if_idle()
+                actor = self.require_auth()
+                self.assert_local_only("退出工作台服务")
+                if not actor.is_super_admin:
+                    raise AuthError("仅超级管理员可关闭工作台服务。", status=403, code="forbidden")
+                self.app.auth.log_audit(actor, action="system.shutdown", resource_type="system", summary="手动退出并停止本地工作台服务", ip=ip)
+                return self.stop_if_idle()
+
+            # 2. Public auth endpoints (JSON)
+            if url.path in ("/api/auth/setup", "/api/auth/login", "/api/auth/logout"):
+                if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
+                    raise ValueError("请求格式错误")
+                length = int(self.headers.get("Content-Length", 0))
+                if not 0 < length <= 20_000:
+                    raise ValueError("请求体长度无效")
+                v = json.loads(self.rfile.read(length))
+                if url.path == "/api/auth/logout":
+                    actor = self.resolve_actor()
+                    self.app.auth.logout(actor, ip=ip)
+                    return self.reply(200, {"loggedOut": True}, extra_headers=[("Set-Cookie", self._clear_cookie_header())])
+                if url.path == "/api/auth/setup":
+                    raw_token, max_age, ctx = self.app.auth.setup_superadmin(
+                        v.get("username", ""),
+                        v.get("password", ""),
+                        v.get("displayName", ""),
+                        ip=ip,
+                        user_agent=ua,
+                        remember=bool(v.get("remember", True)),
+                    )
+                    reauth_win = int(self.app.auth.get_settings().get("reauthWindowSeconds", 300))
+                    return self.reply(201, {"user": ctx.public_user(reauth_win)}, extra_headers=[("Set-Cookie", self._session_cookie_header(raw_token, max_age))])
+                raw_token, max_age, ctx = self.app.auth.login(
+                    v.get("username", ""),
+                    v.get("password", ""),
+                    ip=ip,
+                    user_agent=ua,
+                    remember=bool(v.get("remember", True)),
+                )
+                reauth_win = int(self.app.auth.get_settings().get("reauthWindowSeconds", 300))
+                return self.reply(200, {"user": ctx.public_user(reauth_win)}, extra_headers=[("Set-Cookie", self._session_cookie_header(raw_token, max_age))])
+
+            # 3. Password change allowed even when must_change_password == True
+            if url.path == "/api/auth/change-password":
+                actor = self.require_auth(allow_password_change_pending=True)
+                if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
+                    raise ValueError("请求格式错误")
+                length = int(self.headers.get("Content-Length", 0))
+                if not 0 < length <= 20_000:
+                    raise ValueError("请求体长度无效")
+                v = json.loads(self.rfile.read(length))
+                self.app.auth.change_password(actor, v.get("oldPassword", ""), v.get("newPassword", ""), ip=ip)
+                return self.reply(200, {"changed": True})
+
+            # 4. All remaining POST endpoints require active authenticated user
+            actor = self.require_auth()
+
+            # Binary / multipart upload endpoints
             if url.path == "/api/upload":
-                return self.upload(parse_qs(url.query))
+                self.require_any_perm(actor, "library.create", "tasks.create", message="没有上传素材的权限。")
+                return self.upload(parse_qs(url.query), actor)
             if url.path == '/api/music/upload':
-                return self.upload_music(parse_qs(url.query))
+                self.require_perm(actor, "music.create")
+                res = self.upload_music(parse_qs(url.query))
+                self.app.auth.log_audit(actor, action="music.upload", resource_type="music", summary=f"上传背景音乐「{parse_qs(url.query).get('name', [''])[0]}」", ip=ip)
+                return res
             if url.path == '/api/people' and self.headers.get('Content-Type', '').split(';')[0] == 'multipart/form-data':
-                return self.upload_person()
+                self.require_perm(actor, "people.create")
+                return self.upload_person(actor, ip=ip)
             match = re.fullmatch(r'/api/people/([A-Za-z0-9_-]{1,80})/voice-sample', url.path)
             if match:
+                self.require_any_perm(actor, "people.update", "people.voice_clone", message="没有上传数字人录音样本的权限。")
                 return self.upload_voice_sample(match[1], parse_qs(url.query))
+
+            # Standard JSON endpoints
             if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
                 raise ValueError("请求格式错误")
             length = int(self.headers.get("Content-Length", 0))
@@ -1240,112 +1581,258 @@ class Handler(BaseHTTPRequestHandler):
             if not 0 < length <= limit:
                 raise ValueError("输入内容过长")
             v = json.loads(self.rfile.read(length))
-            if url.path == '/api/shutdown':
-                return self.stop_if_idle()
+
+            # Auth / User / Role management JSON endpoints
+            if url.path == "/api/auth/reauth":
+                return self.reply(200, self.app.auth.reauth(actor, v.get("password", ""), ip=ip))
+            if url.path == "/api/auth/settings":
+                self.require_perm(actor, "settings.update")
+                return self.reply(200, {"authSettings": self.app.auth.save_settings(v, actor=actor, ip=ip)})
+            if url.path == "/api/users":
+                return self.reply(201, self.app.auth.create_user(actor, v, ip=ip))
+            match = re.fullmatch(r"/api/users/(u_[a-f0-9]{12})(?:/(reset-password|delete))?", url.path)
+            if match:
+                uid, act = match.groups()
+                if act == "reset-password":
+                    return self.reply(200, self.app.auth.reset_user_password(actor, uid, v.get("password", ""), must_change=bool(v.get("mustChangePassword", True)), ip=ip))
+                if act == "delete":
+                    return self.reply(200, self.app.auth.delete_user(actor, uid, ip=ip))
+                return self.reply(200, self.app.auth.update_user(actor, uid, v, ip=ip))
+            match = re.fullmatch(r"/api/roles/([a-z0-9_-]{2,32})/(permissions|reset)", url.path)
+            if match:
+                rc, act = match.groups()
+                if act == "reset":
+                    return self.reply(200, self.app.auth.reset_role_permissions(actor, rc, ip=ip))
+                return self.reply(200, self.app.auth.update_role_permissions(actor, rc, v.get("permissions") or [], ip=ip))
+
+            # Task acceptance
             match = re.fullmatch(r'/api/tasks/([a-f0-9]{12})/(acceptance-preview|accept)', url.path)
             if match:
+                self.require_perm(actor, "tasks.accept")
                 if match[2] == 'acceptance-preview':
                     return self.reply(200, self.app.acceptance.prepare(match[1]))
                 if not v.get('token'):
-                    return self.reply(202,self.app.public_task(self.app.acceptance.submit(match[1])))
-                return self.reply(200, self.app.public_task(self.app.acceptance.accept(match[1], v.get('token'))))
+                    t = self.app.acceptance.submit(match[1], actor=actor)
+                    self.app.auth.log_audit(actor, action="task.accept", resource_type="task", resource_id=match[1], summary=f"验收任务「{t.get('title', match[1])}」并提交中间文件清理", ip=ip)
+                    return self.reply(202, self.app.public_task(t))
+                t = self.app.acceptance.accept(match[1], v.get('token'))
+                self.app.auth.log_audit(actor, action="task.accept", resource_type="task", resource_id=match[1], summary=f"确认验收任务「{t.get('title', match[1])}」", ip=ip)
+                return self.reply(200, self.app.public_task(t))
+
+            # Management dispatch (credentials + dynamic-kind deletion)
             if url.path.startswith('/api/manage/'):
                 from management import Management
-                return self.reply(200,Management(self.app,read,write).dispatch(url.path.rsplit('/',1)[-1],v))
+                action = url.path.rsplit('/', 1)[-1]
+                if action == 'credential':
+                    self.app.auth.require_reauth(actor)
+                    result = Management(self.app, read, write).dispatch(action, v)
+                    self.app.auth.log_audit(actor, action="credential.reveal", resource_type="secret", resource_id=str(v.get("field") or ""), summary=f"明文查看系统凭据字段「{v.get('field', '')}」", ip=ip)
+                    return self.reply(200, result)
+                if action == 'preview':
+                    kind = str(v.get("kind") or "")
+                    perm = DELETE_KIND_PERMS.get(kind)
+                    if perm:
+                        self.require_perm(actor, perm)
+                    return self.reply(200, Management(self.app, read, write).dispatch(action, v))
+                if action == 'delete':
+                    token = str(v.get("token") or "")
+                    if re.fullmatch(r"[0-9a-f]{48}", token):
+                        preview_doc = read(self.app.data / 'delete-previews' / (token + '.json'), {})
+                        kind = str((preview_doc.get("values") or {}).get("kind") or "")
+                        perm = DELETE_KIND_PERMS.get(kind)
+                        if perm:
+                            self.require_perm(actor, perm)
+                        items = preview_doc.get("items") or []
+                        res = Management(self.app, read, write).dispatch(action, v)
+                        names = "、".join(str(x.get("name") or x.get("id")) for x in items[:5])
+                        self.app.auth.log_audit(actor, action=f"{kind or 'catalog'}.delete", resource_type=kind or "catalog", summary=f"删除 {len(items)} 项{kind}：{names}", detail={"kind": kind, "count": len(items)}, ip=ip)
+                        return self.reply(200, res)
+                    self.require_any_perm(actor, "library.delete", "tasks.delete", "people.delete", "music.delete")
+                    return self.reply(200, Management(self.app, read, write).dispatch(action, v))
+                if action == 'retry-delete':
+                    self.require_perm(actor, "tasks.delete")
+                    return self.reply(200, Management(self.app, read, write).dispatch(action, v))
+                return self.reply(200, Management(self.app, read, write).dispatch(action, v))
+
+            # Works deletion
             match = re.fullmatch(r'/api/products/([a-f0-9]{12})/(\d+)/delete', url.path)
             if match:
+                self.require_perm(actor, "works.delete")
                 if v.get('confirm') is not True:
                     raise ValueError('请确认永久删除这条成品')
                 self.app.archive.delete_product(match[1], int(match[2]))
+                self.app.auth.log_audit(actor, action="works.delete", resource_type="product", resource_id=f"{match[1]}:{match[2]}", summary=f"永久删除成品（任务 {match[1]} 第 {int(match[2]) + 1} 条）", ip=ip)
                 return self.reply(200, {'deleted': True})
+
+            # Per-user draft
             if url.path == "/api/draft":
+                self.require_perm(actor, "tasks.create")
                 allowed = {"institutionId", "requirements", "title", "person", "people", "count", "music", "facts", "videoPreferences", "videoPreferenceMap", "musicTrackId", "targetDurationSeconds"}
-                write(self.app.data / "creation-draft.json", {k: v[k] for k in allowed if k in v})
+                self.app.auth.save_draft(actor.user_id, {k: v[k] for k in allowed if k in v})
                 return self.reply(200, {"saved": True})
-            match=re.fullmatch(r'/api/queue/items/([a-f0-9]{12})/(retry|cancel|recover|answer)',url.path)
+
+            # Queue actions
+            match = re.fullmatch(r'/api/queue/items/([a-f0-9]{12})/(retry|cancel|recover|answer)', url.path)
             if match:
-                self.app.queue.action(match[1],match[2],v.get('answer'))
-                return self.reply(200,self.app.queue.public())
-            match = re.fullmatch(r'/api/music/([a-f0-9]{12})',url.path)
+                self.require_perm(actor, "tasks.update")
+                self.app.queue.action(match[1], match[2], v.get('answer'))
+                return self.reply(200, self.app.queue.public())
+
+            # Music edit
+            match = re.fullmatch(r'/api/music/([a-f0-9]{12})', url.path)
             if match:
-                return self.reply(200,self.app.music.edit(match[1],v))
+                self.require_perm(actor, "music.update")
+                return self.reply(200, self.app.music.edit(match[1], v))
+
+            # Video cover edits & single revision
             match = re.fullmatch(r'/api/videos/(reference|[a-f0-9]{12})/(\d+)/(draft|cover-draft|apply|restore|revision|export)', url.path)
             if match:
-                ident,index,action = match.groups();index=int(index)
-                if action == 'apply':
-                    return self.reply(202, self.app.edits.apply(ident,index,v))
-                if action == 'export':
-                    return self.reply(200, self.app.edits.export(ident,index,v))
-                if action == 'restore':
-                    return self.reply(200, self.app.edits.restore(ident,index,str(v.get('version',''))))
+                ident, index, action = match.groups()
+                index = int(index)
                 if action == 'revision':
-                    return self.reply(201, self.app.public_task(self.app.edits.revision(ident,index,v)))
-                return self.reply(200, self.app.edits.save_draft(ident,index,v,action=='cover-draft'))
+                    self.require_perm(actor, "tasks.create")
+                    rev_task = self.app.edits.revision(ident, index, v)
+                    self.app.update(rev_task["id"], createdBy=actor.user_id, createdByName=actor.display_name)
+                    self.app.auth.log_audit(actor, action="task.revision", resource_type="task", resource_id=rev_task["id"], summary=f"从成品 {ident}#{index + 1} 发起单条重做", ip=ip)
+                    return self.reply(201, self.app.public_task(self.app.task(rev_task["id"])))
+                self.require_perm(actor, "works.update")
+                if action == 'apply':
+                    return self.reply(202, self.app.edits.apply(ident, index, v))
+                if action == 'export':
+                    return self.reply(200, self.app.edits.export(ident, index, v))
+                if action == 'restore':
+                    return self.reply(200, self.app.edits.restore(ident, index, str(v.get('version', ''))))
+                return self.reply(200, self.app.edits.save_draft(ident, index, v, action == 'cover-draft'))
+
+            # Institution Library
             if url.path == "/api/library":
-                return self.reply(201, self.app.library.save(v))
+                self.require_perm(actor, "library.create")
+                self.assert_upload_folder_allowed(actor, str(v.get("folder") or ""))
+                res = self.app.library.save(v, actor=actor)
+                self.app.auth.log_audit(actor, action="library.create", resource_type="institution", resource_id=res.get("id", ""), summary=f"新建机构档案「{res.get('name', '')}」", ip=ip)
+                return self.reply(201, res)
             match = re.fullmatch(r"/api/library/([a-f0-9]{12})(?:/(import|sync|asset|prep|asset-analysis))?", url.path)
             if match:
                 ident, action = match.groups()
                 if action == "import":
+                    self.require_perm(actor, "library.create")
+                    self.assert_upload_folder_allowed(actor, str(v.get("folder") or ""))
                     result = self.app.library.add_source(ident, v.get("folder", ""))
                 elif action == "sync":
+                    self.assert_local_only("同步本地源文件夹")
+                    self.require_perm(actor, "library.update")
                     result = self.app.library.sync(ident)
                 elif action == "asset":
+                    self.require_perm(actor, "library.update")
                     result = self.app.library.enable(ident, v.get("id", ""), bool(v.get("enabled")))
                 elif action == "prep":
+                    self.require_perm(actor, "library.update")
                     result = self.app.material_prep.start(ident, mode=v.get("mode") or "incremental", asset_id=v.get("assetId") or None)
                 elif action == "asset-analysis":
+                    self.require_perm(actor, "library.update")
                     result = self.app.material_prep.update_asset_analysis(ident, v.get("assetId", ""), description=v.get("description"), motion=v.get("motion"))
                 else:
-                    result = self.app.library.save(v, ident)
+                    self.require_perm(actor, "library.update")
+                    self.assert_upload_folder_allowed(actor, str(v.get("folder") or ""))
+                    result = self.app.library.save(v, ident, actor=actor)
                 return self.reply(200, result)
+
+            # Global settings & publish settings
             if url.path == "/api/config":
-                return self.reply(200, self.app.save_config(v))
+                self.require_perm(actor, "settings.update")
+                res = self.app.save_config(v, actor=actor, ip=ip)
+                self.app.auth.log_audit(actor, action="settings.update", resource_type="settings", summary="更新工作台全局服务与制作配置", ip=ip)
+                return self.reply(200, res)
             if url.path == "/api/publish/settings":
-                return self.reply(200, {"settings": self.app.publish.save_settings(v), "publish": self.app.publish.public_state()})
+                self.require_perm(actor, "settings.update")
+                saved = self.app.publish.save_settings(v)
+                self.app.auth.log_audit(actor, action="settings.publish_update", resource_type="settings", summary="更新多平台分发（蚁小二）配置", ip=ip)
+                return self.reply(200, {"settings": saved, "publish": self.app.publish.public_state()})
             if url.path == "/api/publish/test":
+                self.require_perm(actor, "settings.update")
                 return self.reply(200, self.app.publish.test_and_sync(v))
             if url.path == "/api/publish/sync-accounts":
+                self.require_any_perm(actor, "publish.update", "settings.update", "people.update", message="没有同步平台授权账号的权限。")
                 return self.reply(200, self.app.publish.test_and_sync())
             if url.path == "/api/publish/prepare":
+                self.require_any_perm(actor, "publish.create_private", "publish.create_public", message="没有发起多平台发布的权限。")
                 return self.reply(200, self.app.publish.prepare_publish(v.get("items") or [], refresh_accounts=bool(v.get("refreshAccounts"))))
             if url.path == "/api/publish/batches":
-                return self.reply(201, {"batch": self.app.publish.create_batch(v), "publish": self.app.publish.public_state()})
+                vis = str(v.get("visibility") or self.app.publish.raw_settings().get("visibility", "private")).strip()
+                if vis == "public":
+                    self.require_perm(actor, "publish.create_public", "没有公开对外发布的权限（你可以切换为私密发布，或联系超级管理员开通）。")
+                else:
+                    self.require_perm(actor, "publish.create_private", "没有发起私密发布的权限。")
+                payload = {**v, "_actorId": actor.user_id, "_actorName": actor.display_name}
+                batch = self.app.publish.create_batch(payload)
+                self.app.auth.log_audit(
+                    actor,
+                    action="publish.create",
+                    resource_type="publish_batch",
+                    resource_id=batch["id"],
+                    summary=f"提交多平台{'公开' if vis == 'public' else '私密'}发布批次（共 {batch['summary']['total']} 条）",
+                    detail={"visibility": vis, "total": batch["summary"]["total"]},
+                    ip=ip,
+                )
+                return self.reply(201, {"batch": batch, "publish": self.app.publish.public_state()})
             match = re.fullmatch(r"/api/publish/items/([a-f0-9]{12})/([a-f0-9]{12})/(retry|refresh)", url.path)
             if match:
+                self.require_perm(actor, "publish.update")
                 bid, iid, act = match.groups()
                 batch = self.app.publish.retry_item(bid, iid) if act == "retry" else self.app.publish.refresh_item(bid, iid)
                 return self.reply(200, {"batch": batch, "publish": self.app.publish.public_state()})
             match = re.fullmatch(r"/api/publish/batches/([a-f0-9]{12})/delete", url.path)
             if match:
+                self.require_perm(actor, "publish.delete")
                 out = self.app.publish.delete_batch(match[1])
+                self.app.auth.log_audit(actor, action="publish.delete", resource_type="publish_batch", resource_id=match[1], summary=f"删除历史发布批次 {match[1]}", ip=ip)
                 return self.reply(200, {**out, "publish": self.app.publish.public_state()})
+
+            # Styles
             if url.path == "/api/styles/default":
-                return self.reply(200, self.app.set_default_style(v))
+                self.require_perm(actor, "styles.set_default")
+                res = self.app.set_default_style(v)
+                self.app.auth.log_audit(actor, action="styles.set_default", resource_type="style", resource_id=str(v.get("id") or ""), summary=f"将样式「{v.get('id', '')}」设为工作台全局默认", ip=ip)
+                return self.reply(200, res)
             if url.path == "/api/styles/bind":
+                self.require_perm(actor, "styles.bind")
                 return self.reply(200, self.app.bind_style(v))
+
+            # Model / Service tests
             if url.path == "/api/model":
-                return self.reply(200, self.app.models.save(v))
+                self.require_perm(actor, "settings.update")
+                res = self.app.models.save(v)
+                self.app.auth.log_audit(actor, action="settings.model_update", resource_type="settings", summary="更新制作大模型配置", ip=ip)
+                return self.reply(200, res)
             if url.path == "/api/model/test":
+                self.require_perm(actor, "settings.update")
                 return self.reply(200, self.app.models.client(v).test())
             if url.path == "/api/services/test":
+                self.require_perm(actor, "settings.update")
                 from service_checks import check
                 return self.reply(200, check(self.app, v))
+
+            # People & Voice
             if url.path == "/api/people":
+                self.require_perm(actor, "people.update")
                 return self.reply(200, self.app.save_person(v))
             match = re.fullmatch(r'/api/people/([A-Za-z0-9_-]{1,80})/voice-preview', url.path)
             if match:
+                self.require_perm(actor, "people.read")
                 from service_checks import preview_voice
                 return self.reply(200, preview_voice(self.app, match[1], v), 'audio/mpeg')
             if url.path == '/api/voice-slots':
+                self.require_any_perm(actor, "people.voice_clone", "settings.update")
                 ident = v.get('person')
                 if ident is not None:
                     self.app.voice_training.load_person(ident)
                 return self.reply(200, {'slots': self.app.voice_training.available_slots(ident, v.get('project'))})
             match = re.fullmatch(r'/api/people/([A-Za-z0-9_-]{1,80})/voice-training', url.path)
             if match:
+                self.require_perm(actor, "people.voice_clone")
                 ident = match[1]
                 trainer = self.app.voice_training
+                self.app.auth.log_audit(actor, action="people.voice_clone", resource_type="person", resource_id=ident, summary=f"为数字人「{ident}」发起音色复刻", ip=ip)
                 if v.get('retrain') is True:
                     return self.reply(202, trainer.retrain(ident))
                 cfg, person = trainer.load_person(ident)
@@ -1354,9 +1841,15 @@ class Handler(BaseHTTPRequestHandler):
                              and trainer.public(person)['needsSlot'] and not trainer.active(ident))
                 slots = trainer.available_slots(ident, cfg['connections'].get('main', {}).get('voice_project', 'default')) if use_slots else None
                 return self.reply(202, trainer.start(ident, slots, v.get('slot'), v.get('overwrite') is True, provider, v.get('model')))
+
+            # Local filesystem helpers (blocked in server mode)
             if url.path == "/api/scan":
+                self.assert_local_only("扫描本地文件夹路径")
+                self.require_any_perm(actor, "library.create", "tasks.create")
                 return self.reply(200, self.app.scan(v.get("folder", "")))
             if url.path == "/api/pick-folder":
+                self.assert_local_only("本机文件夹选择弹窗")
+                self.require_any_perm(actor, "library.create", "tasks.create")
                 if sys.platform != "darwin":
                     raise ValueError("请使用页面上的“导入文件夹”，或填写本地路径")
                 r = run_command(["osascript", "-e", 'POSIX path of (choose folder with prompt "选择素材或人物文件夹")'], capture_output=True, text=True, timeout=120)
@@ -1364,15 +1857,23 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(200, {"cancelled": True})
                 return self.reply(200, {"folder": r.stdout.strip()})
             if url.path == "/api/check-agent" and self.app.workbench_host == 'codex':
+                self.require_perm(actor, "settings.update")
                 return self.reply(200, self.app.check_agent())
+
+            # Tasks create & control
             if url.path == "/api/tasks":
+                self.require_perm(actor, "tasks.create")
+                if not v.get("institutionId"):
+                    self.assert_upload_folder_allowed(actor, str(v.get("source") or ""))
                 with self.app.transaction():
-                    task = self.app.create(v)
+                    task = self.app.create(v, actor=actor)
                     if v.get('start') is True:
                         task = self.app.start(task['id'])
+                self.app.auth.log_audit(actor, action="task.create", resource_type="task", resource_id=task["id"], summary=f"新建制作任务「{task.get('title', '')}」（{task.get('count', 1)} 条）", ip=ip)
                 return self.reply(201, self.app.public_task(task))
             match = re.fullmatch(r"/api/tasks/([a-f0-9]{12})/(start|cancel|answer)", url.path)
             if match:
+                self.require_perm(actor, "tasks.update")
                 ident, action = match.groups()
                 if action == "cancel":
                     t = self.app.cancel(ident)
@@ -1382,10 +1883,12 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError("请先填写补充信息")
                     t = self.app.start(ident, answer)
                     if answer:
-                        self.app.event(ident, "用户补充：" + answer)
+                        self.app.event(ident, f"用户（{actor.display_name}）补充：" + answer)
                         t = self.app.task(ident)
                 return self.reply(200, self.app.public_task(t))
             if url.path == "/api/open-folder":
+                self.assert_local_only("在宿主机打开作品文件夹")
+                self.require_perm(actor, "tasks.read")
                 t = self.app.task(v.get("id", ""))
                 path = Path(t["job"])
                 path.mkdir(parents=True, exist_ok=True)
@@ -1393,12 +1896,14 @@ class Handler(BaseHTTPRequestHandler):
                 run_command(cmd, timeout=10)
                 return self.reply(200, {"opened": True})
             return self.reply(404, {"error": "操作不存在"})
+        except AuthError as e:
+            return self.reply_auth_error(e)
         except (ValueError, KeyError, TypeError, json.JSONDecodeError) as e:
             return self.reply(400, {"error": self.app.redact(str(e))})
         except Exception as e:
             return self.reply(500, {"error": self.app.redact(str(e))[:500]})
 
-    def upload_person(self):
+    def upload_person(self, actor=None, *, ip=""):
         from person_upload import MAX_UPLOAD_BYTES, create_person, read_form
         length = int(self.headers.get('Content-Length', 0))
         if not 0 < length <= MAX_UPLOAD_BYTES:
@@ -1408,7 +1913,9 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError('上传中断，请重新保存。')
         values, photo, recording = read_form(self.headers['Content-Type'], body)
         ident = create_person(self.app, values, photo, recording, run_command)
-        return self.reply(201, {'id': ident, 'config': self.app.config()})
+        if actor:
+            self.app.auth.log_audit(actor, action="people.create", resource_type="person", resource_id=ident, summary=f"新建数字人「{values.get('name', ident)}」", ip=ip)
+        return self.reply(201, {'id': ident, 'config': self.app.config(actor=actor)})
 
     def upload_voice_sample(self, ident, q):
         from voice_training import MAX_AUDIO_BYTES
@@ -1441,7 +1948,7 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             temp.unlink(missing_ok=True)
 
-    def upload(self, q):
+    def upload(self, q, actor=None):
         group = q.get("group", [""])[0]
         if not re.fullmatch(r"[a-f0-9]{12}", group):
             raise ValueError("无效导入编号")
@@ -1454,7 +1961,8 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         if length <= 0 or length > 2 * 1024 ** 3:
             raise ValueError("单文件应大于 0 且不超过 2GB")
-        folder = self.app.data / "uploads" / group
+        owner_dir = actor.user_id if actor else "shared"
+        folder = self.app.data / "uploads" / owner_dir / group
         dest = folder / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         temp = dest.with_name(dest.name + ".uploading")
@@ -1472,8 +1980,22 @@ class Handler(BaseHTTPRequestHandler):
             temp.unlink(missing_ok=True)
         return self.reply(200, {"folder": str(folder / rel.parts[0]) if len(rel.parts) > 1 else str(folder), "saved": True})
 
-    def media(self, route):
+    def media(self, route, actor=None):
         parts = route.split("/")
+        if actor is not None and len(parts) >= 3:
+            section = parts[2]
+            if section == "library":
+                self.require_perm(actor, "library.read")
+            elif section in ("archive", "video", "reference"):
+                self.require_any_perm(actor, "works.read", "tasks.read")
+            elif section == "task":
+                self.require_any_perm(actor, "tasks.read", "works.read")
+            elif section == "music":
+                self.require_any_perm(actor, "music.read", "people.read", "tasks.create")
+            elif section == "person":
+                self.require_any_perm(actor, "people.read", "tasks.read", "works.read")
+            elif section == "style-demo":
+                self.require_perm(actor, "styles.read")
         if parts[2]=='archive' and len(parts)==7:
             if parts[6] == 'package':
                 product = self.app.archive.workspace_media(parts[3],int(parts[4]),parts[5])
@@ -1631,13 +2153,29 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--project", type=Path, default=Path.cwd())
     p.add_argument("--skill", type=Path)
-    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--bind", default=os.environ.get("MONTAGE_WORKBENCH_BIND", "127.0.0.1"))
+    p.add_argument("--port", type=int, default=int(os.environ.get("MONTAGE_WORKBENCH_PORT", "8765")))
     p.add_argument("--fallback-port", action="store_true", help=argparse.SUPPRESS)
     p.add_argument('--host', choices=('codex','local'), default='local')
+    p.add_argument('--mode', choices=('local', 'server'), default=os.environ.get("MONTAGE_WORKBENCH_MODE", "local"))
+    p.add_argument('--public-origin', action='append', default=[], help='允许的公网访问源（可重复，如 https://studio.example.com）')
+    p.add_argument('--trust-proxy', action='store_true', default=os.environ.get("MONTAGE_TRUST_PROXY", "").lower() in ("1", "true", "yes"))
     p.add_argument('--open-page', action='store_true')
+    p.add_argument('--reset-superadmin', action='store_true', help='在终端重置（或创建）超级管理员密码后退出')
+    p.add_argument('--username', default='', help='配合 --reset-superadmin 使用')
+    p.add_argument('--password', default='', help='配合 --reset-superadmin 使用（留空则交互式输入）')
     args = p.parse_args()
-    from launch import UNAVAILABLE, project_lock
+    env_origins = [x.strip() for x in os.environ.get("MONTAGE_PUBLIC_ORIGIN", "").split(",") if x.strip()]
+    args.public_origins = tuple(dict.fromkeys([*args.public_origin, *env_origins]))
     args.project = args.project.resolve()
+    if args.reset_superadmin:
+        import getpass
+        app = App(args.project, args.skill, recover=False, workbench_host=args.host, deploy_mode=args.mode)
+        pwd = args.password or getpass.getpass("请输入新的超级管理员密码（至少 8 位且包含字母和数字）：")
+        result = app.auth.reset_superadmin_cli(username=args.username or None, password=pwd)
+        print(json.dumps(result, ensure_ascii=False))
+        return
+    from launch import UNAVAILABLE, project_lock
     with project_lock(args.project, 'service.lock', blocking=False) as acquired:
         if not acquired:
             raise SystemExit(UNAVAILABLE)
@@ -1645,19 +2183,25 @@ def main():
 
 
 def serve(args):
-    app = App(args.project, args.skill, workbench_host=args.host)
+    deploy_mode = getattr(args, "mode", "local")
+    bind_addr = getattr(args, "bind", "127.0.0.1")
+    public_origins = tuple(getattr(args, "public_origins", ()))
+    trust_proxy = bool(getattr(args, "trust_proxy", False))
+    app = App(args.project, args.skill, workbench_host=args.host, deploy_mode=deploy_mode)
     from auto_worker import LocalCoordinator
     coordinator = LocalCoordinator(app, read, write)
     try:
-        server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+        server = ThreadingHTTPServer((bind_addr, args.port), Handler)
     except OSError as exc:
         if not args.fallback_port or exc.errno != errno.EADDRINUSE:
             raise
-        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        server = ThreadingHTTPServer((bind_addr, 0), Handler)
     server.daemon_threads = True
     server.app = app
     server.code_fingerprint = code_fingerprint()
     server.token = secrets.token_urlsafe(32)
+    server.public_origins = public_origins
+    server.trust_proxy = trust_proxy
     def pump():
         last_error=None
         while True:
@@ -1681,9 +2225,22 @@ def serve(args):
                 last_error=error
             time.sleep(1)
     threading.Thread(target=pump,daemon=True).start()
-    url = f"http://127.0.0.1:{server.server_port}/?access={server.token}"
-    write(app.data / "server.json", {"url": url, "pid": os.getpid(), "port": server.server_port, "launchId": os.environ.get("MONTAGE_WORKBENCH_LAUNCH_ID"), "serviceMode":app.service_mode,"workbenchHost":app.workbench_host,"lifetimeLock":True})
-    print(json.dumps({"url": url, "project": str(app.project)}, ensure_ascii=False), flush=True)
+    display_host = "127.0.0.1" if bind_addr in ("0.0.0.0", "::", "") else bind_addr
+    url = public_origins[0].rstrip("/") + "/" if public_origins else f"http://{display_host}:{server.server_port}/"
+    write(app.data / "server.json", {
+        "url": f"http://127.0.0.1:{server.server_port}/",
+        "publicUrl": url,
+        "internalToken": server.token,
+        "pid": os.getpid(),
+        "port": server.server_port,
+        "bind": bind_addr,
+        "deployMode": deploy_mode,
+        "launchId": os.environ.get("MONTAGE_WORKBENCH_LAUNCH_ID"),
+        "serviceMode": app.service_mode,
+        "workbenchHost": app.workbench_host,
+        "lifetimeLock": True,
+    })
+    print(json.dumps({"url": url, "project": str(app.project), "mode": deploy_mode}, ensure_ascii=False), flush=True)
     if args.open_page:
         import webbrowser
         webbrowser.open(url)

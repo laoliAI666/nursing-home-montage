@@ -727,6 +727,8 @@ class PublishService:
             "channel": channel,
             "visibility": visibility,
             "aiDeclaration": ai_declaration,
+            "createdBy": str(values.get("_actorId") or ""),
+            "createdByName": str(values.get("_actorName") or ""),
             "uploadedVideos": {},
             "items": atomic_items,
         }
@@ -1064,6 +1066,8 @@ class PublishService:
             "channel": batch.get("channel", "local"),
             "visibility": batch.get("visibility", "private"),
             "aiDeclaration": bool(batch.get("aiDeclaration", True)),
+            "createdBy": batch.get("createdBy") or "",
+            "createdByName": batch.get("createdByName") or "",
             "summary": self._batch_summary(batch),
             "items": items,
         }

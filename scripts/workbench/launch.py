@@ -110,16 +110,20 @@ def _launch(project, no_open, host):
     if previous:
         port = previous['port']
         base = f'http://127.0.0.1:{port}'
-        if str(previous.get('url', '')).startswith(base + '/?'):
+        internal_token = str(previous.get('internalToken') or '')
+        url_ok = str(previous.get('url', '')).startswith(base + '/')
+        if url_ok:
             client = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+            internal_headers = {'X-Workbench-Internal-Token': internal_token} if internal_token else {}
             try:
-                with client.open(previous['url'], timeout=2):
-                    pass
-                with client.open(base + '/api/runtime', timeout=3) as response:
+                if not internal_token and '/?access=' in str(previous.get('url', '')):
+                    with client.open(previous['url'], timeout=2):
+                        pass
+                with client.open(urllib.request.Request(base + '/api/runtime', headers=internal_headers), timeout=3) as response:
                     runtime = json.load(response)
                 if runtime.get('project') != str(project):
                     raise RuntimeError('记录中的服务属于其他项目，请检查当前项目的工作台启动状态。')
-                with client.open(base + '/api/health', timeout=3) as response:
+                with client.open(urllib.request.Request(base + '/api/health', headers=internal_headers), timeout=3) as response:
                     healthy = json.load(response).get('ok') is True
             except (OSError, ValueError, http.client.HTTPException) as exc:
                 if service_running(project) or port_listening(port):
@@ -140,8 +144,11 @@ def _launch(project, no_open, host):
                     raise RuntimeError('无法核对执行锁，未自动重启服务') from exc
                 if any(not row.get('settled', True) for row in queue.get('items', [])):
                     return browser_result(previous, no_open, reused=True, deferredUpgrade=True)
-                request = urllib.request.Request(base + '/api/shutdown', data=b'{}',
-                                                 headers={'Origin': base, 'Content-Type': 'application/json'})
+                request = urllib.request.Request(
+                    base + '/api/shutdown',
+                    data=b'{}',
+                    headers={'Origin': base, 'Content-Type': 'application/json', **internal_headers},
+                )
                 try:
                     with client.open(request, timeout=5):
                         pass

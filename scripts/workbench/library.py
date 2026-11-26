@@ -57,7 +57,7 @@ class Library:
             completed_count += sum(not product_deletion(task, index) for index in indices)
         prep = getattr(self.app, "material_prep", None)
         prep_data = prep._load(ident) if prep else None
-        result = {k: value.get(k) for k in ("id", "name", "address", "description", "created", "updated", "revision", "reference", "coverAsset")}
+        result = {k: value.get(k) for k in ("id", "name", "address", "description", "created", "updated", "revision", "reference", "coverAsset", "createdByName", "updatedByName")}
         result.update(counts={k: sum(a["kind"] == k for a in enabled) for k in ("video", "image", "text")},
                       fileCount=len(current), enabledCount=len(enabled), taskCount=len(tasks),
                       completedCount=completed_count,
@@ -77,10 +77,16 @@ class Library:
             result["tasks"] = [self.app.public_task(t) for t in tasks]
         return result
 
-    def save(self, values, ident=None):
+    def save(self, values, ident=None, *, actor=None):
         with self.app.transaction():
             creating = ident is None
             value = self.get(ident) if ident else {"id": uuid.uuid4().hex[:12], "created": time.time(), "revision": 0, "assets": [], "history": [], "sources": []}
+            if actor is not None:
+                if creating:
+                    value["createdBy"] = actor.user_id
+                    value["createdByName"] = actor.display_name
+                value["updatedBy"] = actor.user_id
+                value["updatedByName"] = actor.display_name
             name = str(values.get("name", value.get("name", ""))).strip()[:120]
             if not name:
                 raise ValueError("请填写养老院名称")

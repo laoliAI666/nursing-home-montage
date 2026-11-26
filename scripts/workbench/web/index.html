@@ -13,10 +13,12 @@
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/materials.css">
   <link rel="stylesheet" href="/publish.css">
+  <link rel="stylesheet" href="/auth.css">
 </head>
 <body>
   <a class="skip" href="#main">跳到主要内容</a>
-  <div class="app-shell">
+  <div id="auth-gate" class="auth-gate" hidden></div>
+  <div class="app-shell" hidden>
     <aside class="sidebar">
       <a class="brand" href="#library" aria-label="叙影 首页"><span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span>叙影<small>实拍 · 成片</small></span></a>
       <a class="new-task-link" href="#create" data-nav="create"><span data-icon="plus"></span>新建制作</a>
@@ -28,8 +30,10 @@
         <a href="#people" data-nav="people" aria-label="数字人" title="数字人"><span data-icon="person"></span><span>数字人</span></a>
         <a href="#styles" data-nav="styles" aria-label="风格库" title="风格库"><span data-icon="palette"></span><span>风格库</span></a>
         <a href="#settings" data-nav="settings" aria-label="设置" title="设置"><span data-icon="settings"></span><span>设置</span><span class="nav-dot" id="setup-dot" hidden></span></a>
+        <a href="#admin" data-nav="admin" aria-label="账号与权限" title="账号与权限" hidden><span data-icon="users"></span><span>账号与权限</span></a>
       </nav>
       <div class="sidebar-bottom">
+        <div id="sidebar-user" class="sidebar-user" hidden></div>
         <div class="local-note"><span class="status-dot"></span><span>在你的电脑上运行</span></div>
         <p>素材、配置与作品<br>都留在本地项目中。</p>
         <button class="sidebar-help" data-action="onboarding"><span data-icon="help"></span>首次使用指南<span data-icon="arrow-up-right"></span></button>
@@ -61,5 +65,7 @@
   <script src="/publish.js" defer></script>
   <script src="/pagination.js" defer></script>
   <script src="/acceptance.js" defer></script>
+  <script src="/admin.js" defer></script>
+  <script src="/auth.js" defer></script>
 </body>
 </html>

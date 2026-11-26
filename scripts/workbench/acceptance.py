@@ -57,7 +57,7 @@ class Acceptance:
                 return False, '本地成品文件已移走或缺失，无法验收；可直接删除这条任务记录'
         return True, ''
 
-    def submit(self, ident):
+    def submit(self, ident, *, actor=None):
         """Record the user's acceptance immediately; cleanup is a durable job."""
         with self.app.transaction():
             task = self.app.task(ident)
@@ -71,10 +71,17 @@ class Acceptance:
             self.owned_job(task)
             acceptance=task.get('acceptance') if task.get('reviewStatus')=='accepted' else {'acceptedAt':time.time()}
             acceptance=acceptance or {'acceptedAt':time.time()}
+            extra = {}
+            if actor is not None:
+                acceptance['acceptedBy'] = actor.user_id
+                acceptance['acceptedByName'] = actor.display_name
+                extra['acceptedBy'] = actor.user_id
+                extra['acceptedByName'] = actor.display_name
             task=self.app.update(ident,reviewStatus='accepted',acceptance=acceptance,
                 cleanupStatus='queued',cleanupRequest=uuid.uuid4().hex,cleanupOwnerPid=None,
-                cleanupError=None,cleanupInterrupted=False,message='已验收，中间文件将在后台清理')
-            self.app.event(ident,'用户已验收，后台清理已排队；成品可继续查看和下载','success')
+                cleanupError=None,cleanupInterrupted=False,message='已验收，中间文件将在后台清理',**extra)
+            who = f"（{actor.display_name}）" if actor is not None else ""
+            self.app.event(ident,f'用户{who}已验收，后台清理已排队；成品可继续查看和下载','success')
         self.tick()
         return task
 

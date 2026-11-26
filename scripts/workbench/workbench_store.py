@@ -16,7 +16,7 @@ import time
 from typing import Any
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 ACTIVE_TASK_STATUSES = ("draft", "queued", "running", "stopping", "needs_input", "interrupted", "failed")
 ACTIVE_PUBLISH_STATUSES = ("queued", "checking", "uploading", "validating", "submitting", "polling")
 
@@ -26,6 +26,79 @@ CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS roles (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    rank INTEGER NOT NULL DEFAULT 10,
+    is_system INTEGER NOT NULL DEFAULT 0,
+    updated_at REAL NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS role_permissions (
+    role_id TEXT NOT NULL,
+    perm_code TEXT NOT NULL,
+    PRIMARY KEY (role_id, perm_code),
+    FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    role_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    must_change_password INTEGER NOT NULL DEFAULT 0,
+    last_login_at REAL,
+    last_login_ip TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL DEFAULT 0,
+    updated_at REAL NOT NULL DEFAULT 0,
+    FOREIGN KEY (role_id) REFERENCES roles(id)
+);
+CREATE INDEX IF NOT EXISTS idx_users_role_status ON users (role_id, status);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    ip TEXT NOT NULL DEFAULT '',
+    user_agent TEXT NOT NULL DEFAULT '',
+    reauth_at REAL,
+    created_at REAL NOT NULL DEFAULT 0,
+    last_seen_at REAL NOT NULL DEFAULT 0,
+    expires_at REAL NOT NULL DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions (expires_at);
+
+CREATE TABLE IF NOT EXISTS user_drafts (
+    user_id TEXT PRIMARY KEY,
+    draft_json TEXT NOT NULL DEFAULT '{}',
+    updated_at REAL NOT NULL DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL DEFAULT '',
+    username TEXT NOT NULL DEFAULT '',
+    display_name TEXT NOT NULL DEFAULT '',
+    role_code TEXT NOT NULL DEFAULT '',
+    action TEXT NOT NULL,
+    resource_type TEXT NOT NULL DEFAULT '',
+    resource_id TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT '',
+    detail_json TEXT NOT NULL DEFAULT '{}',
+    ip TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_user_created ON audit_logs (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_action_created ON audit_logs (action, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
@@ -43,6 +116,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     phase INTEGER NOT NULL DEFAULT 0,
     progress INTEGER NOT NULL DEFAULT 0,
     workspace_missing INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT NOT NULL DEFAULT '',
+    created_by_name TEXT NOT NULL DEFAULT '',
+    accepted_by TEXT NOT NULL DEFAULT '',
+    accepted_by_name TEXT NOT NULL DEFAULT '',
     created_at REAL NOT NULL DEFAULT 0,
     updated_at REAL NOT NULL DEFAULT 0,
     summary_json TEXT NOT NULL DEFAULT '{}'
@@ -94,6 +171,8 @@ CREATE TABLE IF NOT EXISTS publish_batches (
     platforms_csv TEXT NOT NULL DEFAULT '',
     person_ids_json TEXT NOT NULL DEFAULT '[]',
     search_text TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL DEFAULT '',
+    created_by_name TEXT NOT NULL DEFAULT '',
     created_at REAL NOT NULL DEFAULT 0,
     updated_at REAL NOT NULL DEFAULT 0
 );
@@ -137,6 +216,8 @@ CREATE TABLE IF NOT EXISTS institutions_index (
     name TEXT NOT NULL,
     address TEXT NOT NULL DEFAULT '',
     revision INTEGER NOT NULL DEFAULT 0,
+    created_by_name TEXT NOT NULL DEFAULT '',
+    updated_by_name TEXT NOT NULL DEFAULT '',
     updated_at REAL NOT NULL DEFAULT 0,
     summary_json TEXT NOT NULL DEFAULT '{}'
 );
@@ -220,10 +301,22 @@ class WorkbenchStore:
                 pass
             self._local.conn = None
 
+    def _ensure_column(self, conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+        cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if column not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
     def _init_schema(self) -> None:
         with self._write_lock:
             conn = self._conn()
             conn.executescript(SCHEMA_SQL)
+            # Idempotent additive migrations for existing v1 databases
+            for col in ("created_by", "created_by_name", "accepted_by", "accepted_by_name"):
+                self._ensure_column(conn, "tasks", col, "TEXT NOT NULL DEFAULT ''")
+            for col in ("created_by", "created_by_name"):
+                self._ensure_column(conn, "publish_batches", col, "TEXT NOT NULL DEFAULT ''")
+            for col in ("created_by_name", "updated_by_name"):
+                self._ensure_column(conn, "institutions_index", col, "TEXT NOT NULL DEFAULT ''")
             conn.execute(
                 "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
                 ("schema_version", str(SCHEMA_VERSION)),
@@ -398,8 +491,9 @@ class WorkbenchStore:
             INSERT OR REPLACE INTO tasks (
                 id, title, institution_id, institution_name, person_id, person_name, person_ids_json,
                 status, production_status, review_status, count, completed_count, phase, progress,
-                workspace_missing, created_at, updated_at, summary_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                workspace_missing, created_by, created_by_name, accepted_by, accepted_by_name,
+                created_at, updated_at, summary_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 pub_t["id"],
@@ -417,6 +511,10 @@ class WorkbenchStore:
                 int(pub_t.get("phase") or 0),
                 int(pub_t.get("progress") or 0),
                 1 if pub_t.get("workspaceMissing") else 0,
+                str(raw_t.get("createdBy") or ""),
+                str(raw_t.get("createdByName") or ""),
+                str(raw_t.get("acceptedBy") or (raw_t.get("acceptance") or {}).get("acceptedBy") or ""),
+                str(raw_t.get("acceptedByName") or (raw_t.get("acceptance") or {}).get("acceptedByName") or ""),
                 float(pub_t.get("created") or 0),
                 float(pub_t.get("updated") or 0),
                 json.dumps(trimmed, ensure_ascii=False),
@@ -560,8 +658,9 @@ class WorkbenchStore:
             INSERT OR REPLACE INTO publish_batches (
                 id, channel, visibility, ai_declaration, status,
                 total_count, published_count, failed_count, active_count,
-                platforms_csv, person_ids_json, search_text, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                platforms_csv, person_ids_json, search_text,
+                created_by, created_by_name, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 pub["id"],
@@ -576,6 +675,8 @@ class WorkbenchStore:
                 "," + ",".join(plats) + "," if plats else "",
                 json.dumps(pids, ensure_ascii=False),
                 " ".join(search_parts).lower(),
+                str(pub.get("createdBy") or batch.get("createdBy") or ""),
+                str(pub.get("createdByName") or batch.get("createdByName") or ""),
                 float(pub.get("created") or 0),
                 float(pub.get("updated") or 0),
             ),
@@ -721,14 +822,16 @@ class WorkbenchStore:
         summary = self.app.library.public(rec, False)
         conn.execute(
             """
-            INSERT OR REPLACE INTO institutions_index (id, name, address, revision, updated_at, summary_json)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO institutions_index (id, name, address, revision, created_by_name, updated_by_name, updated_at, summary_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 rec["id"],
                 str(rec.get("name") or ""),
                 str(rec.get("address") or ""),
                 int(rec.get("revision") or 0),
+                str(rec.get("createdByName") or ""),
+                str(rec.get("updatedByName") or ""),
                 float(rec.get("updated") or 0),
                 json.dumps(summary, ensure_ascii=False),
             ),
@@ -957,7 +1060,7 @@ class WorkbenchStore:
             f"""
             SELECT id, channel, visibility, ai_declaration, status,
                    total_count, published_count, failed_count, active_count,
-                   created_at, updated_at
+                   created_by, created_by_name, created_at, updated_at
             FROM publish_batches
             {where}
             ORDER BY created_at DESC
@@ -986,6 +1089,8 @@ class WorkbenchStore:
                 "channel": r["channel"],
                 "visibility": r["visibility"],
                 "aiDeclaration": bool(r["ai_declaration"]),
+                "createdBy": r["created_by"] or "",
+                "createdByName": r["created_by_name"] or "",
                 "summary": {
                     "total": int(r["total_count"]),
                     "published": int(r["published_count"]),

@@ -44,7 +44,12 @@ function notify(message, error = false) { const el = $('#toast'); clearTimeout(t
 async function api(path, data, options = {}) {
   const response = await fetch(path, {method:data === undefined ? 'GET' : 'POST', headers:data === undefined ? {} : {'Content-Type':'application/json'}, body:data === undefined ? undefined : JSON.stringify(data), ...options});
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error || '操作没有完成，请重试');
+  if (!response.ok) {
+    const err = new Error(result.error || '操作没有完成，请重试');
+    err.status = response.status;
+    err.code = result.code || '';
+    throw err;
+  }
   return result;
 }
 let draftTimer, workbenchExited = false;
@@ -1178,7 +1183,7 @@ async function init() {
     render();
     if(createDraft.source && route==='create') {try {scanResult=await api('/api/scan',{folder:createDraft.source});if($('#source-info'))$('#source-info').innerHTML=sourceInfo();}catch{}}
   }catch(err){main.innerHTML=`<div class="loading-error"><h2>暂时没有连上本地服务</h2><p>${E(err.message)}</p><button class="secondary" data-action="reload">重新连接</button></div>`;main.querySelector('button').onclick=()=>location.reload();}
-  setInterval(async()=>{if(document.hidden || workbenchExited)return;try{await refresh();}catch{if(workbenchExited)return; $('#agent-status').textContent='本地服务连接中断';$('#agent-dot').className='status-dot error';}},3500);
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden && !workbenchExited)refresh().catch(()=>{});});
+  setInterval(async()=>{if(document.hidden || workbenchExited || !window.currentUser)return;try{await refresh();}catch{if(workbenchExited || !window.currentUser)return; $('#agent-status').textContent='本地服务连接中断';$('#agent-dot').className='status-dot error';}},3500);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden && !workbenchExited && window.currentUser)refresh().catch(()=>{});});
 }
 // The library extension starts the app after registering all screens.

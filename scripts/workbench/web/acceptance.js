@@ -7,6 +7,7 @@ function storageText(bytes){return bytes>=1024**3?(bytes/1024**3).toFixed(2)+' G
 function cleanupBusy(t){return ['queued','running'].includes(t.cleanupStatus);}
 function cleanupSpinner(){return '<svg class="cleanup-spinner" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>';}
 function acceptanceButton(t){
+  if(window.hasPerm&&!window.hasPerm('tasks.accept'))return '';
   if(cleanupBusy(t))return `<button class="secondary accept-task-button" disabled>${cleanupSpinner()}后台清理中</button>`;
   if(t.status==='accepted'&&t.cleanupStatus==='failed')return `<button class="secondary accept-task-button" data-action="review-task" data-id="${t.id}" ${t.canRetryCleanup?'':'disabled'}>${icon('arrow-right')}重试清理</button>`;
   if(t.status!=='awaiting_acceptance')return '';
@@ -56,9 +57,9 @@ document.addEventListener('click',e=>{const button=e.target.closest('[data-actio
 let managementState={entries:[]},managementEndpoint='',managementAvailable=false;
 const managementKey=x=>[x.kind,x.parent||'',x.id].join('/');
 async function manageRequest(action,data){
-  const bases=managementEndpoint?[managementEndpoint]:['','http://127.0.0.1:'+(Number(location.port)+1)];
+  const bases=managementEndpoint?[managementEndpoint]:[''];
   let last;
-  for(const base of bases){try{const r=await fetch(base+'/api/manage/'+action,{credentials:'include',signal:AbortSignal.timeout(2500),method:data===undefined?'GET':'POST',headers:data===undefined?{}:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});const v=await r.json();if(!r.ok)throw new Error(v.error||'管理服务暂不可用');managementEndpoint=base;managementAvailable=true;return v;}catch(e){last=e;}}
+  for(const base of bases){try{const r=await fetch(base+'/api/manage/'+action,{credentials:'include',signal:AbortSignal.timeout(4000),method:data===undefined?'GET':'POST',headers:data===undefined?{}:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});const v=await r.json();if(!r.ok){const err=new Error(v.error||'管理服务暂不可用');err.status=r.status;err.code=v.code||'';throw err;}managementEndpoint=base;managementAvailable=true;return v;}catch(e){last=e;}}
   throw last;
 }
 const apiBeforeManagement=api;
@@ -93,7 +94,7 @@ function deleteControl(item){const b=document.createElement('button');b.type='bu
 function enhanceManagement(){
   if(!state)return;
   if(managementRoute!==location.hash){managementSelection.clear();managementRoute=location.hash;}
-  const items=managementObjects();
+  const items=managementObjects().filter(item=>!window.canDeleteKind||window.canDeleteKind(item.kind));
   for(const item of items){
     if(item.el.querySelector('.manage-selection'))continue;
     const label=document.createElement('label');label.className='manage-selection';
@@ -108,14 +109,14 @@ function enhanceManagement(){
     toolbar=document.createElement('div');toolbar.className='management-toolbar';
     toolbar.innerHTML='<label class="manage-selection"><input type="checkbox" aria-label="全选当前列表"><span>全选当前列表</span></label><span class="management-count">已选 0 项</span><button type="button" class="danger-button" data-manage-bulk disabled>删除所选</button>';
     (main.querySelector('#project-overview-area') || main.querySelector('.page-heading,.detail-top')).after(toolbar);
-    toolbar.querySelector('input').onchange=e=>{managementSelection.clear();for(const x of managementObjects()){const selected=e.target.checked;x.el.querySelector('.manage-selection input').checked=selected;if(selected)managementSelection.set(managementKey(x),x);}updateSelectionBar();};
+    toolbar.querySelector('input').onchange=e=>{managementSelection.clear();for(const x of managementObjects().filter(i=>!window.canDeleteKind||window.canDeleteKind(i.kind))){const selected=e.target.checked;x.el.querySelector('.manage-selection input').checked=selected;if(selected)managementSelection.set(managementKey(x),x);}updateSelectionBar();};
     toolbar.querySelector('[data-manage-bulk]').onclick=e=>openDelete([...managementSelection.values()],e.currentTarget);
   }
   if(toolbar&&!items.length){toolbar.remove();toolbar=null;}
   if(toolbar&&route==='task'&&!items.length){toolbar.classList.add('management-toolbar-compact');const target=main.querySelector('.detail-top>div:last-child');if(target&&toolbar.parentElement!==target)target.append(toolbar);}
   if(toolbar){toolbar.querySelector('label').hidden=!items.length;toolbar.querySelector('.management-count').hidden=!items.length;toolbar.querySelector('[data-manage-bulk]').hidden=!items.length;updateSelectionBar();}
-  if(route==='task'&&!main.querySelector('.detail-top .manage-delete')){const t=state.tasks.find(x=>x.id===selectedTask);if(t)main.querySelector('.detail-top>div:last-child')?.append(deleteControl({kind:'task',id:t.id,parent:'',name:t.title}));}
-  if(route==='institution'&&!main.querySelector('.page-heading .manage-delete')){const id=location.hash.split('/')[1];const inst=state.institutions.find(x=>x.id===id);if(inst)main.querySelector('.page-heading')?.append(deleteControl({kind:'institution',id,parent:'',name:inst.name}));}
+  if(route==='task'&&(!window.canDeleteKind||window.canDeleteKind('task'))&&!main.querySelector('.detail-top .manage-delete')){const t=state.tasks.find(x=>x.id===selectedTask);if(t)main.querySelector('.detail-top>div:last-child')?.append(deleteControl({kind:'task',id:t.id,parent:'',name:t.title}));}
+  if(route==='institution'&&(!window.canDeleteKind||window.canDeleteKind('institution'))&&!main.querySelector('.page-heading .manage-delete')){const id=location.hash.split('/')[1];const inst=state.institutions.find(x=>x.id===id);if(inst)main.querySelector('.page-heading')?.append(deleteControl({kind:'institution',id,parent:'',name:inst.name}));}
   main.querySelectorAll('.work-card').forEach(card=>{if(card.querySelector('.work-art')?.hash.startsWith('#preview/reference')&&!card.querySelector('.manage-reference-note')){const note=document.createElement('p');note.className='subtle manage-reference-note';note.textContent='已认可样片受保护';card.append(note);}});
   renderLiveProgress();
   paintTaskDeletions();
@@ -187,9 +188,26 @@ async function toggleCredentialVisibility(button){
   const label=input.closest('.form-group')?.querySelector('label')?.textContent||input.name;
   if(input.value){const show=input.type==='password';input.type=show?'text':'password';setCredentialButton(button,label,show);return;}
   if(!input.closest('.form-group').querySelector('.saved-mark')){notify('请先填写这项凭据');return;}
+  if(window.currentUser&&!window.currentUser.isSuperAdmin){notify('仅超级管理员可查看已保存的 API 密钥明文。',true);return;}
   const payload=credentialRequest(input);
   await busy(button,async()=>{try{
-    const result=await manageRequest('credential',payload);
+    if(window.promptSuperAdminReauth&&Date.now()>(window._reauthVerifiedUntil||0)&&!(window.currentUser?.reauthRemainingSeconds>5)){
+      const verified=await window.promptSuperAdminReauth(button);
+      if(!verified)return;
+    }
+    let result;
+    try{
+      result=await manageRequest('credential',payload);
+    }catch(err){
+      if(err.code==='reauth_required'&&window.promptSuperAdminReauth){
+        window._reauthVerifiedUntil=0;
+        const verified=await window.promptSuperAdminReauth(button);
+        if(!verified)return;
+        result=await manageRequest('credential',payload);
+      }else{
+        throw err;
+      }
+    }
     if(!input.isConnected||route!=='settings'||document.hidden||input.value||JSON.stringify(payload)!==JSON.stringify(credentialRequest(input)))return;
     const display=document.createElement('input');display.className='input credential-readonly';display.type='text';display.readOnly=true;display.autocomplete='off';display.spellcheck=false;display.setAttribute('aria-label','已保存的'+label+'（只读）');display.value=result.value;
     input.hidden=true;input.after(display);setCredentialButton(button,label,true);
@@ -213,6 +231,7 @@ function archivedCards(institution=''){
 }
 
 function deleteProductButton(task, product){
+  if(window.hasPerm&&!window.hasPerm('works.delete'))return '';
   return `<button type="button" class="danger-button work-delete" data-action="delete-product" data-id="${task.id}" data-index="${product.index}" data-title="${E(product.title)}">${product.deletionPending?'重试删除':'删除成品'}</button>`;
 }
 
@@ -268,4 +287,4 @@ function paintTaskDeletions(){
 }
 document.addEventListener('click',e=>{const b=e.target.closest('[data-action="retry-task-deletion"]');if(!b)return;busy(b,async()=>{try{managementState=await manageRequest('retry-delete',{id:b.dataset.id});await refresh(false);render();notify('已重新提交后台清理，成品保留');}catch(err){notify(err.message,true);}});});
 
-init();
+window.bootWorkbench = init;
