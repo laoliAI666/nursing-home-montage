@@ -697,10 +697,24 @@ function formatTrackDuration(seconds) {
 }
 function renderPeople() {
   clearVoicePreview();
-  main.innerHTML = `${heading('每条视频，都有自己的主角。','照片、音色、配乐、封面与视频风格、片尾钩子与分发账号统一归档在人物资料中，选好人物即可制作。',`<button class="secondary" data-action="add-person">${icon('plus')} 添加数字人</button>`)}<div class="people-grid">${state.config.people.map(p => {
-    const cName = p.cover_template_id ? (state.styles?.covers?.find(x => x.id === p.cover_template_id)?.name || p.cover_template_id) : '';
-    const vName = p.video_style_id ? (state.styles?.videos?.find(x => x.id === p.video_style_id)?.name || p.video_style_id) : '';
-    const styleLine = cName || vName ? `封面：${cName || '默认'} · 视频：${vName || '默认'}` : '风格：跟随工作台默认';
+  main.innerHTML = `${heading('每条视频，都有自己的主角。','照片、音色、配乐、视频风格、片尾钩子与分发账号统一归档在人物资料中，选好人物即可制作。',`<button class="secondary" data-action="add-person">${icon('plus')} 添加数字人</button>`)}<div class="people-grid">${state.config.people.map(p => {
+    const covers = state.styles?.covers || [];
+    const videos = state.styles?.videos || [];
+    const defCover = covers.find(x => x.id === state.styles?.defaultCoverId) || covers[0];
+    const cEntry = p.cover_template_id ? covers.find(x => x.id === p.cover_template_id) : null;
+    const vEntry = p.video_style_id ? videos.find(x => x.id === p.video_style_id) : null;
+    let styleLine;
+    if (!p.cover_template_id && !p.video_style_id) {
+      styleLine = defCover ? `视频风格：${defCover.name}（默认）` : '视频风格：跟随工作台默认';
+    } else if (cEntry && (!p.video_style_id || cEntry.pairId === p.video_style_id)) {
+      styleLine = `视频风格：${cEntry.name}`;
+    } else if (vEntry && !p.cover_template_id) {
+      styleLine = `视频风格：${vEntry.name}`;
+    } else {
+      const cName = cEntry?.name || p.cover_template_id || '默认';
+      const vName = vEntry?.name || p.video_style_id || '默认';
+      styleLine = `封面：${cName} · 视频：${vName}`;
+    }
     return `<article class="person-card"><div class="portrait-area">${p.hasPortrait ? `<img src="/media/person/${E(p.id)}" alt="${E(p.name)}的数字人照片">` : ''}${p.isDefault ? badge('默认出镜') : ''}</div><div class="person-card-content"><h2>${E(p.name)} <span data-person-ready="${E(p.id)}">${personReadiness(p)}</span></h2><p class="person-card-styles">${E(styleLine)}</p><button class="secondary" data-action="edit-person" data-id="${E(p.id)}">编辑人物资料 ${icon('arrow-right')}</button></div></article>`;
   }).join('')}<button class="add-person" data-action="add-person">${icon('plus')}<strong>添加一位新数字人</strong><small>形象、声音、风格、配乐与平台账号<br>一次绑好，做片直接复用。</small></button></div><div id="person-editor">${editPerson !== undefined ? personEditor() : ''}</div>`;
   bindPerson();
@@ -830,7 +844,7 @@ function personEditor() {
         </section>
 
         <section class="person-module" id="person-module-visual" data-module="visual">
-          <div class="person-module-head"><span class="person-module-icon">${icon('palette')}</span><div><h3>配乐与视觉风格</h3><p>为该数字人绑定专属背景音乐、封面样式与视频样式，制作时自动套用。</p></div></div>
+          <div class="person-module-head"><span class="person-module-icon">${icon('palette')}</span><div><h3>配乐与视觉风格</h3><p>为该数字人绑定专属背景音乐与视频风格（含配套封面与视频样式），制作时自动套用。</p></div></div>
           <div class="form-group">
             <div class="label-row">
               <label class="field-label" for="person-music-track" style="margin:0">专属背景音乐（BGM）<span class="optional">选填</span></label>

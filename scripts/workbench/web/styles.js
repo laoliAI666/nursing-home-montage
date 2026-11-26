@@ -541,30 +541,43 @@ function openStyleDetailModal(kind, id) {
   });
 }
 
-// Visual Style Picker Modal for the Digital Human Editor page.
-function openPersonStylePicker(kind, currentId, onSelect) {
-  const isCover = kind === 'cover';
+// Unified Video Style Suite Picker Modal (Cover + Video bundled) for the Digital Human Editor.
+function openPersonStylePicker(currentCoverId, currentVideoId, onSelect) {
   const s = getStylesData();
-  const list = isCover ? s.covers : s.videos;
-  const defEntry = isCover ? findCoverStyle(s.defaultCoverId) : findVideoStyle(s.defaultVideoStyleId);
+  const suites = s.covers.map(cover => ({
+    cover,
+    video: findVideoStyle(cover.pairId),
+  }));
+  const isFollowingDefault = !currentCoverId && !currentVideoId;
+  const effectiveCoverId = currentCoverId || s.defaultCoverId;
+  const effectiveVideoId = currentVideoId || s.defaultVideoStyleId;
+  const matchedCover = currentCoverId ? findCoverStyle(currentCoverId) : null;
+  const isLegacyMixed = Boolean(
+    (currentCoverId && currentVideoId && matchedCover && matchedCover.pairId !== currentVideoId) ||
+    (!currentCoverId && currentVideoId && findVideoStyle(currentVideoId)?.pairId !== s.defaultCoverId)
+  );
   let pickCat = '全部';
   let pickQuery = '';
 
   const dialog = document.createElement('dialog');
-  dialog.className = 'style-dialog';
+  dialog.className = 'style-dialog style-suite-picker-dialog';
   dialog.innerHTML = `
     <div class="style-dialog-head">
-      <h2>选择专属${isCover ? '封面' : '视频'}样式（共 ${list.length} 套）</h2>
+      <div>
+        <h2>选择视频风格（共 ${suites.length} 套）</h2>
+        <p class="style-dialog-sub">每套视频风格已捆绑对应封面样式与视频样式，点选一套即可同时完成封面与视频绑定。</p>
+      </div>
       <button type="button" data-close aria-label="关闭">${icon('close')}</button>
     </div>
     <div class="style-dialog-body">
       <div class="styles-toolbar" style="margin-bottom:10px">
         <div class="filter-tabs" data-picker-cats>
-          ${styleCategories(kind).map(cat => `<button type="button" data-pick-cat="${E(cat)}" class="${cat === '全部' ? 'active' : ''}">${E(cat)}</button>`).join('')}
+          ${styleCategories('cover').map(cat => `<button type="button" data-pick-cat="${E(cat)}" class="${cat === '全部' ? 'active' : ''}">${E(cat)}</button>`).join('')}
         </div>
-        <label class="search-field">${icon('search')}<input type="search" data-pick-search placeholder="搜索风格名称或色系…"></label>
+        <label class="search-field">${icon('search')}<input type="search" data-pick-search placeholder="搜索风格名称、编号或色系…"></label>
       </div>
-      <div class="style-picker-grid" data-picker-grid></div>
+      ${isLegacyMixed ? '<p class="style-picker-notice">当前数字人为旧版分开绑定的混搭配置，点选下方任意一套组合即可统一为成套视频风格。</p>' : ''}
+      <div class="style-picker-grid style-picker-suite-grid" data-picker-grid></div>
     </div>`;
   document.body.append(dialog);
   dialog.showModal();
@@ -575,30 +588,54 @@ function openPersonStylePicker(kind, currentId, onSelect) {
 
   const paintGrid = () => {
     const q = pickQuery.trim().toLowerCase();
-    const filtered = list.filter(item => {
-      if (pickCat !== '全部' && item.category !== pickCat) return false;
+    const filtered = suites.filter(({ cover, video }) => {
+      if (pickCat !== '全部' && cover.category !== pickCat) return false;
       if (!q) return true;
-      return [item.num, item.name, item.category, item.layoutTag, ...(item.tags || [])].join(' ').toLowerCase().includes(q);
+      return [
+        cover.num, cover.id, cover.name, cover.category, cover.layoutTag, ...(cover.tags || []),
+        video?.id, video?.name, video?.layoutTag, ...(video?.tags || []),
+      ].join(' ').toLowerCase().includes(q);
     });
     const grid = dialog.querySelector('[data-picker-grid]');
-    const defaultCard = pickCat === '全部' && !q
-      ? `<button type="button" class="style-picker-item ${!currentId ? 'is-selected' : ''}" data-pick-id="">
-          <div class="style-preview-box">${isCover
-            ? `<div style="width:100%;height:100%" data-cover-preview data-cover-id="${E(defEntry.id)}"></div>`
-            : videoPreviewHtml(defEntry, 'pk_def_' + defEntry.id)}</div>
-          <div class="style-picker-item-meta"><strong>跟随工作台默认</strong><small>当前默认：${E(defEntry.name)}</small></div>
-        </button>`
-      : '';
-    grid.innerHTML = defaultCard + filtered.map(item => `
-      <button type="button" class="style-picker-item ${currentId === item.id ? 'is-selected' : ''}" data-pick-id="${E(item.id)}">
-        <div class="style-preview-box">
-          ${isCover
-            ? `<div style="width:100%;height:100%" data-cover-preview data-cover-id="${E(item.id)}"></div>`
-            : videoPreviewHtml(item, 'pk_' + item.id)}
-        </div>
-        <div class="style-picker-item-meta"><strong>${E((item.num ? item.num + ' · ' : '') + item.name)}</strong><small>${E(item.category)}</small></div>
-      </button>`).join('');
-    if (isCover) observeCoverContainers(grid, 1 / 3);
+    if (!filtered.length) {
+      grid.innerHTML = '<p class="style-picker-empty">没有找到匹配的视频风格，请尝试清空搜索词或切换分类。</p>';
+      return;
+    }
+    grid.innerHTML = filtered.map(({ cover, video }) => {
+      const isWorkspaceDefault = cover.id === s.defaultCoverId && video.id === s.defaultVideoStyleId;
+      const isSelected = !isLegacyMixed && (
+        isFollowingDefault
+          ? cover.id === s.defaultCoverId
+          : (cover.id === effectiveCoverId && video.id === effectiveVideoId)
+      );
+      return `
+        <button type="button" class="style-picker-item style-picker-suite ${isSelected ? 'is-selected' : ''}" data-pick-cover="${E(cover.id)}" data-pick-video="${E(video.id)}" aria-pressed="${isSelected ? 'true' : 'false'}">
+          <div class="style-picker-pair">
+            ${isSelected ? `<div class="style-preview-badges">
+              <span></span>
+              <span class="style-status-pill is-selected-pill">${icon('check')} 当前使用</span>
+            </div>` : ''}
+            <div class="style-preview-box">
+              <div style="width:100%;height:100%" data-cover-preview data-cover-id="${E(cover.id)}"><div class="style-preview-placeholder">加载中…</div></div>
+            </div>
+            <div class="style-preview-box">
+              ${videoPreviewHtml(video, 'pk_' + video.id)}
+            </div>
+          </div>
+          <div class="style-picker-pair-labels"><span>封面样式</span><span>视频样式</span></div>
+          <div class="style-picker-item-meta">
+            <div class="style-picker-meta-top">
+              <strong>${E((cover.num ? cover.num + ' · ' : '') + cover.name)}</strong>
+              <span class="style-picker-tags">
+                ${isWorkspaceDefault ? '<span class="style-default-tag">默认</span>' : ''}
+                <span class="style-cat-tag">${E(cover.category)}</span>
+              </span>
+            </div>
+            <small>${E(cover.layoutTag || cover.description || '')}</small>
+          </div>
+        </button>`;
+    }).join('');
+    observeCoverContainers(grid, 1 / 3);
   };
 
   paintGrid();
@@ -614,14 +651,14 @@ function openPersonStylePicker(kind, currentId, onSelect) {
     paintGrid();
   });
   dialog.querySelector('[data-picker-grid]').addEventListener('click', e => {
-    const item = e.target.closest('[data-pick-id]');
+    const item = e.target.closest('[data-pick-cover]');
     if (!item) return;
-    onSelect(item.dataset.pickId);
+    onSelect({ coverId: item.dataset.pickCover, videoId: item.dataset.pickVideo });
     close();
   });
 }
 
-// Mount visual style pickers inside the Digital Human Editor (#person-module-visual).
+// Mount unified Video Style selector inside the Digital Human Editor (#person-module-visual).
 window.mountPersonStyleSelectors = async function (form) {
   const host = form?.querySelector('#person-style-bindings');
   if (!host) return;
@@ -634,72 +671,72 @@ window.mountPersonStyleSelectors = async function (form) {
     const s = getStylesData();
     const cid = coverInput.value || '';
     const vid = videoInput.value || '';
+    const isFollowingDefault = !cid && !vid;
     const coverEntry = findCoverStyle(cid || s.defaultCoverId);
-    const videoEntry = findVideoStyle(vid || s.defaultVideoStyleId);
-    const pairVideo = coverEntry?.pairId ? findVideoStyle(coverEntry.pairId) : null;
-    const showPairSync = Boolean(cid && pairVideo && (vid || s.defaultVideoStyleId) !== pairVideo.id);
+    const videoEntry = findVideoStyle(vid || (cid ? coverEntry?.pairId : s.defaultVideoStyleId));
+    const isLegacyMixed = Boolean(
+      (cid && vid && coverEntry?.pairId !== vid) ||
+      (!cid && vid && videoEntry?.pairId !== s.defaultCoverId)
+    );
+    const titleText = isLegacyMixed
+      ? `封面：${coverEntry.name} / 视频：${videoEntry.name}`
+      : `${coverEntry.num ? coverEntry.num + ' · ' : ''}${coverEntry.name}`;
+    const statusBadge = isLegacyMixed
+      ? '<span class="person-style-badge is-warn">旧版混搭</span>'
+      : (isFollowingDefault
+        ? '<span class="person-style-badge is-default">跟随工作台默认</span>'
+        : '<span class="person-style-badge is-bound">已绑定专属风格</span>');
 
     host.innerHTML = `
       <div class="person-style-header">
-        <label class="field-label" style="margin:0">专属封面与视频样式<span class="optional">选填</span></label>
-        <a class="text-button" href="#styles">浏览全部 30 套风格库 ${icon('arrow-up-right')}</a>
+        <label class="field-label" style="margin:0">视频风格<span class="optional">选填</span></label>
+        <a class="text-button" href="#styles">浏览全部 ${s.covers.length} 套风格库 ${icon('arrow-up-right')}</a>
       </div>
-      <div class="person-style-grid">
-        <div class="person-style-slot">
-          <div class="person-style-thumb" data-person-cover-thumb data-cover-id="${E(coverEntry.id)}"></div>
-          <div class="person-style-info">
-            <span class="person-style-kind">封面样式</span>
-            <strong class="person-style-name">${cid ? E(coverEntry.name) : '跟随工作台默认'}</strong>
-            <span class="person-style-sub">${cid ? E(coverEntry.category + ' · ' + coverEntry.layoutTag) : '当前默认：' + E(coverEntry.name)}</span>
-            <div class="person-style-actions">
-              <button type="button" class="secondary" data-pick-person-style="cover">从封面库挑选</button>
-              ${cid ? '<button type="button" class="text-button" data-clear-person-style="cover">恢复默认</button>' : ''}
-            </div>
+      <div class="person-style-suite">
+        <div class="person-style-pair-thumbs">
+          <div class="person-style-thumb-wrap">
+            <div class="person-style-thumb" data-person-cover-thumb data-cover-id="${E(coverEntry.id)}"></div>
+            <span>封面样式</span>
+          </div>
+          <div class="person-style-thumb-wrap">
+            <div class="person-style-thumb">${videoPreviewHtml(videoEntry, 'ps_' + videoEntry.id)}</div>
+            <span>视频样式</span>
           </div>
         </div>
-        <div class="person-style-slot">
-          <div class="person-style-thumb">${videoPreviewHtml(videoEntry, 'ps_' + videoEntry.id)}</div>
-          <div class="person-style-info">
-            <span class="person-style-kind">视频样式</span>
-            <strong class="person-style-name">${vid ? E(videoEntry.name) : '跟随工作台默认'}</strong>
-            <span class="person-style-sub">${vid ? E(videoEntry.category + ' · ' + videoEntry.layoutTag) : '当前默认：' + E(videoEntry.name)}</span>
-            <div class="person-style-actions">
-              <button type="button" class="secondary" data-pick-person-style="video">从视频库挑选</button>
-              ${vid ? '<button type="button" class="text-button" data-clear-person-style="video">恢复默认</button>' : ''}
-            </div>
+        <div class="person-style-info">
+          <div class="person-style-title-row">
+            <strong class="person-style-name">${E(titleText)}</strong>
+            ${statusBadge}
+          </div>
+          <span class="person-style-sub">${isLegacyMixed
+            ? '当前数字人仍为旧版分开绑定配置，点击下方「选择视频风格」即可统一为成套组合。'
+            : E(`${coverEntry.category} · ${coverEntry.layoutTag || coverEntry.description || ''}`)}</span>
+          ${!isLegacyMixed && (coverEntry.swatches || []).length
+            ? `<div class="style-swatches">${coverEntry.swatches.map(c => `<i class="style-swatch" style="background:${E(c)}"></i>`).join('')}</div>`
+            : ''}
+          <div class="person-style-actions">
+            <button type="button" class="secondary" data-pick-person-style="suite">选择视频风格</button>
+            ${!isFollowingDefault ? '<button type="button" class="text-button" data-clear-person-style="suite">恢复工作台默认</button>' : ''}
           </div>
         </div>
       </div>
-      ${showPairSync
-        ? `<div class="person-style-sync"><span>所选封面「${E(coverEntry.name)}」有同色系配套视频样式「${E(pairVideo.name)}」</span><button type="button" class="secondary" data-sync-pair-video="${E(pairVideo.id)}">一键套用配套视频样式</button></div>`
-        : ''}
-      <p class="form-help">保存后，新建制作选中该数字人时会自动套用其绑定的封面样式与视频样式；也可自由混搭不同封面与视频风格。</p>`;
+      <p class="form-help">封面样式与视频样式成套捆绑；选定一套视频风格并保存人物资料后，制作时将自动同步套用对应封面与视频样式。</p>`;
 
     hydrateCoverPreview(host.querySelector('[data-person-cover-thumb]'), coverEntry, 1 / 4);
-    host.querySelector('[data-pick-person-style="cover"]')?.addEventListener('click', () => {
-      openPersonStylePicker('cover', coverInput.value, picked => {
-        coverInput.value = picked;
+    host.querySelector('[data-pick-person-style="suite"]')?.addEventListener('click', () => {
+      openPersonStylePicker(coverInput.value, videoInput.value, ({ coverId, videoId }) => {
+        if (!coverInput.value && !videoInput.value && coverId === s.defaultCoverId && videoId === s.defaultVideoStyleId) {
+          return;
+        }
+        coverInput.value = coverId;
+        videoInput.value = videoId;
         paint();
       });
     });
-    host.querySelector('[data-pick-person-style="video"]')?.addEventListener('click', () => {
-      openPersonStylePicker('video', videoInput.value, picked => {
-        videoInput.value = picked;
-        paint();
-      });
-    });
-    host.querySelector('[data-clear-person-style="cover"]')?.addEventListener('click', () => {
+    host.querySelector('[data-clear-person-style="suite"]')?.addEventListener('click', () => {
       coverInput.value = '';
-      paint();
-    });
-    host.querySelector('[data-clear-person-style="video"]')?.addEventListener('click', () => {
       videoInput.value = '';
       paint();
-    });
-    host.querySelector('[data-sync-pair-video]')?.addEventListener('click', e => {
-      videoInput.value = e.currentTarget.dataset.syncPairVideo;
-      paint();
-      notify('已同步配套视频样式，点击下方「保存人物资料」生效');
     });
   };
   paint();
@@ -730,7 +767,11 @@ renderTask = function () {
   const rows = Object.entries(vs).map(([pid, row]) => {
     const p = state.config.people.find(x => x.id === pid);
     const pname = p ? p.name : pid;
-    return `<p>${E(pname)}：封面「${E(row.coverName || row.coverTemplateId)}」 · 视频「${E(row.videoStyleName || row.videoStyleId)}」</p>`;
+    const cLabel = row.coverName || row.coverTemplateId;
+    const vLabel = row.videoStyleName || row.videoStyleId;
+    return cLabel === vLabel
+      ? `<p>${E(pname)}：视频风格「${E(cLabel)}」</p>`
+      : `<p>${E(pname)}：封面「${E(cLabel)}」 · 视频「${E(vLabel)}」</p>`;
   }).join('');
   brief.insertAdjacentHTML('beforeend', `<h3>本次固定视觉风格</h3>${rows}`);
 };
