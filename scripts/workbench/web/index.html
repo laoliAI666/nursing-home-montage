@@ -33,7 +33,6 @@
         <a href="#admin" data-nav="admin" aria-label="账号与权限" title="账号与权限" hidden><span data-icon="users"></span><span>账号与权限</span></a>
       </nav>
       <div class="sidebar-bottom">
-        <div id="sidebar-user" class="sidebar-user" hidden></div>
         <div class="local-note"><span class="status-dot"></span><span>在你的电脑上运行</span></div>
         <p>素材、配置与作品<br>都留在本地项目中。</p>
         <button class="sidebar-help" data-action="onboarding"><span data-icon="help"></span>首次使用指南<span data-icon="arrow-up-right"></span></button>
@@ -41,7 +40,7 @@
       </div>
     </aside>
     <div class="workspace">
-      <header class="topbar"><div class="breadcrumb">我的工作空间<span>/</span><strong id="page-label">机构资料库</strong></div><div class="topbar-actions"><button class="connection-status" data-action="agent-settings"><span class="status-dot muted" id="agent-dot"></span><span id="agent-status">正在读取本地配置</span><span data-icon="chevron-right"></span></button><a class="mobile-new" href="#create" aria-label="新建制作"><span data-icon="plus"></span>新建</a></div></header>
+      <header class="topbar"><div class="breadcrumb">我的工作空间<span>/</span><strong id="page-label">机构资料库</strong></div><div class="topbar-actions"><button class="connection-status" data-action="agent-settings"><span class="status-dot muted" id="agent-dot"></span><span id="agent-status">正在读取本地配置</span><span data-icon="chevron-right"></span></button><a class="mobile-new" href="#create" aria-label="新建制作"><span data-icon="plus"></span>新建</a><div id="topbar-user" class="topbar-user" hidden></div></div></header>
       <main id="main" tabindex="-1"><div class="initial-state"><div class="skeleton-line"></div><div class="skeleton-block"></div><p>正在打开你的工作台…</p></div></main>
       <footer class="workspace-footer"><span>让每一份实拍，都有值得被看见的故事。</span><span>本地工作台 · <span id="footer-version">0.6</span></span></footer>
     </div>

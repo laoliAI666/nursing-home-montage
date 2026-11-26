@@ -28,8 +28,10 @@ window.canDeleteKind = function canDeleteKind(kind) {
   return map[kind] ? window.hasPerm(map[kind]) : false;
 };
 
-// Register new icon for Admin / Users nav
+// Register icons for account menu & Admin nav
 paths.users = '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>';
+paths.key = '<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.8 12.2 8.2-8.2M16 7l3 3M19 4l2 2"/>';
+paths.logout = '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/>';
 
 // Wrap api() to handle 401 session expiry / 403 forced password change cleanly
 const apiBeforeAuth = api;
@@ -277,6 +279,10 @@ function enterAuthenticatedApp(user) {
   if (shell) shell.hidden = false;
   renderSidebarUser();
   applyNavPermissions();
+  const curHead = (location.hash.slice(1) || '').split('/')[0];
+  if (curHead && !isRouteAllowed(curHead)) {
+    location.hash = firstAllowedRoute();
+  }
   if (!workbenchBooted) {
     workbenchBooted = true;
     window.bootWorkbench?.();
@@ -293,41 +299,67 @@ async function performLogout() {
 }
 
 // ---------------------------------------------------------------------------
-// Sidebar User Identity Card & Self-Service Password Change
+// Topbar Right-Corner Account Capsule & Dropdown Menu
 // ---------------------------------------------------------------------------
+function closeTopbarUserMenu() {
+  const trigger = $('#topbar-user-trigger');
+  const menu = $('#topbar-user-menu');
+  if (trigger) trigger.setAttribute('aria-expanded', 'false');
+  if (menu) menu.hidden = true;
+}
+
+function formatSessionExpiryShort(ts) {
+  if (!ts) return '本次会话有效';
+  try {
+    const d = new Date(ts * 1000);
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `自动登录有效至 ${mm}/${dd}`;
+  } catch {
+    return '登录状态有效';
+  }
+}
+
 function renderSidebarUser() {
   const u = window.currentUser;
-  const slot = $('#sidebar-user');
+  const slot = $('#topbar-user');
   if (!slot || !u) return;
   const initial = (u.displayName || u.username || 'U').trim().slice(0, 1).toUpperCase();
+  const canAdmin = u.isSuperAdmin || window.hasAnyPerm('users.manage_subordinate', 'audit.read');
+  const canSettings = window.hasPerm('settings.update');
+  const wasOpen = $('#topbar-user-trigger')?.getAttribute('aria-expanded') === 'true';
+
   slot.hidden = false;
   slot.innerHTML = `
-    <div class="sidebar-user-head">
-      <span class="sidebar-user-avatar" aria-hidden="true">${E(initial)}</span>
-      <div class="sidebar-user-meta">
-        <strong title="${E(u.displayName)}">${E(u.displayName)}</strong>
-        <span>${E(u.roleName)} · @${E(u.username)}</span>
+    <button type="button" class="topbar-user-trigger" id="topbar-user-trigger"
+      aria-haspopup="menu" aria-expanded="${wasOpen ? 'true' : 'false'}"
+      aria-label="当前账号：${E(u.displayName)}（${E(u.roleName)}）" data-auth-action="toggle-user-menu">
+      <span class="topbar-user-avatar" aria-hidden="true">${E(initial)}</span>
+      <span class="topbar-user-name">${E(u.displayName)}</span>
+      <span class="topbar-user-role role-${E(u.role)}">${E(u.roleName)}</span>
+      <span class="topbar-user-chevron" aria-hidden="true">${icon('chevron-down')}</span>
+    </button>
+    <div class="topbar-user-menu" id="topbar-user-menu" role="menu" ${wasOpen ? '' : 'hidden'}>
+      <div class="topbar-user-menu-head">
+        <span class="topbar-user-avatar" aria-hidden="true">${E(initial)}</span>
+        <div class="topbar-user-menu-info">
+          <strong title="${E(u.displayName)}">${E(u.displayName)}</strong>
+          <span>@${E(u.username)}</span>
+        </div>
+      </div>
+      <div class="topbar-user-menu-session">
+        <span class="topbar-user-role role-${E(u.role)}">${E(u.roleName)}</span>
+        <span>${E(formatSessionExpiryShort(u.sessionExpiresAt))}</span>
+      </div>
+      <div class="topbar-user-menu-list">
+        ${canAdmin ? `<button type="button" class="topbar-user-menu-item" role="menuitem" data-auth-action="goto-admin">${icon('users')}<span>账号与权限中心</span></button>` : ''}
+        ${canSettings ? `<button type="button" class="topbar-user-menu-item" role="menuitem" data-auth-action="goto-auth-settings">${icon('shield')}<span>登录与过期设置</span></button>` : ''}
+        <button type="button" class="topbar-user-menu-item" role="menuitem" data-auth-action="change-own-pwd">${icon('key')}<span>修改登录密码</span></button>
+        <div class="topbar-user-menu-sep" role="separator"></div>
+        <button type="button" class="topbar-user-menu-item is-danger" role="menuitem" data-auth-action="logout">${icon('logout')}<span>退出登录</span></button>
       </div>
     </div>
-    <div class="sidebar-user-actions">
-      <button type="button" class="sidebar-user-btn" data-auth-action="change-own-pwd">改密码</button>
-      <button type="button" class="sidebar-user-btn" data-auth-action="logout">退出登录</button>
-    </div>
   `;
-
-  // Also ensure mobile/tablet topbar user pill exists
-  const topbarActions = $('.topbar-actions');
-  if (topbarActions) {
-    let pill = topbarActions.querySelector('.topbar-user-pill');
-    if (!pill) {
-      pill = document.createElement('button');
-      pill.type = 'button';
-      pill.className = 'topbar-user-pill';
-      pill.dataset.authAction = 'account-menu';
-      topbarActions.append(pill);
-    }
-    pill.innerHTML = `<span class="mini-dot">${E(initial)}</span><span>${E(u.displayName)}</span>`;
-  }
 
   // Update sidebar footer note for server mode
   const note = $('.local-note span:last-child');
@@ -383,24 +415,6 @@ function openOwnPasswordDialog(opener) {
       }
     });
   };
-}
-
-function openCompactAccountDialog(opener) {
-  const u = window.currentUser;
-  const d = managementDialog('当前登录账号', opener);
-  const body = d.querySelector('.management-dialog-content');
-  body.innerHTML = `
-    <p><strong>${E(u?.displayName || '')}</strong> · ${badge(u?.roleName || '')}</p>
-    <p class="form-help">用户名：@${E(u?.username || '')}</p>
-    <div class="auth-dialog-actions">
-      <button type="button" class="secondary" data-close>关闭</button>
-      <button type="button" class="secondary" id="compact-chg-pwd">修改密码</button>
-      <button type="button" class="danger-button" id="compact-logout">退出登录</button>
-    </div>
-  `;
-  body.querySelector('[data-close]').onclick = () => d.close();
-  body.querySelector('#compact-chg-pwd').onclick = () => { d.close(); openOwnPasswordDialog(opener); };
-  body.querySelector('#compact-logout').onclick = () => { d.close(); performLogout(); };
 }
 
 // ---------------------------------------------------------------------------
@@ -629,13 +643,7 @@ updateChrome = function authAwareUpdateChrome() {
   }
 };
 
-const renderBeforeAuth = render;
-render = function authAwareRender() {
-  if (!window.currentUser) return;
-  const rawHash = (location.hash.slice(1) || firstAllowedRoute()).split('/');
-  const head = rawHash[0] || firstAllowedRoute();
-
-  // Route guard
+function isRouteAllowed(head) {
   const routeChecks = {
     library: () => window.hasPerm('library.read'),
     institution: () => window.hasPerm('library.read'),
@@ -651,8 +659,16 @@ render = function authAwareRender() {
     people: () => window.hasPerm('people.read'),
     styles: () => window.hasPerm('styles.read'),
     settings: () => (location.hash === '#settings/music' ? window.hasPerm('music.read') : window.hasPerm('settings.read')),
-    admin: () => window.currentUser.isSuperAdmin || window.hasAnyPerm('users.manage_subordinate', 'audit.read'),
+    admin: () => window.currentUser?.isSuperAdmin || window.hasAnyPerm('users.manage_subordinate', 'audit.read'),
   };
+  return !routeChecks[head] || routeChecks[head]();
+}
+
+const renderBeforeAuth = render;
+render = function authAwareRender() {
+  if (!window.currentUser) return;
+  const rawHash = (location.hash.slice(1) || firstAllowedRoute()).split('/');
+  const head = rawHash[0] || firstAllowedRoute();
 
   if (head === 'admin') {
     route = 'admin';
@@ -661,7 +677,7 @@ render = function authAwareRender() {
     return;
   }
 
-  if (routeChecks[head] && !routeChecks[head]()) {
+  if (!isRouteAllowed(head)) {
     route = head;
     updateChrome();
     main.innerHTML = emptyState('暂无访问权限', '当前账号没有打开此页面的权限，如需开通请联系超级管理员。', `<a class="primary" href="#${E(firstAllowedRoute())}">返回可用页面</a>`);
@@ -678,14 +694,36 @@ const permObserver = new MutationObserver(() => {
 });
 if (main) permObserver.observe(main, { childList: true, subtree: true });
 
-// Global auth button click handler
+// Global auth button click handler + click-outside & Escape closing for topbar user menu
 document.addEventListener('click', e => {
   const btn = e.target.closest('[data-auth-action]');
-  if (!btn) return;
+  if (!btn) {
+    if (!e.target.closest('#topbar-user')) closeTopbarUserMenu();
+    return;
+  }
   const act = btn.dataset.authAction;
-  if (act === 'logout') performLogout();
-  else if (act === 'change-own-pwd') openOwnPasswordDialog(btn);
-  else if (act === 'account-menu') openCompactAccountDialog(btn);
+  if (act === 'toggle-user-menu') {
+    const menu = $('#topbar-user-menu');
+    const nextOpen = menu ? menu.hidden : false;
+    if (menu) menu.hidden = !nextOpen;
+    btn.setAttribute('aria-expanded', String(nextOpen));
+  } else if (act === 'goto-admin') {
+    closeTopbarUserMenu();
+    setRoute('admin');
+  } else if (act === 'goto-auth-settings') {
+    closeTopbarUserMenu();
+    setRoute('settings');
+    requestAnimationFrame(() => $('#auth-settings-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  } else if (act === 'logout') {
+    closeTopbarUserMenu();
+    performLogout();
+  } else if (act === 'change-own-pwd') {
+    closeTopbarUserMenu();
+    openOwnPasswordDialog($('#topbar-user-trigger') || btn);
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeTopbarUserMenu();
 });
 
 // Bootstrap entrypoint
