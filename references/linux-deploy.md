@@ -165,3 +165,11 @@ sudo -u montage /usr/bin/python3 \
 sqlite3 /srv/montage-project/.montage/workbench/workbench.db \
   ".backup '/var/backups/montage/workbench-$(date +%F).db'"
 ```
+
+6. **在线自动升级与 `systemd` 自动拉起**：
+   - 工作台内置定时检查官方 GitHub 正式 Release（仅正式版 `vX.Y.Z` + `SHA256SUMS` 校验）。发现新版本时，仅超级管理员在顶栏与左下角看到温和提示；点击升级前自动核验全量运行中任务（视频队列、素材整理、发布上传、音色复刻、文件上传），支持**空闲后自动升级预约**。
+   - 在上述 `systemd`（`Restart=always`）托管模式下，完成文件原子替换与逐文件哈希校验后，工作台主进程优雅退出并由 `systemd` 在 3 秒内自动拉起新版本，无需 `sudo` 权限，且保留 `.montage/` 数据与 SQLite 登录态。每次升级前自动备份旧版运行代码至 `.montage/updates/backups/`（保留最近 3 份），校验或替换异常自动回滚。
+   - 如个别云服务器需要网络代理、下载镜像前缀或提高 GitHub API 限流配额，可在 `systemd` 服务 `[Service]` 中按需添加环境变量（默认留空直连即可）：
+     - `Environment=HTTPS_PROXY=http://127.0.0.1:7890`
+     - `Environment=MONTAGE_GITHUB_MIRROR=https://...`
+     - `Environment=MONTAGE_GITHUB_TOKEN=ghp_...`

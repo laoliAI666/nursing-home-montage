@@ -287,6 +287,8 @@ class App:
         self.store = WorkbenchStore(self, read)
         from auth import AuthService
         self.auth = AuthService(self, self.store)
+        from updater import WorkbenchUpdater
+        self.updater = WorkbenchUpdater(self, read, write)
         if recover:
             self.library.bootstrap()
             self.queue.migrate()
@@ -294,6 +296,8 @@ class App:
 
     def exit_blocked(self):
         with self.transaction():
+            if self.updater.is_upgrading():
+                return '工作台正在执行版本升级，请等待升级完成后再退出。'
             if self.active_requests:
                 return '工作台正在处理操作，请完成后再退出。'
             if any(not row.get('settled') or row['status'] in ('queued', 'assigned', 'running', 'stopping')
@@ -1366,6 +1370,7 @@ class Handler(BaseHTTPRequestHandler):
             "draft": self.app.auth.get_draft(actor.user_id) if actor.can("tasks.create") else {},
             "selectedSource": "" if self.app.deploy_mode == "server" else read(self.app.data / "selected-source.json", {}).get("folder", ""),
             "currentUser": actor.public_user(int(self.app.auth.get_settings().get("reauthWindowSeconds", 300))),
+            "update": self.app.updater.state_summary_for_actor(actor),
         }
 
     def do_GET(self):
@@ -1388,6 +1393,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/pagination.js": "pagination.js", "/style.css": "style.css", "/controls.css": "controls.css",
                 "/queue.css": "queue.css", "/acceptance.js": "acceptance.js", "/acceptance.css": "acceptance.css",
                 "/auth.js": "auth.js", "/auth.css": "auth.css", "/admin.js": "admin.js",
+                "/updater.js": "updater.js", "/updater.css": "updater.css",
             }.get(url.path)
             if filename:
                 return self.file(HERE / "web" / filename)
@@ -1420,7 +1426,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.require_auth(allow_password_change_pending=True)
                 if not isinstance(read(self.app.pc.directory()/'project.json'), dict):
                     raise ValueError('项目配置不可读')
-                return self.reply(200, {'ok': True})
+                return self.reply(200, self.app.updater.public_health())
 
             # 4. Authenticated user endpoints
             if url.path == "/api/auth/me":
@@ -1447,6 +1453,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, mstate)
             if url.path == "/api/state":
                 return self.reply(200, self._state_for_actor(actor))
+            if url.path == "/api/update/status":
+                self.require_perm(actor, "system.upgrade", message="仅超级管理员可查看和管理版本升级。")
+                return self.reply(200, self.app.updater.full_status(include_blockers=True))
             if url.path == "/api/users":
                 return self.reply(200, self.app.auth.list_users(
                     actor,
@@ -1540,10 +1549,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(403, {"error": "请求来源不受信任，请从工作台页面操作"})
         url = urlsplit(self.path)
         shutdown = url.path == '/api/shutdown'
+        update_ctrl = url.path.startswith('/api/update/')
         if not shutdown:
             with self.app.lifecycle:
                 if self.app.exiting:
-                    return self.reply(409, {'error': '工作台正在退出，请从启动器重新打开。'})
+                    return self.reply(409, {'error': '工作台正在退出或重启，请稍候自动恢复。', 'code': 'restarting'})
+                if self.app.updater.is_maintenance_locked() and url.path != '/api/auth/logout' and not update_ctrl:
+                    return self.reply(503, {'error': '工作台正在升级重启，请稍候 1 分钟后再试。', 'code': 'upgrading'})
                 self.app.active_requests += 1
         try:
             self.post(url)
@@ -1663,6 +1675,34 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/auth/settings":
                 self.require_perm(actor, "settings.update")
                 return self.reply(200, {"authSettings": self.app.auth.save_settings(v, actor=actor, ip=ip)})
+            # System auto-upgrade endpoints (Super Admin only)
+            if url.path == "/api/update/check":
+                self.require_perm(actor, "system.upgrade", message="仅超级管理员可检查工作台更新。")
+                return self.reply(200, self.app.updater.check_now(force=bool(v.get("force", True))))
+            if url.path == "/api/update/settings":
+                self.require_perm(actor, "system.upgrade", message="仅超级管理员可修改自动升级配置。")
+                saved = self.app.updater.save_settings(v, actor=actor, ip=ip)
+                return self.reply(200, {"settings": saved, "status": self.app.updater.full_status(include_blockers=False)})
+            if url.path == "/api/update/start":
+                self.require_perm(actor, "system.upgrade", message="仅超级管理员可执行工作台升级与重启。")
+                try:
+                    return self.reply(202, self.app.updater.start_upgrade(actor, ip=ip))
+                except ValueError as exc:
+                    code = getattr(exc, "code", "")
+                    if code in ("tasks_running", "dirty_git"):
+                        return self.reply(409, {
+                            "error": str(exc),
+                            "code": code,
+                            "blockers": getattr(exc, "blockers", []),
+                            "dirtyFiles": getattr(exc, "dirty_files", []),
+                        })
+                    raise
+            if url.path == "/api/update/schedule":
+                self.require_perm(actor, "system.upgrade", message="仅超级管理员可预约自动升级。")
+                return self.reply(200, self.app.updater.schedule_upgrade(actor, ip=ip))
+            if url.path == "/api/update/cancel-schedule":
+                self.require_perm(actor, "system.upgrade", message="仅超级管理员可取消预约升级。")
+                return self.reply(200, self.app.updater.cancel_schedule(actor, ip=ip))
             if url.path == "/api/users":
                 return self.reply(201, self.app.auth.create_user(actor, v, ip=ip))
             match = re.fullmatch(r"/api/users/(u_[a-f0-9]{12})(?:/(reset-password|delete))?", url.path)
@@ -2306,6 +2346,7 @@ def serve(args):
     server.token = secrets.token_urlsafe(32)
     server.public_origins = public_origins
     server.trust_proxy = trust_proxy
+    app.updater.attach_server(server)
     def pump():
         last_error=None
         while True:
@@ -2316,12 +2357,15 @@ def serve(args):
                     app.queue.expire_head()
                     app.queue.process_inbox()
                     app.queue.reconcile()
-                    app.queue.launch_local()
+                    if not app.updater.is_draining():
+                        app.queue.launch_local()
                     app.acceptance.tick()
                     app.archive.tick()
                     app.voice_training.tick()
                     app.publish.tick()
-                    coordinator.tick()
+                    if not app.updater.is_draining():
+                        coordinator.tick()
+                app.updater.tick()
                 last_error=None
             except Exception as exc:
                 error=app.redact(str(exc))

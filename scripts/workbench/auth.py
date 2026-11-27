@@ -113,6 +113,7 @@ PERMISSION_MODULES: list[dict[str, Any]] = [
             {"code": "settings.read", "kind": "read", "label": "查看配置状态（脱敏）", "description": "查看各项服务是否已配置与连通状态（不含密钥明文）"},
             {"code": "settings.update", "kind": "update", "label": "修改全局设置与服务", "description": "调整模型、语音、数字人、分发配置、工作区与登录会话过期时间"},
             {"code": "settings.reveal_secret", "kind": "action", "label": "查看 API 密钥明文", "description": "经二次密码验证后明文查看已保存的密钥（仅超管锁定）", "superOnly": True},
+            {"code": "system.upgrade", "kind": "action", "label": "在线自动升级与重启", "description": "检查 GitHub 正式版本、预约或执行工作台升级与服务重启（仅超管锁定）", "superOnly": True},
         ],
     },
     {
