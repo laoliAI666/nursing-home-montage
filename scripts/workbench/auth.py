@@ -86,11 +86,12 @@ PERMISSION_MODULES: list[dict[str, Any]] = [
     {
         "id": "styles",
         "label": "风格库",
-        "description": "30+ 套封面样式与视频样式浏览、数字人绑定与全局默认",
+        "description": "视频风格（封面与视频成套样式）与口播文本风格模板浏览、管理与全局默认",
         "permissions": [
-            {"code": "styles.read", "kind": "read", "label": "浏览风格库", "description": "查看和预览全部封面与视频样式模板"},
-            {"code": "styles.bind", "kind": "update", "label": "绑定风格到数字人", "description": "批量将封面与视频风格绑定到指定数字人"},
-            {"code": "styles.set_default", "kind": "action", "label": "设为工作台默认风格", "description": "修改工作台全局默认封面与视频样式"},
+            {"code": "styles.read", "kind": "read", "label": "浏览风格库", "description": "查看和预览全部视频风格与口播文本风格模板"},
+            {"code": "styles.bind", "kind": "update", "label": "绑定视频风格到数字人", "description": "批量将视频风格成套绑定到指定数字人"},
+            {"code": "styles.text_manage", "kind": "update", "label": "管理文本风格模板", "description": "新建、编辑、删除自定义文本风格，或修改与恢复出厂原始文本模板"},
+            {"code": "styles.set_default", "kind": "action", "label": "设为工作台默认风格", "description": "修改工作台全局默认视频风格与默认口播文本风格"},
         ],
     },
     {

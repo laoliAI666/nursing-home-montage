@@ -38,6 +38,8 @@ class BatchPlanning:
         settings = {'targetDurationSeconds': task['targetDurationSeconds']} if 'targetDurationSeconds' in task else {}
         if task.get('narrationPolicy'):
             settings.update(narrationPolicy=task['narrationPolicy'],narrationBudgets=task['narrationBudgets'])
+        if task.get('narrationRules'):
+            settings['narrationRules'] = task['narrationRules']
         return {**settings, 'source': str(source), 'files': files, 'facts': task.get('facts', ''),
                 'requirements': task.get('requirements', ''), 'videoPreferences': task.get('videoPreferences', []),
                 'people': task.get('videoSpecs') or [{'person':task['person']}] * task['count'],
@@ -86,7 +88,7 @@ class BatchPlanning:
             ids.append(fact['id'])
         if len(set(ids)) != len(ids): raise ValueError('共同事实编号重复')
         expected = set(ids)
-        omission_limit = outline_omission_limit(task.get('narrationPolicy'), len(expected))
+        omission_limit = outline_omission_limit(task.get('narrationPolicy'), len(expected), task.get('narrationRules'))
         review = draft.get('review', {})
         if not all(isinstance(review.get(k), str) and review[k].strip() for k in ('facts', 'differences', 'preferences')):
             raise ValueError('策划子 Agent 须记录事实、差异和偏好的具体复核说明')
@@ -132,14 +134,24 @@ class BatchPlanning:
         if not task.get('narrationPolicy') or task.get('revisedNarration'):
             return
         from duration import budget_issue, script_units
-        from narration_editor import narration_issues, paragraphs, similarity_issue
+        from narration_editor import SIMILARITY_LIMIT, narration_issues, paragraphs, similarity_issue
+        rules = task.get('narrationRules')
+        sim_limit = SIMILARITY_LIMIT
+        respect_hook = True
+        if isinstance(rules, dict):
+            from text_styles import extract_rules
+            style_rules, _ = extract_rules(rules)
+            sim_limit = style_rules['body']['similarityLimit']
+            respect_hook = bool(style_rules['ending'].get('respectPersonHook', True))
+        person_id = (task.get('videoSpecs') or [{'person': task.get('person')}])[min(index, max(0, len(task.get('videoSpecs') or [1]) - 1))].get('person')
+        has_bound_hook = bool(respect_hook and (task.get('personClosingHooks') or {}).get(person_id))
         lines = [row.get('text','') for row in plan.get('sentences', [])]
         size = budget_issue(script_units(plan), budget or self.narration_budget(task,index))
-        issues = list(narration_issues(lines).values())
+        issues = list(narration_issues(lines, rules=rules, skip_banned_last=has_bound_hook).values())
         if size or issues:
             raise ValueError(f'第 {index+1} 条口播未通过。' + ' '.join(x for x in [size,*issues] if x))
         for old in previous:
-            match = similarity_issue(paragraphs(plan),paragraphs(old),task.get('institutionName',''))
+            match = similarity_issue(paragraphs(plan),paragraphs(old),task.get('institutionName',''),limit=sim_limit)
             if match:
                 raise ValueError(f'第 {index+1} 条正文与本批已有稿相似度达到 {match[0]:.1f}%，请局部重写。')
 

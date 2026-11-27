@@ -651,12 +651,14 @@ class Editor:
             plan['publication']['title'] = title.strip()
         return {**result, 'plan': plan}
 
-    def draft_narration(self, context, facts, preference, budget, index, feedback='', *, variation=None, remember=None, closing_hook=None):
+    def draft_narration(self, context, facts, preference, budget, index, feedback='', *, variation=None, remember=None, closing_hook=None, rules=None):
         if variation is not None:
-            user = user_prompt(context, facts, budget, variation, preference, feedback, closing_hook=closing_hook)
+            from text_styles import build_narration_system_prompt
+            system_prompt = build_narration_system_prompt(rules) if isinstance(rules, dict) else NARRATION_SYSTEM
+            user = user_prompt(context, facts, budget, variation, preference, feedback, closing_hook=closing_hook, rules=rules)
             if remember:
-                remember(NARRATION_SYSTEM, user)
-            result = self.ask(NARRATION_SYSTEM, user, max_tokens=2500)
+                remember(system_prompt, user)
+            result = self.ask(system_prompt, user, max_tokens=2500)
             return self.narration_paragraphs(result)
         # A rotation changes the entry point while every script keeps the same facts.
         ordered = facts[index % len(facts):] + facts[:index % len(facts)]
@@ -685,13 +687,19 @@ class Editor:
         return [part.strip() for part in parts]
 
     def revise_narration(self, parts, targets, issues, context, facts, budget, preference='', *,
-                         variation=None, remember=None, closing_hook=None):
+                         variation=None, remember=None, closing_hook=None, rules=None):
         if variation is not None:
+            from text_styles import build_narration_repair_prompt, extract_rules
+            repair_prompt = build_narration_repair_prompt(rules) if isinstance(rules, dict) else NARRATION_REPAIR_SYSTEM
+            style_rules, _ = extract_rules(rules) if isinstance(rules, dict) else (None, None)
             sizes = [script_units({'sentences': [{'text': text}]}) for text in parts]
-            user = user_prompt(context, facts, budget, variation, preference, '', closing_hook=closing_hook)
+            user = user_prompt(context, facts, budget, variation, preference, '', closing_hook=closing_hook, rules=rules)
             protected = ['用户明确要求的内容，原文中的正式名称、适用对象和服务条件。']
-            if 0 in targets and (name := user['机构名称']):
-                protected.append(f'第 1 段自然说出完整机构名称「{name}」，全文只说一次。')
+            req_open_name = True if not style_rules else bool(style_rules['opening'].get('requireInstitutionInOpening', True))
+            mention_once = True if not style_rules else bool(style_rules['opening'].get('institutionMentionOnce', True))
+            if 0 in targets and req_open_name and (name := user['机构名称']):
+                once_note = '，全文只说一次。' if mention_once else '。'
+                protected.append(f'第 1 段自然说出完整机构名称「{name}」{once_note}')
             if closing_hook:
                 protected.append(f'最后一段为数字人绑定的固定片尾钩子，必须原样保留：{closing_hook}')
             elif len(parts) - 1 in targets:
@@ -702,8 +710,8 @@ class Editor:
                 '替换段落字数': edit_lengths(sizes, targets, budget),
             }
             if remember:
-                remember(NARRATION_REPAIR_SYSTEM, user)
-            result = self.ask(NARRATION_REPAIR_SYSTEM, user, max_tokens=2600)
+                remember(repair_prompt, user)
+            result = self.ask(repair_prompt, user, max_tokens=2600)
         else:
             result = self.ask(
                 '用客观自然的带看口吻局部修订养老机构探访口播。'
@@ -729,7 +737,11 @@ class Editor:
         prefs = (task.get('videoPreferences') or [''] * task['count'])[index]
         person = (task.get('videoSpecs') or [{'person': task['person']}] * task['count'])[index]['person']
         revised = task.get('revisedNarration', '')
-        bound_hook = str((task.get('personClosingHooks') or {}).get(person) or '').strip() if not revised else ''
+        respect_hook = True
+        if isinstance(task.get('narrationRules'), dict):
+            from text_styles import extract_rules
+            respect_hook = bool(extract_rules(task['narrationRules'])[0]['ending'].get('respectPersonHook', True))
+        bound_hook = str((task.get('personClosingHooks') or {}).get(person) or '').strip() if (not revised and respect_hook) else ''
         evidence = evidence or {}
         target = task.get('targetDurationSeconds')
         length = initial_budget(target) if target is not None else {}
@@ -884,7 +896,7 @@ class Editor:
             used = {ident: None for sentence in sentences for ident in sentence.get('factIds', [])}
         unknown = sorted(set(used) - references.keys())
         missing = sorted(expected - set(used)) if not authorization else []
-        omission_limit = outline_omission_limit(task.get('narrationPolicy'), len(facts)) if spoken is not None else 0
+        omission_limit = outline_omission_limit(task.get('narrationPolicy'), len(facts), task.get('narrationRules')) if spoken is not None else 0
         issues = []
         if len(missing) > omission_limit:
             issues.append('口播缺少共同事实 ' + '、'.join(missing) + '，请在对应句写清事实并标注编号')

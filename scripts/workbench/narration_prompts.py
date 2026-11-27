@@ -6,8 +6,15 @@ COMPLETE_NARRATION_POLICY = 2
 DEFAULT_CTA = '邀请有意了解参观的家属留言。'
 
 
-def outline_omission_limit(policy, fact_count):
-    return min(2, max(0, fact_count - 1)) if policy == COMPLETE_NARRATION_POLICY else 0
+def outline_omission_limit(policy, fact_count, rules=None):
+    if policy != COMPLETE_NARRATION_POLICY:
+        return 0
+    limit = 2
+    if isinstance(rules, dict):
+        from text_styles import extract_rules
+        style_rules, _ = extract_rules(rules)
+        limit = style_rules['body']['omissionLimit']
+    return min(limit, max(0, fact_count - 1))
 
 
 OUTLINE_RULES = (
@@ -62,16 +69,23 @@ NARRATION_REPAIR_SYSTEM = (
 )
 
 
-def variations(facts, task_id, count):
+def variations(facts, task_id, count, rules=None):
     """Use distinct opening topics first, with stable combinations on retry."""
     topics = list(dict.fromkeys(row['topic'] for row in facts))
+    styles = ('家属提问', '从具体安排讲起', '直接介绍')
+    if isinstance(rules, dict):
+        from text_styles import extract_rules
+        style_rules, _ = extract_rules(rules)
+        configured = tuple(style_rules['opening'].get('openingStyles') or ())
+        if configured:
+            styles = configured
     rng = Random(task_id)
     rng.shuffle(topics)
     options = {}
     for topic in topics:
         options[topic] = [
             {'开场切入点': topic, '开场写法': style, '展开重点': focus}
-            for style in ('家属提问', '从具体安排讲起', '直接介绍')
+            for style in styles
             for focus in topics
         ]
         rng.shuffle(options[topic])
@@ -80,11 +94,16 @@ def variations(facts, task_id, count):
     return [ordered[i % len(ordered)] for i in range(count)]
 
 
-def user_prompt(context, facts, budget, variation, preference, feedback, *, closing_hook=None):
+def user_prompt(context, facts, budget, variation, preference, feedback, *, closing_hook=None, rules=None):
     lower, upper = budget['minUnits'], budget['maxUnits']
+    default_cta = DEFAULT_CTA
+    if isinstance(rules, dict):
+        from text_styles import extract_rules
+        style_rules, _ = extract_rules(rules)
+        default_cta = style_rules['ending'].get('defaultCta') or DEFAULT_CTA
     cta_guide = (
         f'固定片尾钩子（最后一段必须原样使用，一字不改）：{closing_hook}'
-        if closing_hook else DEFAULT_CTA
+        if closing_hook else default_cta
     )
     value = {
         '机构名称': context['institutionName'],

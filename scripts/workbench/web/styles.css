@@ -693,3 +693,451 @@ dialog.style-suite-picker-dialog {
     flex-direction: column;
   }
 }
+
+
+/* Merged Video Style Suite Cards (封面 + 视频合并展示) */
+.style-grid.style-suite-grid {
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 20px;
+}
+.style-suite-pair-stage {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  background: #14221e;
+}
+.style-suite-pair-labels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  background: var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.style-suite-pair-labels span {
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+  background: #f5f7f2;
+  padding: 4px 0;
+}
+
+/* Text Style Presets Grid & Cards (风格库 · 文本风格) */
+.ts-global-banned-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: #f5f9f2;
+  border: 1px solid #cddbc8;
+  border-radius: 12px;
+  padding: 13px 16px;
+  margin-bottom: 18px;
+}
+.ts-global-banned-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.ts-global-banned-info svg {
+  color: var(--accent);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.ts-global-banned-info strong {
+  display: block;
+  font-size: 13px;
+  color: var(--ink);
+}
+.ts-global-banned-info small {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.ts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 18px;
+}
+.ts-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  transition: border-color .16s ease;
+}
+.ts-card:hover {
+  border-color: #aac0a4;
+}
+.ts-card.is-default {
+  border-color: var(--accent);
+  background: linear-gradient(180deg, #fafcf7 0%, #ffffff 38%);
+}
+.ts-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ts-card-head h3 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.ts-badge-group {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.ts-chip {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 5px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.ts-chip.is-default {
+  background: var(--pine);
+  color: #f6faef;
+}
+.ts-chip.is-builtin {
+  background: #edf3e7;
+  color: #456344;
+}
+.ts-chip.is-custom {
+  background: #e9eff8;
+  color: #2b4c7e;
+}
+.ts-chip.is-modified {
+  background: #fbf2df;
+  color: #8e5b15;
+}
+.ts-cat-line {
+  margin-top: -4px;
+}
+.ts-desc {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+.ts-blocks-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  background: #fafbf8;
+  border: 1px solid #e6ece2;
+  border-radius: 10px;
+  padding: 11px 12px;
+  font-size: 12px;
+}
+.ts-blocks-compact {
+  background: var(--paper);
+}
+.ts-block-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.ts-block-line > span:last-child {
+  color: var(--ink);
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ts-block-tag {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: #edf3e7;
+  padding: 1px 6px;
+  border-radius: 4px;
+  min-width: 36px;
+  text-align: center;
+}
+.ts-metrics, .ts-batch-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.ts-metrics span, .ts-batch-meta > span:not(.ts-chip) {
+  background: var(--soft);
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.ts-card-actions {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid #edf0ea;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ts-actions-left, .ts-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ts-btn-sm {
+  min-height: 34px !important;
+  padding: 6px 12px !important;
+  font-size: 12px !important;
+}
+.ts-btn-warn {
+  background: #fbf2df !important;
+  color: #8e5b15 !important;
+  border-color: #e4cb96 !important;
+}
+.ts-btn-warn:hover {
+  background: #f5e5c2 !important;
+}
+.ts-btn-danger {
+  color: #ae4137 !important;
+}
+.ts-protected-note {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* Visual Block Editor Modal */
+dialog.ts-modal-dialog {
+  width: min(980px, calc(100vw - 32px));
+  max-height: calc(100vh - 36px);
+  display: flex;
+  flex-direction: column;
+}
+dialog.ts-modal-dialog:not([open]) {
+  display: none;
+}
+.ts-modal-body {
+  display: grid;
+  grid-template-columns: 186px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.ts-modal-nav {
+  background: #f7faf4;
+  border-right: 1px solid var(--line);
+  padding: 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ts-modal-nav button {
+  text-align: left;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.ts-modal-nav button:hover {
+  background: var(--soft);
+  color: var(--ink);
+}
+.ts-modal-nav button.active {
+  background: var(--leaf);
+  color: var(--pine-deep);
+  font-weight: 600;
+}
+.ts-modal-content {
+  padding: 20px 24px;
+  overflow-y: auto;
+  max-height: calc(100vh - 185px);
+}
+.ts-sec-card {
+  background: #fbfcf9;
+  border: 1px solid #e4eae0;
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+.ts-sec-card:last-child {
+  margin-bottom: 0;
+}
+.ts-sec-card h3 {
+  margin: 0 0 4px;
+  font-size: 14.5px;
+  color: var(--ink);
+}
+.ts-sec-muted {
+  background: #f5f8f2;
+  border-color: #d6e1d1;
+}
+.ts-textarea {
+  min-height: 92px;
+  resize: vertical;
+  line-height: 1.7;
+}
+.ts-range {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.ts-sw-desc {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.ts-tag-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.ts-tag-input-row .input {
+  flex: 1;
+}
+.ts-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.ts-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 99px;
+  font-size: 12px;
+  background: #edf3e7;
+  color: var(--pine);
+  border: 1px solid #cfe0c6;
+}
+.ts-tag.is-sensitive {
+  background: #faeae5;
+  color: #ae4137;
+  border-color: #efc4bc;
+}
+.ts-tag button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.ts-radio-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 8px 0 12px;
+  font-size: 13px;
+}
+.ts-radio-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.ts-pack-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ts-banned-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+}
+.ts-preview-code {
+  margin: 10px 0 0;
+  background: #172a25;
+  color: #dceabc;
+  padding: 14px 16px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.ts-modal-foot {
+  padding: 14px 24px;
+  border-top: 1px solid var(--line);
+  background: #fbfcf9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ts-modal-foot-left, .ts-modal-foot-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Create Page Batch Text Style Card */
+.ts-batch-box {
+  background: #fafcf7;
+  border: 1px solid #cddbc8;
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ts-batch-box.is-overridden {
+  background: #fffdf6;
+  border-color: #dfbe78;
+}
+.ts-batch-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ts-batch-top select {
+  flex: 1;
+  min-width: 200px;
+}
+
+@media (max-width: 760px) {
+  .ts-modal-body {
+    grid-template-columns: 1fr;
+  }
+  .ts-modal-nav {
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .ts-modal-nav button {
+    white-space: nowrap;
+  }
+  .ts-grid {
+    grid-template-columns: 1fr;
+  }
+}

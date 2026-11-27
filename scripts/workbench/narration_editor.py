@@ -20,14 +20,43 @@ def paragraphs(plan):
 PAREN_PATTERN = re.compile(r'[（()）]')
 
 
-def narration_issues(lines):
+def narration_issues(lines, *, rules=None, skip_banned_last=False):
+    forbid_parens = True
+    forbid_report = True
+    banned = None
+    if isinstance(rules, dict):
+        from text_styles import extract_rules
+        style_rules, banned = extract_rules(rules)
+        forbid_parens = bool(style_rules['guard'].get('forbidParentheses', True))
+        forbid_report = bool(style_rules['guard'].get('forbidReportTone', True))
     issues = {}
     for i, line in enumerate(lines):
-        if PAREN_PATTERN.search(line):
+        if forbid_parens and PAREN_PATTERN.search(line):
             issues[i] = f'第 {i + 1} 段包含括号。删掉括号及括号内的文字，括号里的内容不需要念出来。'
-        elif (match := REPORT_LANGUAGE.search(line)):
+        elif forbid_report and (match := REPORT_LANGUAGE.search(line)):
             issues[i] = f'第 {i + 1} 段使用了核验口吻「{match.group()}」。改成直接向家属介绍。'
+    if isinstance(banned, dict) and banned.get('enabled') and banned.get('action') == 'repair':
+        from text_styles import find_banned_hits
+        check_lines = lines[:-1] if skip_banned_last and len(lines) > 1 else lines
+        for idx, words in find_banned_hits(check_lines, banned).items():
+            msg = f'第 {idx + 1} 段命中全站禁词「{"、".join(words)}」，请删去或改用合规表述。'
+            issues[idx] = (issues[idx] + ' ' + msg) if idx in issues else msg
     return issues
+
+
+def banned_word_warnings(lines, rules=None, *, skip_last=False):
+    if not isinstance(rules, dict):
+        return []
+    from text_styles import extract_rules, find_banned_hits
+    _, banned = extract_rules(rules)
+    if not banned.get('enabled') or banned.get('action') != 'warn':
+        return []
+    check_lines = lines[:-1] if skip_last and len(lines) > 1 else lines
+    hits = find_banned_hits(check_lines, banned)
+    return [
+        f'全站公共禁词提醒：第 {idx + 1} 段包含「{"、".join(words)}」，验收前请确认是否需要改写。'
+        for idx, words in sorted(hits.items())
+    ]
 
 
 def fragments(text, ignored):
@@ -36,7 +65,7 @@ def fragments(text, ignored):
             yield from (segment[i:i + 4] for i in range(len(segment) - 3))
 
 
-def similarity_issue(lines, previous, institution):
+def similarity_issue(lines, previous, institution, *, limit=SIMILARITY_LIMIT):
     fixed = {spoken_characters(institution), *FIXED_TERMS}
     text = '\n'.join([*lines, *previous])
     named = r'[“「]([\u3400-\u9fff]{2,16})[”」]'
@@ -54,7 +83,7 @@ def similarity_issue(lines, previous, institution):
     for parts in a:
         whole.update(parts)
     overlap, size = (whole & b).total(), whole.total() + b.total()
-    if size and 200 * overlap >= SIMILARITY_LIMIT * size:
+    if size and 200 * overlap >= limit * size:
         matches = [i for i, parts in enumerate(a) if parts and (parts & b).total() * 5 >= parts.total() * 4]
         return 200 * overlap / size, matches
     return None

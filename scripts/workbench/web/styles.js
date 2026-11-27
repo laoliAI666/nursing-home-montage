@@ -3,7 +3,7 @@
 paths.palette = '<path d="M12 3a9 9 0 1 0 0 18h1.5a2.5 2.5 0 0 0 0-5H12a2 2 0 0 1-2-2c0-1.1.9-2 2-2h4a5 5 0 0 0 5-5 4 4 0 0 0-9-4Z"/><circle cx="7.5" cy="10.5" r="1"/><circle cx="10.5" cy="7.5" r="1"/><circle cx="15" cy="7.5" r="1"/>';
 labels.styles = '风格库';
 
-let styleTab = 'covers';
+let styleTab = 'videos';
 let styleCategory = '全部';
 let styleQuery = '';
 let styleOnlyBound = false;
@@ -337,31 +337,61 @@ function videoPreviewHtml(entry, uid = 'v') {
   </div>`;
 }
 
-function styleCardHtml(entry, kind) {
-  const isCover = kind === 'cover';
-  const bound = entry.boundPeople || [];
+function videoStyleSuites() {
+  const s = getStylesData();
+  return (s.covers || []).map(cover => {
+    const video = findVideoStyle(cover.pairId);
+    const boundMap = new Map();
+    for (const p of [...(cover.boundPeople || []), ...(video?.boundPeople || [])]) {
+      if (p?.id && !boundMap.has(p.id)) boundMap.set(p.id, p);
+    }
+    const isDefault = cover.id === s.defaultCoverId && video?.id === s.defaultVideoStyleId;
+    return {
+      id: cover.id,
+      num: cover.num || String(cover.order || '').padStart(2, '0'),
+      order: cover.order || 0,
+      name: cover.name,
+      category: cover.category,
+      layoutTag: cover.layoutTag || video?.layoutTag || '',
+      description: cover.description || video?.description || '',
+      swatches: cover.swatches || video?.swatches || [],
+      tags: [...new Set([...(cover.tags || []), ...(video?.tags || [])])],
+      cover,
+      video,
+      isDefault,
+      boundPeople: [...boundMap.values()],
+    };
+  });
+}
+
+function suiteCardHtml(suite) {
+  const bound = suite.boundPeople || [];
   const boundText = bound.length ? `已绑：${bound.map(p => p.name).join('、')}` : '暂未单独绑定';
-  const num = E(entry.num || String(entry.order).padStart(2, '0'));
-  return `<article class="style-card ${entry.isDefault ? 'is-default' : ''}" data-open-style="${E(entry.id)}" data-style-kind="${kind}" tabindex="0" role="button" aria-label="查看${E(entry.name)}">
-    <div class="style-preview-box">
-      ${(entry.isDefault || bound.length) ? `<div class="style-preview-badges">
+  const num = E(suite.num);
+  return `<article class="style-card style-suite-card ${suite.isDefault ? 'is-default' : ''}" data-open-style="${E(suite.cover.id)}" data-style-kind="suite" tabindex="0" role="button" aria-label="查看视频风格 ${E(suite.name)}">
+    <div class="style-suite-pair-stage">
+      ${(suite.isDefault || bound.length) ? `<div class="style-preview-badges">
         <span></span>
         <div class="style-status-stack">
-          ${entry.isDefault ? '<span class="style-status-pill is-default">当前默认</span>' : ''}
+          ${suite.isDefault ? '<span class="style-status-pill is-default">当前默认</span>' : ''}
           ${bound.length ? `<span class="style-status-pill is-bound">已绑 ${bound.length} 人</span>` : ''}
         </div>
       </div>` : ''}
-      ${isCover
-        ? `<div class="style-cover-slot" style="width:100%;height:100%" data-cover-preview data-cover-id="${E(entry.id)}"><div class="style-preview-placeholder">渲染预览中…</div></div>`
-        : videoPreviewHtml(entry, `card_${entry.id}`)}
+      <div class="style-preview-box">
+        <div class="style-cover-slot" style="width:100%;height:100%" data-cover-preview data-cover-id="${E(suite.cover.id)}"><div class="style-preview-placeholder">渲染预览中…</div></div>
+      </div>
+      <div class="style-preview-box">
+        ${suite.video ? videoPreviewHtml(suite.video, `suite_${suite.video.id}`) : '<div class="style-preview-placeholder">暂无视频预览</div>'}
+      </div>
     </div>
+    <div class="style-suite-pair-labels"><span>封面样式</span><span>视频样式</span></div>
     <div class="style-card-body">
       <div class="style-card-head">
-        <h3><span class="style-num-pill" style="margin-right:6px;vertical-align:1px">${num}</span>${E(entry.name)}</h3>
-        <span class="style-cat-tag">${E(entry.category)}</span>
+        <h3><span class="style-num-pill" style="margin-right:6px;vertical-align:1px">${num}</span>${E(suite.name)}</h3>
+        <span class="style-cat-tag">${E(suite.category)}</span>
       </div>
-      <p class="style-layout-meta">${E(entry.layoutTag || entry.description || '')}</p>
-      <div class="style-swatches">${(entry.swatches || []).map(c => `<i class="style-swatch" style="background:${E(c)}"></i>`).join('')}</div>
+      <p class="style-layout-meta">${E(suite.layoutTag || suite.description || '')}</p>
+      <div class="style-swatches">${(suite.swatches || []).map(c => `<i class="style-swatch" style="background:${E(c)}"></i>`).join('')}</div>
       <div class="style-bound-row">
         <span class="style-bound-names" title="${E(boundText)}">${E(boundText)}</span>
         <span class="text-button">详情 / 绑定 ${icon('chevron-right')}</span>
@@ -370,59 +400,70 @@ function styleCardHtml(entry, kind) {
   </article>`;
 }
 
-function filteredStyles(kind) {
-  const s = getStylesData();
-  const list = kind === 'cover' ? s.covers : s.videos;
+function filteredSuites() {
+  const list = videoStyleSuites();
   const q = styleQuery.trim().toLowerCase();
   return list.filter(item => {
     if (styleOnlyBound && !(item.boundPeople || []).length) return false;
     if (styleCategory !== '全部' && item.category !== styleCategory) return false;
     if (!q) return true;
-    const hay = [item.num, item.id, item.name, item.category, item.layoutTag, item.description, ...(item.tags || [])].join(' ').toLowerCase();
+    const hay = [item.num, item.id, item.name, item.category, item.layoutTag, item.description, item.video?.id, item.video?.name, ...(item.tags || [])].join(' ').toLowerCase();
     return hay.includes(q);
   });
 }
 
 function styleCategories(kind) {
-  const list = kind === 'cover' ? getStylesData().covers : getStylesData().videos;
+  const list = kind === 'video' ? getStylesData().videos : getStylesData().covers;
   return ['全部', ...new Set(list.map(x => x.category))];
 }
 
 function paintStylesGrid() {
-  const kind = styleTab === 'videos' ? 'video' : 'cover';
-  const items = filteredStyles(kind);
   const host = $('#styles-grid-host');
   if (!host) return;
-  if (!items.length) {
-    host.innerHTML = emptyState('没有找到匹配的样式', '试试清空关键词，或切换其他分类查看全部样式。', '<button type="button" class="secondary" data-action="reset-style-filters">重置筛选</button>');
+  if (styleTab === 'text') {
+    window.paintTextStylesTab?.(host);
     return;
   }
-  host.innerHTML = `<div class="style-grid">${items.map(item => styleCardHtml(item, kind)).join('')}</div>`;
-  if (kind === 'cover') observeCoverContainers(host, 1 / 3);
+  const items = filteredSuites();
+  if (!items.length) {
+    host.innerHTML = emptyState('没有找到匹配的视频风格', '试试清空关键词，或切换其他分类查看全部视频风格。', '<button type="button" class="secondary" data-action="reset-style-filters">重置筛选</button>');
+    return;
+  }
+  host.innerHTML = `<div class="style-grid style-suite-grid">${items.map(item => suiteCardHtml(item)).join('')}</div>`;
+  observeCoverContainers(host, 1 / 3);
 }
 
 async function renderStylesPage() {
   const parts = location.hash.slice(1).split('/');
-  if (parts[1] === 'videos') styleTab = 'videos';
-  else if (parts[1] === 'covers') styleTab = 'covers';
+  if (parts[1] === 'text') styleTab = 'text';
+  else if (parts[1] === 'videos' || parts[1] === 'covers') styleTab = 'videos';
   await loadStyleStickers().catch(() => {});
   const s = getStylesData();
-  const kind = styleTab === 'videos' ? 'video' : 'cover';
-  const cats = styleCategories(kind);
+  const textList = s.textStyles || [];
+  const isText = styleTab === 'text';
+  const cats = isText
+    ? ['全部', ...new Set(textList.map(x => x.category || '自定义模板'))]
+    : styleCategories('cover');
   if (!cats.includes(styleCategory)) styleCategory = '全部';
+  const canManageText = typeof window.hasPerm === 'function' ? window.hasPerm('styles.text_manage') : true;
 
-  main.innerHTML = `${heading('风格库', '每套样式含统一视觉的封面样式与视频样式，示例均采用虚拟写实主播与虚拟院区；数字人可按需单独绑定或成套绑定。', `<a class="secondary" href="#people">${icon('person')} 前往数字人管理</a>`)}
+  const headAction = isText
+    ? `${canManageText ? `<button type="button" class="primary" data-action="new-text-style">${icon('plus')} 新建文本风格</button>` : ''}`
+    : `<a class="secondary" href="#people">${icon('person')} 前往数字人管理</a>`;
+
+  main.innerHTML = `${heading('风格库', '统一管理成套「视频风格（封面 + 视频）」与「文本风格（口播编排规则）」。视频风格可绑定数字人；文本风格可设为全局默认或在新建制作时按单批次微调。', headAction)}
     <nav class="content-tabs" aria-label="风格库分类">
-      <a href="#styles/covers" ${styleTab === 'covers' ? 'aria-current="page"' : ''}>封面样式<span>${s.covers.length}</span></a>
-      <a href="#styles/videos" ${styleTab === 'videos' ? 'aria-current="page"' : ''}>视频样式<span>${s.videos.length}</span></a>
+      <a href="#styles/videos" ${!isText ? 'aria-current="page"' : ''}>视频风格<span>${(s.covers || []).length}</span></a>
+      <a href="#styles/text" ${isText ? 'aria-current="page"' : ''}>文本风格<span>${textList.length}</span></a>
     </nav>
+    ${isText ? (window.renderTextStylesBanner ? window.renderTextStylesBanner() : '') : ''}
     <div class="styles-toolbar">
-      <div class="filter-tabs" role="group" aria-label="按风格赛道筛选">
+      <div class="filter-tabs" role="group" aria-label="按风格分类筛选">
         ${cats.map(cat => `<button type="button" data-style-cat="${E(cat)}" class="${styleCategory === cat && !styleOnlyBound ? 'active' : ''}">${E(cat)}</button>`).join('')}
-        <button type="button" data-style-bound-filter class="${styleOnlyBound ? 'active' : ''}">已绑定数字人</button>
+        ${!isText ? `<button type="button" data-style-bound-filter class="${styleOnlyBound ? 'active' : ''}">已绑定数字人</button>` : ''}
       </div>
       <div class="styles-toolbar-right">
-        <label class="search-field">${icon('search')}<input id="style-search" type="search" placeholder="搜索风格名、配色、构图…" value="${E(styleQuery)}"></label>
+        <label class="search-field">${icon('search')}<input id="style-search" type="search" placeholder="${isText ? '搜索文本风格名、口吻或规则…' : '搜索视频风格名、配色、构图…'}" value="${E(styleQuery)}"></label>
       </div>
     </div>
     <div id="styles-grid-host"></div>`;
@@ -435,20 +476,23 @@ async function renderStylesPage() {
 }
 
 function openStyleDetailModal(kind, id) {
-  const isCover = kind === 'cover';
+  const isCover = kind === 'cover' || kind === 'suite';
   const entry = isCover ? findCoverStyle(id) : findVideoStyle(id);
   if (!entry) return;
   const pairEntry = isCover ? findVideoStyle(entry.pairId) : findCoverStyle(entry.pairId);
   const coverEntry = isCover ? entry : pairEntry;
   const videoEntry = isCover ? pairEntry : entry;
+  const s = getStylesData();
+  const isSuiteDefault = coverEntry.id === s.defaultCoverId && videoEntry.id === s.defaultVideoStyleId;
   const people = state.config.people || [];
-  const fieldKey = isCover ? 'cover_template_id' : 'video_style_id';
+  const canSetDefault = typeof window.hasPerm === 'function' ? window.hasPerm('styles.set_default') : true;
+  const canBind = typeof window.hasPerm === 'function' ? window.hasPerm('styles.bind') : true;
 
   const dialog = document.createElement('dialog');
   dialog.className = 'style-dialog';
   dialog.innerHTML = `
     <div class="style-dialog-head">
-      <h2><span class="style-num-pill">${E(entry.num || '')}</span> ${E(entry.name)} <span class="style-cat-tag">${E(entry.category)}</span></h2>
+      <h2><span class="style-num-pill">${E(coverEntry.num || '')}</span> ${E(coverEntry.name)} <span class="style-cat-tag">${E(coverEntry.category)}</span></h2>
       <button type="button" data-close aria-label="关闭">${icon('close')}</button>
     </div>
     <div class="style-dialog-body">
@@ -456,39 +500,41 @@ function openStyleDetailModal(kind, id) {
         <div class="style-detail-pair">
           <div class="style-detail-frame">
             <div class="style-preview-box" data-modal-cover data-cover-id="${E(coverEntry.id)}"><div class="style-preview-placeholder">加载高清预览…</div></div>
-            <span>${isCover ? '当前封面样式' : '配套封面样式'} · ${E(coverEntry.name)}</span>
+            <span>封面样式 · ${E(coverEntry.name)}</span>
           </div>
           <div class="style-detail-frame">
             <div class="style-preview-box">${videoPreviewHtml(videoEntry, 'modal_' + videoEntry.id)}</div>
-            <span>${!isCover ? '当前视频样式' : '配套视频样式'} · ${E(videoEntry.name)}</span>
+            <span>视频样式 · ${E(videoEntry.name)}</span>
           </div>
         </div>
         <div class="style-detail-info">
-          <p class="style-detail-desc">${E(entry.description || entry.layoutTag || '')}</p>
-          <div class="style-swatches">${(entry.swatches || []).map(c => `<i class="style-swatch" style="background:${E(c)};width:18px;height:18px"></i>`).join('')}<span class="subtle" style="margin-left:6px">${E(entry.layoutTag || '')}</span></div>
-          <div class="style-detail-tags">${(entry.tags || []).map(t => `<span>#${E(t)}</span>`).join('')}</div>
+          <p class="style-detail-desc">${E(coverEntry.description || coverEntry.layoutTag || '')}</p>
+          <div class="style-swatches">${(coverEntry.swatches || []).map(c => `<i class="style-swatch" style="background:${E(c)};width:18px;height:18px"></i>`).join('')}<span class="subtle" style="margin-left:6px">${E(coverEntry.layoutTag || '')}</span></div>
+          <div class="style-detail-tags">${(coverEntry.tags || []).map(t => `<span>#${E(t)}</span>`).join('')}</div>
 
           <div class="style-bind-box">
-            <h3>工作台默认样式</h3>
-            <p class="form-help" style="margin:0 0 12px">未单独绑定样式的数字人，新建制作时会自动使用工作台默认样式。</p>
+            <h3>工作台默认视频风格</h3>
+            <p class="form-help" style="margin:0 0 12px">未单独绑定视频风格的数字人，新建制作时会自动成套使用当前默认封面与视频样式。</p>
             <div class="style-dialog-actions">
-              <button type="button" class="secondary" id="modal-set-default" ${entry.isDefault ? 'disabled' : ''}>${entry.isDefault ? '已是当前默认' : `设为默认${isCover ? '封面' : '视频'}样式`}</button>
-              <button type="button" class="secondary" id="modal-set-default-pair">成套设为默认（封面 + 视频）</button>
+              ${canSetDefault
+                ? `<button type="button" class="secondary" id="modal-set-default-pair" ${isSuiteDefault ? 'disabled' : ''}>${isSuiteDefault ? '已是当前全局默认' : '设为全局默认视频风格'}</button>`
+                : `<span class="subtle">${isSuiteDefault ? '当前为工作台全局默认视频风格' : '仅管理员/超管可修改全局默认风格'}</span>`}
             </div>
           </div>
 
           <div class="style-bind-box">
             <h3>绑定到数字人</h3>
             ${people.length
-              ? `<p class="form-help" style="margin:0">勾选要使用此样式的数字人；取消已勾选的会恢复跟随默认（不影响绑了其他样式的人物）。</p>
-                <div class="style-bind-people">${people.map(p => {
-                  const checked = p[fieldKey] === entry.id;
-                  const curCover = p.cover_template_id ? findCoverStyle(p.cover_template_id)?.name : '默认';
-                  const curVideo = p.video_style_id ? findVideoStyle(p.video_style_id)?.name : '默认';
-                  return `<label class="style-bind-person"><input type="checkbox" value="${E(p.id)}" ${checked ? 'checked' : ''}>${p.hasPortrait ? `<img src="/media/person/${E(p.id)}" alt="">` : icon('person')}<span><strong>${E(p.name)}</strong><small>当前：封面 ${E(curCover)} · 视频 ${E(curVideo)}</small></span></label>`;
-                }).join('')}</div>
-                <label class="style-pair-check"><input type="checkbox" id="modal-bind-pair" checked> 同时成套绑定配套的${isCover ? '视频' : '封面'}样式（${E(pairEntry.name)}）</label>
-                <button type="button" class="primary wide" id="modal-save-bind">${icon('check')} 保存数字人绑定</button>`
+              ? (canBind
+                ? `<p class="form-help" style="margin:0">勾选要使用这套视频风格（封面 + 视频）的数字人；取消已勾选的会恢复跟随默认。</p>
+                  <div class="style-bind-people">${people.map(p => {
+                    const checked = p.cover_template_id === coverEntry.id && (!p.video_style_id || p.video_style_id === videoEntry.id);
+                    const curCover = p.cover_template_id ? findCoverStyle(p.cover_template_id)?.name : '默认';
+                    const curVideo = p.video_style_id ? findVideoStyle(p.video_style_id)?.name : '默认';
+                    return `<label class="style-bind-person"><input type="checkbox" value="${E(p.id)}" ${checked ? 'checked' : ''}>${p.hasPortrait ? `<img src="/media/person/${E(p.id)}" alt="">` : icon('person')}<span><strong>${E(p.name)}</strong><small>当前：${curCover === curVideo ? E(curCover) : `封面 ${E(curCover)} · 视频 ${E(curVideo)}`}</small></span></label>`;
+                  }).join('')}</div>
+                  <button type="button" class="primary wide" id="modal-save-bind">${icon('check')} 保存数字人绑定</button>`
+                : `<p class="form-help" style="margin:0">已绑定数字人：${(coverEntry.boundPeople || []).length ? E(coverEntry.boundPeople.map(p => p.name).join('、')) : '暂无'}（无绑定权限）。</p>`)
               : '<p class="form-help">还没有添加数字人。先到「数字人」页面创建人物后再绑定。</p>'}
           </div>
           <div id="modal-style-error" class="inline-error" role="alert"></div>
@@ -504,34 +550,31 @@ function openStyleDetailModal(kind, id) {
   dialog.querySelector('[data-close]').onclick = close;
   dialog.addEventListener('click', e => { if (e.target === dialog) close(); });
 
-  const setDef = async (includePair, btn) => {
+  dialog.querySelector('#modal-set-default-pair')?.addEventListener('click', async e => {
     $('#modal-style-error', dialog).textContent = '';
-    await busy(btn, async () => {
+    await busy(e.currentTarget, async () => {
       try {
-        const res = await api('/api/styles/default', { kind, id: entry.id, includePair });
+        const res = await api('/api/styles/default', { kind: 'cover', id: coverEntry.id, includePair: true });
         state.styles = res.styles;
         state.config = res.config;
-        notify(includePair ? `已将「${entry.name}」成套设为工作台默认` : `已将「${entry.name}」设为默认${isCover ? '封面' : '视频'}样式`);
+        notify(`已将视频风格「${coverEntry.name}」设为工作台全局默认`);
         close();
         if (route === 'styles') paintStylesGrid();
       } catch (err) {
         $('#modal-style-error', dialog).textContent = err.message;
       }
     });
-  };
-  dialog.querySelector('#modal-set-default')?.addEventListener('click', e => setDef(false, e.currentTarget));
-  dialog.querySelector('#modal-set-default-pair')?.addEventListener('click', e => setDef(true, e.currentTarget));
+  });
 
   dialog.querySelector('#modal-save-bind')?.addEventListener('click', async e => {
     $('#modal-style-error', dialog).textContent = '';
     const peopleIds = [...dialog.querySelectorAll('.style-bind-people input:checked')].map(x => x.value);
-    const bindPair = Boolean(dialog.querySelector('#modal-bind-pair')?.checked);
     await busy(e.currentTarget, async () => {
       try {
-        const res = await api('/api/styles/bind', { kind, id: entry.id, peopleIds, bindPair });
+        const res = await api('/api/styles/bind', { kind: 'cover', id: coverEntry.id, peopleIds, bindPair: true });
         state.styles = res.styles;
         state.config = res.config;
-        notify('数字人视觉风格绑定已保存');
+        notify('数字人视频风格绑定已保存');
         close();
         if (route === 'styles') paintStylesGrid();
       } catch (err) {

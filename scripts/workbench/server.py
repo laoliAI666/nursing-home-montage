@@ -449,6 +449,8 @@ class App:
                 "yxerInstalled": bool(pub_settings.get("yxerInstalled")),
                 "clientId": bool(pub_settings.get("clientId")),
             }
+        from text_styles import load_text_styles_state
+        ts_state = load_text_styles_state(cfg)
         return {
             "project": str(self.project) if (can_settings and self.deploy_mode == 'local') else "",
             "workspace": str(self.workspace()) if (can_settings and self.deploy_mode == 'local') else "",
@@ -460,7 +462,9 @@ class App:
             "defaultPerson": cfg.get("default_person"),
             "voice": voice_public,
             "connection": {"speech": bool(keys[0]), "ak": bool(keys[1]), "sk": bool(keys[2]), "storage": storage, "cloneMode": c.get("clone_mode") or self.voice_training.default_mode, "speakerPool": c.get("speaker_pool", []) if can_settings else []},
-            "preferences": {"music": cfg.get("settings", {}).get("music", {}).get("enabled", True), "coverHeader": cfg.get("settings", {}).get("cover", {}).get("header_text", ""), "coverTemplate": default_cover, "videoStyle": default_video},
+            "preferences": {"music": cfg.get("settings", {}).get("music", {}).get("enabled", True), "coverHeader": cfg.get("settings", {}).get("cover", {}).get("header_text", ""), "coverTemplate": default_cover, "videoStyle": default_video, "textStyle": ts_state["defaultTextStyleId"]},
+            "globalBannedWords": ts_state["globalBannedWords"] if can_settings else {"enabled": ts_state["globalBannedWords"]["enabled"], "action": ts_state["globalBannedWords"]["action"], "count": len(ts_state["globalBannedWords"]["words"])},
+            "bannedWordPacks": ts_state["bannedWordPacks"] if can_settings else [],
             "publish": pub_settings,
             "agent": self.agent_state(),
             "model": model_pub,
@@ -493,11 +497,17 @@ class App:
             {**self.styles.public_entry(v), "isDefault": v["id"] == default_video, "boundPeople": video_bound.get(v["id"], [])}
             for v in self.styles.list_videos(self.skill)
         ]
+        from text_styles import load_text_styles_state
+        ts_state = load_text_styles_state(cfg)
         return {
             "defaultCoverId": default_cover,
             "defaultVideoStyleId": default_video,
             "covers": covers,
             "videos": videos,
+            "defaultTextStyleId": ts_state["defaultTextStyleId"],
+            "textStyles": ts_state["textStyles"],
+            "globalBannedWords": ts_state["globalBannedWords"],
+            "bannedWordPacks": ts_state["bannedWordPacks"],
             "demoAssets": {
                 "host": "/media/style-demo/virtual-host.png",
                 "room": "/media/style-demo/scene-room.jpg",
@@ -510,6 +520,46 @@ class App:
                 "font": "/media/style-demo/font.otf",
             },
         }
+
+    def save_text_style(self, values):
+        from text_styles import save_text_style as _save_ts
+        with self.transaction():
+            cfg = self.pc.load()
+            entry, _ = _save_ts(cfg, values)
+            self.pc.write(self.pc.directory() / "project.json", cfg)
+        return {"entry": entry, "styles": self.styles_state(), "config": self.config()}
+
+    def reset_text_style(self, values):
+        from text_styles import reset_builtin_text_style
+        with self.transaction():
+            cfg = self.pc.load()
+            entry, _ = reset_builtin_text_style(cfg, str((values or {}).get("id") or ""))
+            self.pc.write(self.pc.directory() / "project.json", cfg)
+        return {"entry": entry, "styles": self.styles_state(), "config": self.config()}
+
+    def delete_text_style(self, values):
+        from text_styles import delete_custom_text_style
+        with self.transaction():
+            cfg = self.pc.load()
+            deleted_name, _ = delete_custom_text_style(cfg, str((values or {}).get("id") or ""))
+            self.pc.write(self.pc.directory() / "project.json", cfg)
+        return {"deleted": True, "name": deleted_name, "styles": self.styles_state(), "config": self.config()}
+
+    def set_default_text_style(self, values):
+        from text_styles import set_default_text_style as _set_def_ts
+        with self.transaction():
+            cfg = self.pc.load()
+            entry, _ = _set_def_ts(cfg, str((values or {}).get("id") or ""))
+            self.pc.write(self.pc.directory() / "project.json", cfg)
+        return {"entry": entry, "styles": self.styles_state(), "config": self.config()}
+
+    def save_global_banned_words(self, values):
+        from text_styles import save_global_banned_words as _save_bw
+        with self.transaction():
+            cfg = self.pc.load()
+            saved = _save_bw(cfg, values)
+            self.pc.write(self.pc.directory() / "project.json", cfg)
+        return {"globalBannedWords": saved, "styles": self.styles_state(), "config": self.config()}
 
     def set_default_style(self, values):
         with self.transaction():
@@ -670,6 +720,11 @@ class App:
                 self.publish.save_settings(values["publish"])
             if "authSettings" in values and isinstance(values["authSettings"], dict):
                 self.auth.save_settings(values["authSettings"], actor=actor, ip=ip)
+            if "globalBannedWords" in values and isinstance(values["globalBannedWords"], dict):
+                from text_styles import save_global_banned_words as _save_bw
+                cfg = self.pc.load()
+                _save_bw(cfg, values["globalBannedWords"])
+                self.pc.write(self.pc.directory() / "project.json", cfg)
             if "onboarded" in values:
                 write(self.data / "preferences.json", {"onboarded": bool(values["onboarded"])})
         return self.config(actor=actor)
@@ -870,22 +925,26 @@ class App:
         write(job / '.workbench-batch.json', {'id': ident, 'project': str(self.project)})
         task = {"id": ident, "title": title, "person": person["id"], "personName": '、'.join(dict.fromkeys(x['personName'] for x in specs)) if specs else person["name"], "source": source["folder"], "requirements": str(v.get("requirements", ""))[:20000], "facts": str(v.get("facts", ""))[:40000], "music": music_enabled, "count": count, "status": "draft", "phase": 0, "created": time.time(), "updated": time.time(), "job": str(job), "events": [], "message": "制作要求已保存", "session": str(uuid.uuid4()), "createdBy": actor.user_id if actor else "", "createdByName": actor.display_name if actor else ""}
         task["workspace"] = str(workspace)
+        raw_cfg = self.pc.load()
+        profiles = raw_cfg['people']
+        from text_styles import freeze_batch_narration_rules
+        text_style_id = str(v.get("textStyleId") or "").strip() or None
+        text_style_override = v.get("textStyleOverride") if isinstance(v.get("textStyleOverride"), dict) else None
+        narration_rules = freeze_batch_narration_rules(raw_cfg, style_id=text_style_id, override=text_style_override)
+        task['narrationRules'] = narration_rules
         if self.workbench_host == 'local':
             task['targetDurationSeconds'] = duration
             if duration == 60:
                 from duration import initial_budget
                 from narration_prompts import COMPLETE_NARRATION_POLICY
                 task['narrationPolicy'] = COMPLETE_NARRATION_POLICY
-                profiles = self.pc.load()['people']
                 tasks = specs or [{'person':task['person']}] * count
-                task['narrationBudgets'] = [initial_budget(duration, profiles[row['person']]) for row in tasks]
+                task['narrationBudgets'] = [initial_budget(duration, profiles[row['person']], rules=narration_rules) for row in tasks]
         task['planningRequired']=count>1
         if specs:task['videoSpecs']=specs
         if snapshot:
             task.update({k: snapshot[k] for k in ("institutionId", "institutionName", "institutionRevision", "materialSnapshot")})
         task["videoPreferences"] = preferences
-        raw_cfg = self.pc.load()
-        profiles = raw_cfg['people']
         person_hooks = {pid: hook for pid in ordered_person_ids if pid in profiles and (hook := person_closing_hook(profiles[pid]))}
         if person_hooks:
             task['personClosingHooks'] = person_hooks
@@ -935,6 +994,8 @@ class App:
             task_settings['personClosingHooks'] = task['personClosingHooks']
         if task.get('personVisualStyles'):
             task_settings['personVisualStyles'] = task['personVisualStyles']
+        if task.get('narrationRules'):
+            task_settings['narrationRules'] = task['narrationRules']
         write(self.task_path(ident).parent / 'task-settings.json', task_settings)
         write(self.task_path(ident), task)
         if hasattr(self, "store"):
@@ -1268,11 +1329,25 @@ class Handler(BaseHTTPRequestHandler):
         can_works = actor.can("works.read")
         can_pub = actor.can("publish.read")
         can_styles = actor.can("styles.read")
-        can_music = actor.can("music.read") or actor.can("people.read") or actor.can("tasks.create")
+        can_create = actor.can("tasks.create")
+        can_music = actor.can("music.read") or actor.can("people.read") or can_create
         counts = self.app.store.nav_counts()
+        if can_styles:
+            styles_payload = self.app.styles_state()
+        elif can_create:
+            full_styles = self.app.styles_state()
+            styles_payload = {
+                "defaultCoverId": "", "defaultVideoStyleId": "", "covers": [], "videos": [], "demoAssets": {},
+                "defaultTextStyleId": full_styles["defaultTextStyleId"],
+                "textStyles": full_styles["textStyles"],
+                "globalBannedWords": full_styles["globalBannedWords"],
+                "bannedWordPacks": [],
+            }
+        else:
+            styles_payload = {"defaultCoverId": "", "defaultVideoStyleId": "", "covers": [], "videos": [], "defaultTextStyleId": "", "textStyles": [], "globalBannedWords": {"enabled": False, "action": "repair", "words": []}, "bannedWordPacks": [], "demoAssets": {}}
         return {
             "config": self.app.config(actor=actor),
-            "styles": self.app.styles_state() if can_styles else {"defaultCoverId": "", "defaultVideoStyleId": "", "covers": [], "videos": [], "demoAssets": {}},
+            "styles": styles_payload,
             "queue": self.app.queue.public() if can_tasks else {"items": [], "headId": None},
             "tasks": self.app.store.active_or_recent_tasks(30) if can_tasks else [],
             "archives": self.app.archive.public()[:30] if can_works else [],
@@ -1308,7 +1383,7 @@ class Handler(BaseHTTPRequestHandler):
             filename = {
                 "/": "index.html", "/app.js": "app.js", "/library.js": "library.js", "/video.js": "video.js",
                 "/music.js": "music.js", "/controls.js": "controls.js", "/queue.js": "queue.js",
-                "/styles.js": "styles.js", "/styles.css": "styles.css", "/materials.js": "materials.js",
+                "/styles.js": "styles.js", "/styles.css": "styles.css", "/text_styles.js": "text_styles.js", "/materials.js": "materials.js",
                 "/materials.css": "materials.css", "/publish.js": "publish.js", "/publish.css": "publish.css",
                 "/pagination.js": "pagination.js", "/style.css": "style.css", "/controls.css": "controls.css",
                 "/queue.css": "queue.css", "/acceptance.js": "acceptance.js", "/acceptance.css": "acceptance.css",
@@ -1667,7 +1742,7 @@ class Handler(BaseHTTPRequestHandler):
             # Per-user draft
             if url.path == "/api/draft":
                 self.require_perm(actor, "tasks.create")
-                allowed = {"institutionId", "requirements", "title", "person", "people", "count", "music", "facts", "videoPreferences", "videoPreferenceMap", "musicTrackId", "targetDurationSeconds"}
+                allowed = {"institutionId", "requirements", "title", "person", "people", "count", "music", "facts", "videoPreferences", "videoPreferenceMap", "musicTrackId", "targetDurationSeconds", "textStyleId", "textStyleOverride"}
                 self.app.auth.save_draft(actor.user_id, {k: v[k] for k in allowed if k in v})
                 return self.reply(200, {"saved": True})
 
@@ -1792,11 +1867,40 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/styles/default":
                 self.require_perm(actor, "styles.set_default")
                 res = self.app.set_default_style(v)
-                self.app.auth.log_audit(actor, action="styles.set_default", resource_type="style", resource_id=str(v.get("id") or ""), summary=f"将样式「{v.get('id', '')}」设为工作台全局默认", ip=ip)
+                self.app.auth.log_audit(actor, action="styles.set_default", resource_type="style", resource_id=str(v.get("id") or ""), summary=f"将视频风格「{v.get('id', '')}」设为工作台全局默认", ip=ip)
                 return self.reply(200, res)
             if url.path == "/api/styles/bind":
                 self.require_perm(actor, "styles.bind")
                 return self.reply(200, self.app.bind_style(v))
+            if url.path == "/api/styles/text":
+                self.require_perm(actor, "styles.text_manage")
+                res = self.app.save_text_style(v)
+                entry = res["entry"]
+                self.app.auth.log_audit(actor, action="styles.text_save", resource_type="text_style", resource_id=entry["id"], summary=f"保存口播文本风格「{entry['name']}」", ip=ip)
+                return self.reply(200, res)
+            if url.path == "/api/styles/text/default":
+                self.require_perm(actor, "styles.set_default")
+                res = self.app.set_default_text_style(v)
+                entry = res["entry"]
+                self.app.auth.log_audit(actor, action="styles.text_default", resource_type="text_style", resource_id=entry["id"], summary=f"将文本风格「{entry['name']}」设为工作台全局默认", ip=ip)
+                return self.reply(200, res)
+            if url.path == "/api/styles/text/reset":
+                self.require_perm(actor, "styles.text_manage")
+                res = self.app.reset_text_style(v)
+                entry = res["entry"]
+                self.app.auth.log_audit(actor, action="styles.text_reset", resource_type="text_style", resource_id=entry["id"], summary=f"将原始文本风格「{entry['name']}」恢复出厂设置", ip=ip)
+                return self.reply(200, res)
+            if url.path == "/api/styles/text/delete":
+                self.require_perm(actor, "styles.text_manage")
+                res = self.app.delete_text_style(v)
+                self.app.auth.log_audit(actor, action="styles.text_delete", resource_type="text_style", resource_id=str(v.get("id") or ""), summary=f"删除自定义文本风格「{res.get('name', '')}」", ip=ip)
+                return self.reply(200, res)
+            if url.path == "/api/settings/banned-words":
+                self.require_perm(actor, "settings.update")
+                res = self.app.save_global_banned_words(v)
+                bw = res["globalBannedWords"]
+                self.app.auth.log_audit(actor, action="settings.banned_words_update", resource_type="settings", summary=f"更新全站公共禁词黑名单（{'已启用' if bw['enabled'] else '已停用'}，共 {len(bw['words'])} 个词）", ip=ip)
+                return self.reply(200, res)
 
             # Model / Service tests
             if url.path == "/api/model":

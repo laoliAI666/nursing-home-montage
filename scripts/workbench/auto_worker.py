@@ -13,7 +13,7 @@ from planning import digest
 from job_queue import BILLING_MESSAGE, is_minimax_balance_error
 from duration import DurationRevision, budget_issue, initial_budget, script_units
 from narration_timing import MINUTE_TARGET
-from narration_editor import SIMILARITY_LIMIT, narration_issues, paragraphs, similarity_issue
+from narration_editor import SIMILARITY_LIMIT, banned_word_warnings, narration_issues, paragraphs, similarity_issue
 from narration_prompts import COMPLETE_NARRATION_POLICY, outline_omission_limit, variations
 from workflow import spoken_characters
 
@@ -264,7 +264,7 @@ class Production:
             cache['plans'].append({'sha256': fingerprint(path), 'item': item})
             self.write(cache_path, cache)
             items.append(item)
-        omission_limit = outline_omission_limit(task.get('narrationPolicy'), len(facts))
+        omission_limit = outline_omission_limit(task.get('narrationPolicy'), len(facts), task.get('narrationRules'))
         coverage_rule = (f'综合稿允许每条漏讲最多 {omission_limit} 个普通提纲要点。'
                          '用户明确要求的内容必须保留，不能因为普通漏项在容差内而拒绝。'
                          if omission_limit else '综合稿要求覆盖共同核心。')
@@ -365,6 +365,11 @@ class Production:
         return validated, angles
 
     def closing_hook_for(self, task, index):
+        rules = task.get('narrationRules')
+        if isinstance(rules, dict):
+            from text_styles import extract_rules
+            if not extract_rules(rules)[0]['ending'].get('respectPersonHook', True):
+                return ''
         specs = task.get('videoSpecs') or [{'person': task['person']}] * task['count']
         person_id = specs[index]['person'] if 0 <= index < len(specs) else task.get('person')
         if not person_id:
@@ -394,7 +399,12 @@ class Production:
             log = {'firstReturn': None, 'repairs': 0, 'previousOutlines': [*history, log]}
         log['coreFacts'] = facts
         feedback = ''
-        variation = variations(facts, task['id'], task['count'])[index] if complete else None
+        rules = task.get('narrationRules')
+        style_rules = None
+        if isinstance(rules, dict):
+            from text_styles import extract_rules
+            style_rules, _ = extract_rules(rules)
+        variation = variations(facts, task['id'], task['count'], rules=rules)[index] if complete else None
 
         def remember(system, user):
             log.setdefault('requests', []).append({
@@ -403,6 +413,8 @@ class Production:
             self.write(receipt, log)
 
         prompt_options = {'variation': variation, 'remember': remember} if complete else {}
+        if isinstance(rules, dict):
+            prompt_options['rules'] = rules
         if bound_hook:
             prompt_options['closing_hook'] = bound_hook
         if complete:
@@ -425,30 +437,36 @@ class Production:
             self.write(receipt, log)
 
         def issues_for(parts):
-            style = narration_issues(parts)
+            style = narration_issues(parts, rules=rules, skip_banned_last=bool(bound_hook))
             notes = list(style.values())
             positions = set(style)
-            cta_re = re.compile(r'欢迎留言|留言了解|评论区(?:扣|留)|预约参观|私信(?:我|了解)')
-            for idx in range(1, len(parts) - 1):
-                if cta_re.search(parts[idx]):
-                    notes.append(f'第 {idx + 1} 段正文不要包含结尾留言/咨询引导，咨询动作只留在最后一段。')
-                    positions.add(idx)
+            forbid_body_cta = True if not style_rules else bool(style_rules['guard'].get('forbidBodyCta', True))
+            req_open_name = True if not style_rules else bool(style_rules['opening'].get('requireInstitutionInOpening', True))
+            mention_once = True if not style_rules else bool(style_rules['opening'].get('institutionMentionOnce', True))
+            first_sent_limit = 34 if not style_rules else int(style_rules['opening'].get('firstSentenceMaxChars', 34))
+            sim_limit = SIMILARITY_LIMIT if not style_rules else int(style_rules['body'].get('similarityLimit', SIMILARITY_LIMIT))
+            if forbid_body_cta:
+                cta_re = re.compile(r'欢迎留言|留言了解|评论区(?:扣|留)|预约参观|私信(?:我|了解)')
+                for idx in range(1, len(parts) - 1):
+                    if cta_re.search(parts[idx]):
+                        notes.append(f'第 {idx + 1} 段正文不要包含结尾留言/咨询引导，咨询动作只留在最后一段。')
+                        positions.add(idx)
             name = spoken_characters(context['institutionName'])
             if complete and name:
                 body_parts = parts[:-1] if bound_hook and len(parts) > 1 else parts
                 mentions = [index for index, part in enumerate(body_parts) if name in spoken_characters(part)]
-                if not mentions or mentions[0] != 0:
+                if req_open_name and (not mentions or mentions[0] != 0):
                     notes.append('开头需要自然说出机构名称（不含括号及括号内说明）。')
                     positions.add(0)
-                if sum(spoken_characters(part).count(name) for part in body_parts) > 1:
+                if mention_once and sum(spoken_characters(part).count(name) for part in body_parts) > 1:
                     notes.append('机构名称只说一次，保留开头的介绍。')
                     positions.update(index for index in mentions[1:])
                     if len(mentions) == 1 and mentions[0] == 0:
                         positions.add(0)
             if complete and parts:
                 first_sent = re.split(r'[。！？!?]', parts[0], maxsplit=1)[0]
-                if len(spoken_characters(first_sent)) > 34:
-                    notes.append('开头第 1 句偏长（超过 34 字，朗读易超过 10 秒）。请把开头第 1 句精简到 15–30 字，让数字人自然讲完第一句后退场。')
+                if len(spoken_characters(first_sent)) > first_sent_limit:
+                    notes.append(f'开头第 1 句偏长（超过 {first_sent_limit} 字）。请把开头第 1 句精简到 {first_sent_limit} 字以内，让数字人自然讲完第一句后退场。')
                     positions.add(0)
             sizes = paragraph_sizes(parts)
             total = sum(sizes)
@@ -471,12 +489,12 @@ class Production:
                         if not bound_hook and sizes[-1] > budget['sections']['cta']:
                             positions.add(len(sizes) - 1)
             for previous in prior:
-                match = similarity_issue(parts[:-1], previous, context['institutionName'])
+                match = similarity_issue(parts[:-1], previous, context['institutionName'], limit=sim_limit)
                 if match:
                     similarity, repeated = match
                     positions.update(repeated or range(0, len(parts) - 1))
                     sections = '、'.join(str(i + 1) for i in repeated)
-                    notes.append(f'正文和本批已有稿的相似度为 {similarity:.1f}%，达到 {SIMILARITY_LIMIT}%。'
+                    notes.append(f'正文和本批已有稿的相似度为 {similarity:.1f}%，达到 {sim_limit}%。'
                                  f'重新组织第 {sections or "已指定"} 段的句式和衔接，保持事实和顺序。')
             if bound_hook and len(parts) > 1:
                 positions.discard(len(parts) - 1)
@@ -552,14 +570,18 @@ class Production:
                                     if complete:
                                         review_context = {**context, 'preference': preference,
                                                           'outlineOmissionsAllowed': outline_omission_limit(
-                                                              task.get('narrationPolicy'), len(facts)),
+                                                              task.get('narrationPolicy'), len(facts), rules),
                                                           **({'boundClosingHook': bound_hook} if bound_hook else {})}
                                     elif bound_hook:
                                         review_context = {**context, 'boundClosingHook': bound_hook}
                                     self.review_candidate(job,review_context,facts,prepare=verify_copy)
+                                    warn_notes = banned_word_warnings(parts, rules, skip_last=bool(bound_hook))
+                                    if warn_notes:
+                                        self.pipe.save_notices(job, 'content', warn_notes)
                                 except EditorialFeedback as exc:
+                                    warn_notes = banned_word_warnings(parts, rules, skip_last=bool(bound_hook))
                                     self.invoke('review-content',job=job,extra=['--note',str(exc)])
-                                    self.pipe.save_notices(job,'content',[str(exc)])
+                                    self.pipe.save_notices(job,'content',[str(exc), *warn_notes])
 
                             accepted = validate(plan,review)
                             log['firstReturn']['passed'] = not generation and not repair and not log['firstReturn']['issues']

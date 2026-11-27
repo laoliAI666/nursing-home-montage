@@ -19,11 +19,21 @@ def parse_target(value):
     return value
 
 
-def initial_budget(target, person=None):
+def initial_budget(target, person=None, *, rules=None):
     # Initial estimate only. Once speech exists we use the same person's measured pace.
     lower, upper = (195, 245) if target == MINUTE_TARGET else (
         round((target - 4) * 3.8), round((target + 2) * 3.8))
-    if target == MINUTE_TARGET and person:
+    custom_bounds = False
+    if isinstance(rules, dict):
+        from text_styles import extract_rules
+        style_rules, _ = extract_rules(rules)
+        body = style_rules.get('body') or {}
+        if body.get('wordCountMode') == 'custom':
+            lo, hi = body.get('minChars'), body.get('maxChars')
+            if isinstance(lo, int) and isinstance(hi, int) and 60 <= lo <= hi <= 700:
+                lower, upper = lo, hi
+                custom_bounds = True
+    if not custom_bounds and target == MINUTE_TARGET and person:
         reference = person.get('narration_reference', {})
         if (reference.get('speaker') == person.get('speaker') and
                 reference.get('speech_rate') == person.get('speech_rate')):
@@ -240,7 +250,7 @@ class DurationRevision:
                         plan['cover']['main_title'] = {'text':plan['institution']['headline'],'highlights':[]}
                 self.write(draft/'plan.json',plan)
                 try:
-                    omissions = outline_omission_limit(self.task.get('narrationPolicy'), len(outline))
+                    omissions = outline_omission_limit(self.task.get('narrationPolicy'), len(outline), self.task.get('narrationRules'))
                     review_context = {**context, 'outlineOmissionsAllowed': omissions,
                                       'preference': preferences[worker.row['index']]} if omissions else context
                     worker.review_candidate(draft, review_context, outline)
