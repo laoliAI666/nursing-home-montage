@@ -117,6 +117,11 @@ def resolved(job):
             out['voice'].update(provider='aliyun', aliyun_model=model_id(p.get('aliyun_model')),
                                 aliyun_workspace=workspace_id(p.get('aliyun_workspace') or
                                     cfg['connections'].get('aliyun',{}).get('workspace')))
+        if p.get('voice_dialect'):
+            from voice_dialects import validate_dialect
+            eff_provider=p.get('voice_provider') or 'volcengine'
+            eff_model=out['voice'].get('aliyun_model') if eff_provider=='aliyun' else out['voice'].get('minimax_model') if eff_provider=='minimax' else None
+            out['voice']['dialect']=validate_dialect(p.get('voice_dialect'), eff_provider, eff_model)
         out['avatar']['portrait']=str(asset_path(p.get('portrait')))
         if p.get('music_resource'):
             out.setdefault('music',{})['resource']=p['music_resource']

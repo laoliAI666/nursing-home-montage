@@ -26,9 +26,9 @@ select.field-select-source{position:absolute!important;width:1px!important;heigh
 .select-options{overflow-y:auto;overscroll-behavior:contain;min-height:0}
 .select-option{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%;min-height:44px;padding:10px 12px;border:0;border-radius:8px;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer;line-height:1.6}
 .select-option>span{overflow-wrap:anywhere;min-width:0}.select-option>svg{width:17px;height:17px;flex-shrink:0}
-.select-option:hover,.select-option.is-active{background:var(--soft)}
+.select-option:not([aria-disabled=true]):hover,.select-option.is-active{background:var(--soft)}
 .select-option[aria-selected=true]{background:var(--leaf);color:var(--pine-deep);font-weight:600}
-.select-option[aria-disabled=true]{color:var(--muted);cursor:not-allowed;opacity:.6}
+.select-option[aria-disabled=true]{color:var(--muted);background:var(--ground);cursor:not-allowed;opacity:.52}
 .select-search{display:flex;align-items:center;gap:10px;padding:5px 10px 9px;border-bottom:1px solid var(--line);margin-bottom:6px}
 .select-search>svg{width:18px;height:18px;color:var(--muted);flex-shrink:0}.select-search input{font:inherit;width:100%;min-width:0;border:0;background:var(--paper);padding:7px 0;color:var(--ink);outline-offset:1px}
 .select-no-match{font-size:13px;color:var(--muted);padding:16px 12px;line-height:1.8}

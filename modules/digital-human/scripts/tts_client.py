@@ -49,6 +49,7 @@ def synthesize(text, cfg, directory, revision=0):
     provider = settings.get('provider')
     if provider in ('minimax', 'aliyun'):
         sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts'))
+        dialect = settings.get('dialect') or None
         if provider == 'aliyun':
             from aliyun_voice import synthesize as provider_synthesize
             extra = settings['workspace']
@@ -56,14 +57,21 @@ def synthesize(text, cfg, directory, revision=0):
             from minimax_voice import synthesize as provider_synthesize
             extra = settings.get('pronunciation_dict')
         data, payload, trace = provider_synthesize(text, settings['speaker'], settings['model'],
-                                                  settings['speech_rate'], key, extra)
+                                                  settings['speech_rate'], key, extra, dialect=dialect)
         directory = Path(directory)
         write_json(directory / f"tts-request-{revision}.json", payload)
         output = directory / f"narration-{revision}.mp3"
         output.write_bytes(data)
-        return {'file': str(output), 'provider': provider, 'speaker': settings['speaker'],
-                'resource_id': settings['model'], 'speech_rate': settings['speech_rate'],
-                'logid': trace, 'revision': revision}
+        result = {'file': str(output), 'provider': provider, 'speaker': settings['speaker'],
+                  'resource_id': settings['model'], 'speech_rate': settings['speech_rate'],
+                  'logid': trace, 'revision': revision}
+        if dialect:
+            result['dialect'] = dialect
+        return result
+    if settings.get('dialect'):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts'))
+        from voice_dialects import validate_dialect
+        validate_dialect(settings['dialect'], 'volcengine')
     payload = {"user": {"uid": "project-text-to-digital-human"}, "req_params": {
         "text": text, "speaker": settings["speaker"], "model": settings["model"],
         "audio_params": {"format": "mp3", "sample_rate": settings["sample_rate"],

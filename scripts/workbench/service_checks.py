@@ -152,6 +152,7 @@ def person_audio(app, cfg, person, text, fields, main_key=None):
     if not person.get('speaker'):
         raise ValueError('请先为人物绑定音色。')
     provider = person.get('voice_provider') or 'volcengine'
+    dialect = (person.get('voice_dialect') or '').strip() or None
     if provider in ('aliyun', 'minimax'):
         target = cfg['connections'].get(provider, {})
         raw = fields.get(provider + '_api_key', '')
@@ -162,10 +163,13 @@ def person_audio(app, cfg, person, text, fields, main_key=None):
         if provider == 'aliyun':
             from aliyun_voice import synthesize
             workspace = person.get('aliyun_workspace') or fields.get('aliyun_workspace') or target.get('workspace')
-            return synthesize(text, person['speaker'], person.get('aliyun_model'), person.get('speech_rate') or 0, key, workspace)[0]
+            return synthesize(text, person['speaker'], person.get('aliyun_model'), person.get('speech_rate') or 0, key, workspace, dialect=dialect)[0]
         from minimax_voice import synthesize
         model = fields.get('minimax_model') or cfg.get('settings', {}).get('minimax_model', 'speech-2.8-hd')
-        return synthesize(text, person['speaker'], model, person.get('speech_rate') or 0, key)[0]
+        return synthesize(text, person['speaker'], model, person.get('speech_rate') or 0, key, dialect=dialect)[0]
+    if dialect:
+        from voice_dialects import validate_dialect
+        validate_dialect(dialect, 'volcengine')
     connection_name = person.get('connection') or 'main'
     connection = cfg['connections'].get(connection_name, {})
     key = (main_key if connection_name == 'main' and main_key is not None
@@ -189,9 +193,10 @@ def preview_voice(app, ident, values):
     if not person.get('speaker'):
         raise ValueError('请先复刻或绑定音色，再试听。')
     expected = [person.get('voice_provider') or 'volcengine', person['speaker'],
-                person.get('custom_speaker_id'), person.get('aliyun_model'), person.get('speech_rate')]
+                person.get('custom_speaker_id'), person.get('aliyun_model'),
+                person.get('speech_rate'), person.get('voice_dialect') or '']
     if values.get('binding') != expected:
-        raise ValueError('音色或语速已更新，请刷新人物资料后再试听。')
+        raise ValueError('音色、方言或语速已更新，请刷新人物资料后再试听。')
     name = (person.get('name') or '你的数字人')[:12]
     text = text.strip() or f'大家好，我是{name}。很高兴和你见面。今天用这段话，给你听听我的声音和说话的节奏。'
     audio = person_audio(app, cfg, person, text, {})

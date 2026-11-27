@@ -82,13 +82,18 @@ def clone(file_id, voice_id, key):
     return result
 
 
-def synthesize(text, voice_id, model, speech_rate, key, rules=None):
+def synthesize(text, voice_id, model, speech_rate, key, rules=None, dialect=None):
     if model not in MODELS:
         raise ValueError('请选择受支持的 MiniMax 语音模型。')
     speed = max(0.5, min(2.0, 1 + speech_rate / 100))
     payload = {'model': model, 'text': text, 'stream': False, 'output_format': 'hex',
                'voice_setting': {'voice_id': voice_id, 'speed': speed, 'vol': 1, 'pitch': 0},
                'audio_setting': {'format': 'mp3', 'sample_rate': 32000, 'bitrate': 128000, 'channel': 1}}
+    if dialect:
+        from voice_dialects import minimax_language_boost
+        boost = minimax_language_boost(dialect, model)
+        if boost:
+            payload['language_boost'] = boost
     if rules and rules.get('tone'):
         payload['pronunciation_dict'] = {'tone': rules['tone']}
     response = request('t2a_v2', key, payload)

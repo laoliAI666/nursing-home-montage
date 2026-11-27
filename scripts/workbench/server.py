@@ -422,10 +422,11 @@ class App:
                 voice_training = self.voice_training.public({**p, 'id': ident})
                 accounts = person_platform_accounts(p)
                 bindings = person_platform_bindings(p)
-                people.append({k: p.get(k) for k in ("name", "social_media_name", "speaker", "custom_speaker_id", "status", "speech_rate", "connection", "sample", "voice_provider", "aliyun_model")} | {"id": ident, "ready": bool(p.get("speaker") and self.pc.asset_path(p.get("portrait")) and self.pc.asset_path(p.get("portrait")).is_file()), "hasPortrait": bool(p.get("portrait")), "isDefault": ident == cfg.get("default_person"), "voiceTraining": voice_training, "music_track_id": p.get("music_track_id") or "", "cover_template_id": p.get("cover_template_id") or "", "video_style_id": p.get("video_style_id") or "", "closing_hook": person_closing_hook(p), "platform_accounts": accounts, "platform_bindings": bindings, "xiaohongshu_account_id": accounts["xiaohongshu"], "douyin_account_id": accounts["douyin"], "channels_account_id": accounts["channels"]})
+                people.append({k: p.get(k) for k in ("name", "social_media_name", "speaker", "custom_speaker_id", "status", "speech_rate", "connection", "sample", "voice_provider", "aliyun_model")} | {"id": ident, "ready": bool(p.get("speaker") and self.pc.asset_path(p.get("portrait")) and self.pc.asset_path(p.get("portrait")).is_file()), "hasPortrait": bool(p.get("portrait")), "isDefault": ident == cfg.get("default_person"), "voiceTraining": voice_training, "voice_dialect": p.get("voice_dialect") or "", "music_track_id": p.get("music_track_id") or "", "cover_template_id": p.get("cover_template_id") or "", "video_style_id": p.get("video_style_id") or "", "closing_hook": person_closing_hook(p), "platform_accounts": accounts, "platform_bindings": bindings, "xiaohongshu_account_id": accounts["xiaohongshu"], "douyin_account_id": accounts["douyin"], "channels_account_id": accounts["channels"]})
         storage = self.pc.storage_settings(c.get("storage")) if can_settings else {"provider": (c.get("storage") or {}).get("provider", "tmpfile")}
         voice_settings = cfg.get('settings', {})
         from aliyun_voice import DEFAULT_MODEL
+        from voice_dialects import public_catalog
         aliyun = cfg['connections'].get('aliyun', {})
         voice_public = {'provider': voice_settings.get('voice_provider', 'volcengine'),
                         'minimaxConfigured': bool(self.pc.connection_keys(cfg['connections'].get('minimax', {}))[0]),
@@ -433,7 +434,8 @@ class App:
                         'aliyunConfigured': bool(aliyun.get('workspace') and self.pc.connection_keys(aliyun)[0]),
                         'aliyunWorkspace': aliyun.get('workspace', '') if can_settings else '',
                         'aliyunModel': voice_settings.get('aliyun_model', DEFAULT_MODEL),
-                        'project': c.get('voice_project', 'default') if can_settings else ''}
+                        'project': c.get('voice_project', 'default') if can_settings else '',
+                        'dialects': public_catalog()}
         default_cover = cfg.get("settings", {}).get("cover", {}).get("template") or self.styles.DEFAULT_COVER_ID
         default_video = cfg.get("settings", {}).get("template", {}).get("id") or self.styles.DEFAULT_VIDEO_ID
         if not self.styles.cover_exists(default_cover, self.skill):
@@ -799,6 +801,23 @@ class App:
             person['voice_provider'] = provider
             if provider == 'aliyun':
                 person['aliyun_model'] = ali_model
+            else:
+                person.pop('aliyun_model', None)
+        from voice_dialects import normalize_dialect, supported_dialects, validate_dialect
+        eff_provider = person.get('voice_provider') or 'volcengine'
+        eff_model = (person.get('aliyun_model') if eff_provider == 'aliyun'
+                     else cfg.get('settings', {}).get('minimax_model', 'speech-2.8-hd') if eff_provider == 'minimax'
+                     else None)
+        if 'voice_dialect' in values:
+            dialect = normalize_dialect(values.get('voice_dialect'))
+            if dialect:
+                if not speaker and person.get('speaker') and provider != eff_provider:
+                    raise ValueError('当前仍绑定原语音平台音色；切换平台后请先填入新音色 ID 或完成复刻，再绑定该平台的方言。')
+                person['voice_dialect'] = validate_dialect(dialect, eff_provider, eff_model)
+            else:
+                person.pop('voice_dialect', None)
+        elif person.get('voice_dialect') and person['voice_dialect'] not in supported_dialects(eff_provider, eff_model):
+            person.pop('voice_dialect', None)
         if 'music_track_id' in values:
             track_id = str(values.get('music_track_id') or '').strip()
             if track_id:

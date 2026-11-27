@@ -356,17 +356,20 @@ class Pipeline:
                 existing = person.get('narration_reference') or {}
                 if (existing.get('speaker') == person.get('speaker')
                         and existing.get('speech_rate') == person.get('speech_rate')
+                        and (existing.get('voice_dialect') or '') == (person.get('voice_dialect') or '')
                         and existing.get('baseline')):
                     return
                 if (existing.get('speaker') == person.get('speaker')
                         and existing.get('speech_rate') == person.get('speech_rate')
+                        and (existing.get('voice_dialect') or '') == (person.get('voice_dialect') or '')
                         and existing.get('characters_per_second')):
                     return
                 lower, upper = max(140, round(54 * cps)), round(68 * cps)
                 person['narration_reference'] = {
-                    'purpose': '工作台按实测配音自动校准的写稿容量参考；人物或语速变化后自动更新。',
+                    'purpose': '工作台按实测配音自动校准的写稿容量参考；人物、方言或语速变化后自动更新。',
                     'speaker': person.get('speaker'),
                     'speech_rate': person.get('speech_rate'),
+                    'voice_dialect': person.get('voice_dialect') or '',
                     'spoken_characters': spoken,
                     'voice_duration_seconds': round(raw_seconds, 3),
                     'characters_per_second': cps,

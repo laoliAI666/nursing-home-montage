@@ -92,6 +92,58 @@ function updateChrome() {
 }
 const voicePlatforms={volcengine:'火山语音',minimax:'MiniMax',aliyun:'阿里百炼'};
 const aliyunModels={'qwen-audio-3.1-tts-plus':'千问 Qwen-Audio 3.1 TTS Plus','cosyvoice-v3.5-flash':'CosyVoice 3.5 Flash'};
+const fallbackDialectCatalog={
+  defaultLabel:'普通话（默认）',
+  options:[
+    {id:'yue',label:'广东话（粤语）',shortLabel:'广东话'},
+    {id:'changsha',label:'长沙话（湖南话）',shortLabel:'长沙话'},
+    {id:'chongqing',label:'重庆话',shortLabel:'重庆话'},
+    {id:'shaanxi',label:'陕西话',shortLabel:'陕西话'},
+  ],
+  support:{
+    aliyun:{'qwen-audio-3.1-tts-plus':['yue','changsha','chongqing','shaanxi'],'cosyvoice-v3.5-flash':['yue','changsha','shaanxi']},
+    minimax:{'speech-2.8-hd':['yue'],'speech-2.8-turbo':['yue']},
+    volcengine:[],
+  },
+  hints:{
+    'aliyun:qwen-audio-3.1-tts-plus':'当前模型支持全部 4 种方言（广东话、长沙话、重庆话、陕西话），保存后可用于试听与配音。',
+    'aliyun:cosyvoice-v3.5-flash':'当前模型支持广东话、长沙话（按湖南话合成）、陕西话；暂不支持重庆话（已置灰）。',
+    minimax:'MiniMax 当前仅原生支持广东话（粤语）；长沙话、重庆话、陕西话暂不支持（已置灰）。',
+    volcengine:'火山语音复刻暂不支持通过参数切换方言（以上 4 种已置灰）；如需方言请切换至阿里百炼，或直接上传方言录音复刻。',
+  },
+};
+function dialectCatalog() {return state.config?.voice?.dialects||fallbackDialectCatalog;}
+function supportedDialectsFor(provider, model) {
+  const s=dialectCatalog().support||{};
+  if(provider==='aliyun')return s.aliyun?.[model]||[];
+  if(provider==='minimax'){
+    const m=model||state.config?.voice?.minimaxModel||'speech-2.8-hd';
+    return s.minimax?.[m]||['yue'];
+  }
+  return s.volcengine||[];
+}
+function dialectLabel(code, short=false) {
+  if(!code)return short?'普通话':(dialectCatalog().defaultLabel||'普通话（默认）');
+  const item=(dialectCatalog().options||[]).find(x=>x.id===code);
+  return item?(short?item.shortLabel:item.label):code;
+}
+function dialectHintFor(provider, model) {
+  const hints=dialectCatalog().hints||{};
+  if(provider==='aliyun')return hints[`aliyun:${model}`]||'';
+  return hints[provider]||'';
+}
+function dialectOptionsHtml(selected, provider, model) {
+  const cat=dialectCatalog();
+  const allowed=new Set(supportedDialectsFor(provider,model));
+  const current=selected&&allowed.has(selected)?selected:'';
+  const base=`<option value="" ${current===''?'selected':''}>${E(cat.defaultLabel||'普通话（默认）')}</option>`;
+  const items=(cat.options||[]).map(item=>{
+    const ok=allowed.has(item.id);
+    const text=ok?item.label:`${item.label}（当前模型不支持）`;
+    return `<option value="${E(item.id)}" ${current===item.id?'selected':''} ${ok?'':'disabled'}>${E(text)}</option>`;
+  }).join('');
+  return base+items;
+}
 function aliyunModelOptions(selected) {
   return Object.entries(aliyunModels).map(([id,label])=>`<option value="${id}" ${id===selected?'selected':''}>${label}</option>`).join('');
 }
@@ -600,7 +652,12 @@ function personReadiness(person) {
 let voicePreviewUrl;
 function voicePreviewBinding(person) {
   return person?.speaker?[boundVoicePlatform(person),person.speaker,person.custom_speaker_id??null,
-    person.aliyun_model??null,person.speech_rate??null]:null;
+    person.aliyun_model??null,person.speech_rate??null,person.voice_dialect||'']:null;
+}
+function voicePreviewPlatformText(person) {
+  if(!person?.speaker)return '';
+  const base=voicePlatforms[boundVoicePlatform(person)]||'';
+  return person.voice_dialect?`${base} · ${dialectLabel(person.voice_dialect,true)}`:base;
 }
 function clearVoicePreview() {
   const player=$('#voice-preview-player');
@@ -614,7 +671,7 @@ function syncVoicePreview(person, previous) {
   if(!section)return;
   const binding=voicePreviewBinding(person);
   section.hidden=!binding;
-  $('#voice-preview-platform').textContent=binding?voicePlatforms[binding[0]]:'';
+  $('#voice-preview-platform').textContent=voicePreviewPlatformText(person);
   if(JSON.stringify(binding)!==JSON.stringify(voicePreviewBinding(previous))){
     clearVoicePreview();
     $('#voice-preview-status').textContent='';
@@ -677,6 +734,10 @@ function paintVoiceUpdates(previousPeople) {
     if(prior&&provider.value===personVoicePlatform(prior))provider.value=personVoicePlatform(person);
     const model=$('#person-aliyun-model');
     if(person.aliyun_model&&person.aliyun_model!==prior?.aliyun_model)model.value=person.aliyun_model;
+    const dialect=$('#person-voice-dialect');
+    if(dialect&&(person.voice_dialect||'')!==(prior?.voice_dialect||'')&&dialect.value===(prior?.voice_dialect||'')){
+      dialect.value=person.voice_dialect||'';
+    }
     syncPersonVoice($('#person-form'),person);
   }
 }
@@ -720,7 +781,8 @@ function renderPeople() {
       const vName = vEntry?.name || p.video_style_id || '默认';
       styleLine = `封面：${cName} · 视频：${vName}`;
     }
-    return `<article class="person-card"><div class="portrait-area">${p.hasPortrait ? `<img src="/media/person/${E(p.id)}" alt="${E(p.name)}的数字人照片">` : ''}${p.isDefault ? badge('默认出镜') : ''}</div><div class="person-card-content"><h2>${E(p.name)} <span data-person-ready="${E(p.id)}">${personReadiness(p)}</span></h2><p class="person-card-styles">${E(styleLine)}</p><button class="secondary" data-action="edit-person" data-id="${E(p.id)}">编辑人物资料 ${icon('arrow-right')}</button></div></article>`;
+    const dialectPrefix = p.voice_dialect ? `方言：${dialectLabel(p.voice_dialect, true)} · ` : '';
+    return `<article class="person-card"><div class="portrait-area">${p.hasPortrait ? `<img src="/media/person/${E(p.id)}" alt="${E(p.name)}的数字人照片">` : ''}${p.isDefault ? badge('默认出镜') : ''}</div><div class="person-card-content"><h2>${E(p.name)} <span data-person-ready="${E(p.id)}">${personReadiness(p)}</span></h2><p class="person-card-styles">${E(dialectPrefix + styleLine)}</p><button class="secondary" data-action="edit-person" data-id="${E(p.id)}">编辑人物资料 ${icon('arrow-right')}</button></div></article>`;
   }).join('')}<button class="add-person" data-action="add-person">${icon('plus')}<strong>添加一位新数字人</strong><small>形象、声音、风格、配乐与平台账号<br>一次绑好，做片直接复用。</small></button></div><div id="person-editor">${editPerson !== undefined ? personEditor() : ''}</div>`;
   bindPerson();
 }
@@ -823,12 +885,18 @@ function personEditor() {
             <label class="field-label" for="person-aliyun-speaker">百炼音色 ID<span class="optional">已有音色才填</span></label>
             <input class="input" id="person-aliyun-speaker" name="speaker" value="${E(speaker('aliyun'))}">
           </fieldset>
+          <div class="form-group">
+            <label class="field-label" for="person-voice-dialect">配音方言<span class="optional">默认普通话</span></label>
+            <select id="person-voice-dialect" name="voice_dialect" data-search="false">${dialectOptionsHtml(p?.voice_dialect||'', provider, p?.aliyun_model||state.config.voice.aliyunModel)}</select>
+            <p id="person-dialect-help" class="form-help">${E(dialectHintFor(provider, p?.aliyun_model||state.config.voice.aliyunModel))}</p>
+            <p id="person-dialect-reset-note" class="form-help" role="status" hidden></p>
+          </div>
           <div id="person-voice-editor" class="form-group">${p?personVoice(p,true,provider):'<p class="form-help">没有音色可留空，保存人物后点击「复刻」，音色会自动绑定。</p>'}</div>
           ${p?`<details id="voice-preview" class="form-group" ${p.speaker?'':'hidden'}>
             <summary class="field-label">试听音色</summary>
             <label class="field-label" for="voice-preview-text">试听文案 <span class="optional">选填</span></label>
             <textarea id="voice-preview-text" maxlength="200" placeholder="留空会用人物名生成一段约 10 秒的自我介绍。"></textarea>
-            <p class="form-help">使用当前绑定的 <span id="voice-preview-platform">${p.speaker?voicePlatforms[boundVoicePlatform(p)]:''}</span> 音色，按平台规则计费。</p>
+            <p class="form-help">使用当前绑定的 <span id="voice-preview-platform">${E(voicePreviewPlatformText(p))}</span> 音色，按平台规则计费。</p>
             <div class="person-voice-actions"><button type="button" class="secondary" id="generate-voice-preview">确认合成试听</button></div>
             <p id="voice-preview-status" class="form-help" role="status"></p>
             <div id="voice-preview-player"></div>
@@ -900,7 +968,26 @@ function syncPersonVoice(form, person) {
   const speaker=$('#person-speaker').value.trim();
   const showCustom=provider==='volcengine'&&(speaker==='custom_speaker_id'||Boolean(person?.custom_speaker_id&&speaker===person.speaker));
   $('#person-custom-fields').hidden=$('#custom-speaker').disabled=!showCustom;
-  if(person)$('#person-voice-editor').innerHTML=personVoice(person,true,provider,form.elements.person_aliyun_model.value);
+  const aliModel=form.elements.person_aliyun_model.value;
+  const dialectSelect=form.elements.voice_dialect;
+  if(dialectSelect){
+    const prevDialect=dialectSelect.value;
+    dialectSelect.innerHTML=dialectOptionsHtml(prevDialect,provider,aliModel);
+    const help=$('#person-dialect-help');
+    if(help)help.textContent=dialectHintFor(provider,aliModel);
+    const resetNote=$('#person-dialect-reset-note');
+    if(resetNote){
+      if(prevDialect&&!dialectSelect.value){
+        resetNote.textContent=`所选模型不支持「${dialectLabel(prevDialect,true)}」，已自动切回普通话（默认）。`;
+        resetNote.hidden=false;
+      }else{
+        resetNote.textContent='';
+        resetNote.hidden=true;
+      }
+    }
+    dialectSelect.dispatchEvent(new Event('input',{bubbles:true}));
+  }
+  if(person)$('#person-voice-editor').innerHTML=personVoice(person,true,provider,aliModel);
 }
 function bindPerson() {
   const form = $('#person-form');
@@ -915,6 +1002,10 @@ function bindPerson() {
   const editing=()=>state.config.people.find(person=>person.id===editPerson);
   bindVoicePreview(editing);
   form.elements.person_voice_provider.addEventListener('change',()=>syncPersonVoice(form,editing()));
+  form.elements.voice_dialect?.addEventListener('change',()=>{
+    const resetNote=$('#person-dialect-reset-note');
+    if(resetNote){resetNote.textContent='';resetNote.hidden=true;}
+  });
   const aliSpeaker=$('#person-aliyun-speaker');
   const aliDrafts=new Map([[$('#person-aliyun-model').value,aliSpeaker.value]]);
   aliSpeaker.addEventListener('input',()=>aliDrafts.set($('#person-aliyun-model').value,aliSpeaker.value));

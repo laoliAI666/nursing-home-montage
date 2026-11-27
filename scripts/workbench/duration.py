@@ -36,7 +36,8 @@ def initial_budget(target, person=None, *, rules=None):
     if not custom_bounds and target == MINUTE_TARGET and person:
         reference = person.get('narration_reference', {})
         if (reference.get('speaker') == person.get('speaker') and
-                reference.get('speech_rate') == person.get('speech_rate')):
+                reference.get('speech_rate') == person.get('speech_rate') and
+                (reference.get('voice_dialect') or '') == (person.get('voice_dialect') or '')):
             bounds = reference.get('draft_character_range', [])
             cps = reference.get('characters_per_second')
             if (isinstance(bounds, list) and len(bounds) == 2 and

@@ -233,6 +233,8 @@ def setup(job,install=False):
     if cfg['voice'].get('provider')=='aliyun':
         e['tts'].update(provider='aliyun', model=cfg['voice']['aliyun_model'],
                         workspace=cfg['voice']['aliyun_workspace'], sample_rate=24000)
+    if cfg['voice'].get('dialect'):
+        e['tts']['dialect']=cfg['voice']['dialect']
     e['avatar'].update(connection.get('avatar',{}))
     if cfg['avatar'].get('prompt'):e['avatar']['prompt']=cfg['avatar']['prompt']
     if cfg['voice'].get('pronunciation_dict'):

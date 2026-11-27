@@ -130,11 +130,18 @@ def download_audio(url):
     return data
 
 
-def synthesize(text, voice, model, speech_rate, key, workspace):
-    payload = {'model': model_id(model), 'input': {
+def synthesize(text, voice, model, speech_rate, key, workspace, dialect=None):
+    target_model = model_id(model)
+    payload_input = {
         'text': text, 'voice': voice, 'format': 'mp3', 'sample_rate': 24000,
         'rate': max(0.5, min(2.0, 1 + speech_rate / 100)),
-    }}
+    }
+    if dialect:
+        from voice_dialects import aliyun_instruction
+        instruction = aliyun_instruction(dialect, target_model)
+        if instruction:
+            payload_input['instruction'] = instruction
+    payload = {'model': target_model, 'input': payload_input}
     result = request('SpeechSynthesizer', workspace, key, payload)
     url = result['output'].get('audio', {}).get('url')
     if not isinstance(url, str) or not url:

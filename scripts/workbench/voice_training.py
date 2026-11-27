@@ -665,6 +665,9 @@ class VoiceTraining:
                         return
                     person.update(speaker=voice_id, custom_speaker_id=None, status='ready', voice_provider='aliyun',
                                   aliyun_model=record['model'], aliyun_workspace=record['workspace'])
+                    from voice_dialects import supported_dialects
+                    if person.get('voice_dialect') and person['voice_dialect'] not in supported_dialects('aliyun', record['model']):
+                        person.pop('voice_dialect', None)
                     if record.get('aliyunSample'):
                         person['sample'] = record['aliyunSample']
                     cfg['default_person'] = cfg.get('default_person') or ident
@@ -681,6 +684,10 @@ class VoiceTraining:
                     person.update(speaker=voice_id, custom_speaker_id=None, status='ready', voice_provider='minimax')
                     person.pop('aliyun_model', None)
                     person.pop('aliyun_workspace', None)
+                    from voice_dialects import supported_dialects
+                    mm_model = cfg.get('settings', {}).get('minimax_model', 'speech-2.8-hd')
+                    if person.get('voice_dialect') and person['voice_dialect'] not in supported_dialects('minimax', mm_model):
+                        person.pop('voice_dialect', None)
                     if record.get('minimaxSample'):
                         person['sample'] = record['minimaxSample']
                     self.pc.write(self.pc.directory() / 'project.json', cfg)
@@ -696,8 +703,13 @@ class VoiceTraining:
                         old_path = self.path(owner['id'])
                         self.write(old_path, {'phase': 'retryable', 'workbench': {'state': 'failed',
                            'message': '原槽位已转给其他人物，上传录音后可以重新复刻。'}})
+                    bound_provider = record.get('provider', 'volcengine')
                     person.update(speaker=identity['speaker_id'], custom_speaker_id=None, status='ready',
-                                  voice_provider=record.get('provider', 'volcengine'))
+                                  voice_provider=bound_provider)
+                    from voice_dialects import supported_dialects
+                    bound_model = cfg.get('settings', {}).get('minimax_model', 'speech-2.8-hd') if bound_provider == 'minimax' else None
+                    if person.get('voice_dialect') and person['voice_dialect'] not in supported_dialects(bound_provider, bound_model):
+                        person.pop('voice_dialect', None)
                     cfg['default_person'] = cfg.get('default_person') or ident
                     self.pc.write(self.pc.directory() / 'project.json', cfg)
                 elif not person.get('speaker'):
