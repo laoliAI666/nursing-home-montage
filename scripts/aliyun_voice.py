@@ -137,10 +137,8 @@ def synthesize(text, voice, model, speech_rate, key, workspace, dialect=None):
         'rate': max(0.5, min(2.0, 1 + speech_rate / 100)),
     }
     if dialect:
-        from voice_dialects import aliyun_instruction
-        instruction = aliyun_instruction(dialect, target_model)
-        if instruction:
-            payload_input['instruction'] = instruction
+        from voice_dialects import aliyun_synthesis_params
+        payload_input.update(aliyun_synthesis_params(dialect, target_model))
     payload = {'model': target_model, 'input': payload_input}
     result = request('SpeechSynthesizer', workspace, key, payload)
     url = result['output'].get('audio', {}).get('url')

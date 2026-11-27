@@ -593,7 +593,7 @@ def find_banned_hits(lines: list[str], banned: dict[str, Any] | None) -> dict[in
     return hits
 
 
-def build_narration_system_prompt(snapshot: dict[str, Any] | None) -> str:
+def build_narration_system_prompt(snapshot: dict[str, Any] | None, *, dialect: str | None = None) -> str:
     """Dynamically build the narration drafting system prompt from a frozen rules snapshot."""
     rules, banned = extract_rules(snapshot)
     opening = rules["opening"]
@@ -604,6 +604,11 @@ def build_narration_system_prompt(snapshot: dict[str, Any] | None) -> str:
     parts: list[str] = [
         f"为长辈和家属写一条中文养老机构介绍口播，让第一次听到这家机构的人也能听懂。\n总体口吻：{rules['tone']}",
     ]
+    if dialect:
+        from voice_dialects import narration_dialect_guidance
+        dialect_note = narration_dialect_guidance(dialect)
+        if dialect_note:
+            parts.append(dialect_note)
 
     # Opening block
     open_constraints: list[str] = [opening["prompt"]]
@@ -650,7 +655,7 @@ def build_narration_system_prompt(snapshot: dict[str, Any] | None) -> str:
     return "\n\n".join(parts)
 
 
-def build_narration_repair_prompt(snapshot: dict[str, Any] | None) -> str:
+def build_narration_repair_prompt(snapshot: dict[str, Any] | None, *, dialect: str | None = None) -> str:
     """Dynamically build the local repair system prompt aligned with the frozen rules snapshot."""
     rules, banned = extract_rules(snapshot)
     opening = rules["opening"]
@@ -661,6 +666,11 @@ def build_narration_repair_prompt(snapshot: dict[str, Any] | None) -> str:
         f"局部修订一条给长辈和家属听的养老机构口播。只改指定段落，其他段落原样保留。总体口吻：{rules['tone']}",
         "「必须保留」里的要求必须落实到实际念出的台词。",
     ]
+    if dialect:
+        from voice_dialects import narration_dialect_guidance
+        dialect_note = narration_dialect_guidance(dialect)
+        if dialect_note:
+            lines.append(dialect_note)
     open_notes: list[str] = [f"改开头时第 1 句字数不得超过 {opening['firstSentenceMaxChars']} 字"]
     if opening["requireInstitutionInOpening"]:
         open_notes.append("须在第 1 段自然说出机构名称（省略名称中的括号及括号内文字），即使上一稿漏了也要补回")

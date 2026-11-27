@@ -94,7 +94,7 @@ def variations(facts, task_id, count, rules=None):
     return [ordered[i % len(ordered)] for i in range(count)]
 
 
-def user_prompt(context, facts, budget, variation, preference, feedback, *, closing_hook=None, rules=None):
+def user_prompt(context, facts, budget, variation, preference, feedback, *, closing_hook=None, rules=None, dialect=None):
     lower, upper = budget['minUnits'], budget['maxUnits']
     default_cta = DEFAULT_CTA
     if isinstance(rules, dict):
@@ -114,6 +114,11 @@ def user_prompt(context, facts, budget, variation, preference, feedback, *, clos
         '咨询引导': cta_guide,
         '机构原文全文': context['sources'],
     }
+    if dialect:
+        from voice_dialects import narration_dialect_guidance
+        dialect_note = narration_dialect_guidance(dialect)
+        if dialect_note:
+            value['口播语言要求'] = dialect_note
     answer = context.get('answer') or {}
     if any((context.get('requirements'), preference, answer.get('reply'), feedback)):
         value['补充要求'] = {'任务': context.get('requirements', ''), '本条': preference,

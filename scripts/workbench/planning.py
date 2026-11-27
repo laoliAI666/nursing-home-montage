@@ -46,6 +46,7 @@ class BatchPlanning:
                 'music': task.get('musicTrack', {}),
                 **({'videoMusicTracks': task['videoMusicTracks']} if task.get('videoMusicTracks') else {}),
                 **({'personClosingHooks': task['personClosingHooks']} if task.get('personClosingHooks') else {}),
+                **({'personVoiceDialects': task['personVoiceDialects']} if task.get('personVoiceDialects') else {}),
                 **({'personVisualStyles': task['personVisualStyles']} if task.get('personVisualStyles') else {}),
                 'count': task['count']}
 

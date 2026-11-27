@@ -168,6 +168,13 @@ class DurationRevision:
 
         planned = script_units(current)
         settings = self.read(job/'runtime.json', {}).get('settings', {})
+        bound_dialect = (settings.get('voice', {}).get('dialect')
+                         or (self.task.get('personVoiceDialects') or {}).get(current.get('person', ''))
+                         or '')
+        dialect_note = ''
+        if bound_dialect:
+            from voice_dialects import narration_dialect_guidance
+            dialect_note = narration_dialect_guidance(bound_dialect)
         lead = settings.get('voice', {}).get('start', 0)
         pace = planned / max(seconds - lead, .01)
         estimated_units = round(pace * max(target - lead, 1))
@@ -205,12 +212,14 @@ class DurationRevision:
                     '第 1 行交代机构与开场，最后一行只保留一个咨询动作。每行都应与自己的分镜相符。'
                     '向家属直接介绍机构。事实出处和背景镜头留在后台，口播避免资料里说、根据介绍、画面里可以看到。'
                     '正文如需更换分镜，可以额外填写一个 media 中真实存在的 path；否则沿用原镜头并删掉镜头不能支持的承诺。'
-                    '只输出请求的小节，每个 index 一次，格式 {"sentences":[{"index":1,"text":"简短口播。"}]}。',
+                    + (dialect_note + ' ' if dialect_note else '')
+                    + '只输出请求的小节，每个 index 一次，格式 {"sentences":[{"index":1,"text":"简短口播。"}]}。',
                     {'actualSeconds':round(seconds,2),'targetSeconds':target,'minUnits':lower,'maxUnits':upper,
                      'adjustment':f'当前稿 {planned} 字，目标约 {estimated_units} 字。'
                                   f'{"补充有依据的内容" if estimated_units > planned else "压缩重复和次要例子"}。加减字数集中在正文。',
                      'required':self.task.get('requirements',''),'preference':preferences[worker.row['index']],
                      'coverTitle':current['cover']['main_title'], 'feedback':feedback,
+                     **({'voiceDialect': bound_dialect, 'dialectGuidance': dialect_note} if dialect_note else {}),
                      'media':{path:shot['description'] for path,shot in media.items()},
                      'lines':[dict(rows[index],previous=edits_by_index[index]['text']) for index in requested]}, max_tokens=3000)
                 edits = proposal.get('sentences')

@@ -197,8 +197,9 @@ def preview_voice(app, ident, values):
                 person.get('speech_rate'), person.get('voice_dialect') or '']
     if values.get('binding') != expected:
         raise ValueError('音色、方言或语速已更新，请刷新人物资料后再试听。')
+    from voice_dialects import preview_text
     name = (person.get('name') or '你的数字人')[:12]
-    text = text.strip() or f'大家好，我是{name}。很高兴和你见面。今天用这段话，给你听听我的声音和说话的节奏。'
+    text = text.strip() or preview_text(name, person.get('voice_dialect'))
     audio = person_audio(app, cfg, person, text, {})
     if not 0 < len(audio) <= PREVIEW_AUDIO_LIMIT:
         raise ValueError('试听音频为空或太长，请换一段较短的文案。')

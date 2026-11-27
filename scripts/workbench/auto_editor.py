@@ -621,10 +621,15 @@ class Editor:
 
             prev_path = shots[-1]['path']
 
-    def rebuild_narration(self, reference_plan, context, facts, evidence, previous, index, preference):
+    def rebuild_narration(self, reference_plan, context, facts, evidence, previous, index, preference, *, dialect=None):
+        dialect_note = ''
+        if dialect:
+            from voice_dialects import narration_dialect_guidance
+            dialect_note = narration_dialect_guidance(dialect)
         result = self.ask(
             '上一轮完整策划缺少口播结构，本轮只重写口播并选择真实镜头。'
             + NARRATION_OUTLINE +
+            (dialect_note + '\n' if dialect_note else '') +
             '完整口播受 durationBudget 限制。用 sections 分配开头、正文和咨询结尾，事例每段最多一个。'
             '使用实际 facts 和 evidence 的编号，每个共同事实一定写进正文并在对应句标明 f 编号。'
             'preference 是本条要求。开头和结尾选观察到运动的视频，各句也可填写一个相关背景的 path。'
@@ -633,7 +638,8 @@ class Editor:
             '"sentences":[{"text":"口播句","kind":"hook|fact|cta","factIds":["f1"],"path":"素材路径"}]}。',
             {'institutionName': context['institutionName'], 'facts': facts, 'evidence': evidence,
              'media': context['media'], 'previous': previous, 'index': index + 1, 'preference': preference,
-             'durationBudget':context.get('durationBudget', {})},
+             'durationBudget':context.get('durationBudget', {}),
+             **({'voiceDialect': dialect} if dialect else {})},
             max_tokens=4500)
         if not isinstance(result.get('sentences'), list) or not result['sentences']:
             raise PlanError('模型的独立口播补稿没有返回句子，请重新生成。')
@@ -651,11 +657,18 @@ class Editor:
             plan['publication']['title'] = title.strip()
         return {**result, 'plan': plan}
 
-    def draft_narration(self, context, facts, preference, budget, index, feedback='', *, variation=None, remember=None, closing_hook=None, rules=None):
+    def draft_narration(self, context, facts, preference, budget, index, feedback='', *, variation=None, remember=None, closing_hook=None, rules=None, dialect=None):
+        dialect_note = ''
+        if dialect:
+            from voice_dialects import narration_dialect_guidance
+            dialect_note = narration_dialect_guidance(dialect)
         if variation is not None:
             from text_styles import build_narration_system_prompt
-            system_prompt = build_narration_system_prompt(rules) if isinstance(rules, dict) else NARRATION_SYSTEM
-            user = user_prompt(context, facts, budget, variation, preference, feedback, closing_hook=closing_hook, rules=rules)
+            if isinstance(rules, dict):
+                system_prompt = build_narration_system_prompt(rules, dialect=dialect)
+            else:
+                system_prompt = NARRATION_SYSTEM + ('\n\n' + dialect_note if dialect_note else '')
+            user = user_prompt(context, facts, budget, variation, preference, feedback, closing_hook=closing_hook, rules=rules, dialect=dialect)
             if remember:
                 remember(system_prompt, user)
             result = self.ask(system_prompt, user, max_tokens=2500)
@@ -667,9 +680,13 @@ class Editor:
         payload = {**narration_material(context, ordered), 'preference': preference, 'feedback': feedback}
         if closing_hook:
             payload['boundClosingHook'] = closing_hook
+        if dialect_note:
+            payload['voiceDialect'] = dialect
+            payload['dialectGuidance'] = dialect_note
         result = self.ask(
             '用客观自然的带看口吻，给长辈和家属写一篇养老机构探访口播。'
-            '开头尽早交代是哪家机构，可从一个具体特点切入。正文讲全 coreFacts，相关要点可合段。'
+            + (dialect_note + ' ' if dialect_note else '')
+            + '开头尽早交代是哪家机构，可从一个具体特点切入。正文讲全 coreFacts，相关要点可合段。'
             '用户明确要求专题时按专题写。' + cta_rule
             + NARRATION_SOURCE_RULES + narration_length_instruction(budget) +
             '篇幅偏短时，从原文和实拍里补充能把要点讲清楚的细节。通读去掉套话和重复。'
@@ -687,14 +704,23 @@ class Editor:
         return [part.strip() for part in parts]
 
     def revise_narration(self, parts, targets, issues, context, facts, budget, preference='', *,
-                         variation=None, remember=None, closing_hook=None, rules=None):
+                         variation=None, remember=None, closing_hook=None, rules=None, dialect=None):
+        dialect_note = ''
+        if dialect:
+            from voice_dialects import narration_dialect_guidance
+            dialect_note = narration_dialect_guidance(dialect)
         if variation is not None:
             from text_styles import build_narration_repair_prompt, extract_rules
-            repair_prompt = build_narration_repair_prompt(rules) if isinstance(rules, dict) else NARRATION_REPAIR_SYSTEM
+            if isinstance(rules, dict):
+                repair_prompt = build_narration_repair_prompt(rules, dialect=dialect)
+            else:
+                repair_prompt = NARRATION_REPAIR_SYSTEM + ('\n' + dialect_note if dialect_note else '')
             style_rules, _ = extract_rules(rules) if isinstance(rules, dict) else (None, None)
             sizes = [script_units({'sentences': [{'text': text}]}) for text in parts]
-            user = user_prompt(context, facts, budget, variation, preference, '', closing_hook=closing_hook, rules=rules)
+            user = user_prompt(context, facts, budget, variation, preference, '', closing_hook=closing_hook, rules=rules, dialect=dialect)
             protected = ['用户明确要求的内容，原文中的正式名称、适用对象和服务条件。']
+            if dialect_note:
+                protected.append('全程保持地道广东话（粤语）口语写法，不要改回普通话书面语。')
             req_open_name = True if not style_rules else bool(style_rules['opening'].get('requireInstitutionInOpening', True))
             mention_once = True if not style_rules else bool(style_rules['opening'].get('institutionMentionOnce', True))
             if 0 in targets and req_open_name and (name := user['机构名称']):
@@ -715,13 +741,15 @@ class Editor:
         else:
             result = self.ask(
                 '用客观自然的带看口吻局部修订养老机构探访口播。'
-                '只改 targets 中编号的段落，优先解决 issues。以下字数按替回后的全文计算。'
+                + (dialect_note + ' ' if dialect_note else '')
+                + '只改 targets 中编号的段落，优先解决 issues。以下字数按替回后的全文计算。'
                 + narration_length_instruction(budget) + NARRATION_SOURCE_RULES +
                 '保留本条必讲事实、开头的机构语境和最后一个咨询动作。增加字数时补有依据的细节，'
                 '减少时先压重复或次要细节。相似问题按原意重组句式与衔接。'
                 '返回 {"edits":[{"index":2,"text":"修订后的段落"}]}，index 从 1 起，每个指定编号返回一次。',
                 {**narration_material(context, facts), 'preference': preference,
-                 'paragraphs': parts, 'targets': [i + 1 for i in targets], 'issues': issues},
+                 'paragraphs': parts, 'targets': [i + 1 for i in targets], 'issues': issues,
+                 **({'voiceDialect': dialect, 'dialectGuidance': dialect_note} if dialect_note else {})},
                 max_tokens=2600)
         edits = result.get('edits')
         if not isinstance(edits, list) or any(not isinstance(edit, dict) for edit in edits):
@@ -742,6 +770,11 @@ class Editor:
             from text_styles import extract_rules
             respect_hook = bool(extract_rules(task['narrationRules'])[0]['ending'].get('respectPersonHook', True))
         bound_hook = str((task.get('personClosingHooks') or {}).get(person) or '').strip() if (not revised and respect_hook) else ''
+        bound_dialect = str((task.get('personVoiceDialects') or {}).get(person) or '').strip() if not revised else ''
+        dialect_note = ''
+        if bound_dialect:
+            from voice_dialects import narration_dialect_guidance
+            dialect_note = narration_dialect_guidance(bound_dialect)
         evidence = evidence or {}
         target = task.get('targetDurationSeconds')
         length = initial_budget(target) if target is not None else {}
@@ -796,10 +829,12 @@ class Editor:
             '封面放在 plan.cover，包含 main_title 和三个 labels；发布文案放在 plan.publication，'
             '包含 title、description 和五个不同的 topics。两个字段都按同一条完整口播撰写。'
             + (f'结尾最后一句（kind=cta）必须原样使用该数字人绑定的固定片尾钩子：「{bound_hook}」。\n' if bound_hook else '\n')
+            + (dialect_note + '\n' if dialect_note else '')
             + self.rules('plan-schema', 'narration', 'narration-polish', 'covers') + '\n' + compact,
             {**context, 'facts': facts, 'supportingEvidence': evidence, 'person': person, 'index': index + 1, 'total': task['count'],
              'preference': prefs, 'previousAngles': previous, 'feedback': feedback, 'candidate': candidate,
              'durationBudget': length, **({'boundClosingHook': bound_hook} if bound_hook else {}),
+             **({'voiceDialect': bound_dialect, 'dialectGuidance': dialect_note} if dialect_note else {}),
              'revisedNarration': revised, 'publicationOverride': task.get('publicationOverride', {})},
                 max_tokens=12000)
         raw = result.get('plan')
@@ -807,7 +842,7 @@ class Editor:
             not isinstance(raw, dict) or not isinstance(raw.get('sentences'), list)
             or not 1 <= len(raw['sentences']) <= 100
         ):
-            result = self.rebuild_narration(reference_plan, context, facts, evidence, previous, index, prefs)
+            result = self.rebuild_narration(reference_plan, context, facts, evidence, previous, index, prefs, dialect=bound_dialect)
             raw = result['plan']
         if not isinstance(raw, dict):
             question(result)

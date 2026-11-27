@@ -386,10 +386,25 @@ class Production:
         item = (ch.get('library') or {}).get(default_id) if default_id else None
         return str(item.get('text') or '').strip() if isinstance(item, dict) else ''
 
+    def voice_dialect_for(self, task, index):
+        specs = task.get('videoSpecs') or [{'person': task['person']}] * task['count']
+        person_id = specs[index]['person'] if 0 <= index < len(specs) else task.get('person')
+        if not person_id:
+            return ''
+        dialects = task.get('personVoiceDialects') or {}
+        if person_id in dialects:
+            return str(dialects[person_id] or '').strip()
+        try:
+            person = self.app.pc.load().get('people', {}).get(person_id) or {}
+        except Exception:
+            return ''
+        return str(person.get('voice_dialect') or '').strip()
+
     def draft_spoken_plan(self, task, index, context, facts, evidence, validate, items, folder, *, draft_only=False):
         preference = (task.get('videoPreferences') or [''] * task['count'])[index]
         budget = self.app.planning.narration_budget(task, index)
         bound_hook = self.closing_hook_for(task, index)
+        bound_dialect = self.voice_dialect_for(task, index)
         prior = [paragraphs(self.read(folder/item['plan'])) for item in items]
         receipt = (folder or self.job)/f'narration-draft-{index + 1:04d}.json'
         log = self.read(receipt, {'firstReturn':None,'repairs':0})
@@ -417,6 +432,8 @@ class Production:
             prompt_options['rules'] = rules
         if bound_hook:
             prompt_options['closing_hook'] = bound_hook
+        if bound_dialect:
+            prompt_options['dialect'] = bound_dialect
         if complete:
             log['variation'] = variation
 

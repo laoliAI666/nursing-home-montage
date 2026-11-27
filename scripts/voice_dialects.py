@@ -1,4 +1,4 @@
-"""Dialect catalog, per-model support matrix, and provider parameter mapping."""
+"""Dialect catalog, per-model support matrix, provider parameters, and script guidance."""
 
 DEFAULT_LABEL = '普通话（默认）'
 
@@ -22,13 +22,16 @@ MINIMAX_MODEL_SUPPORT = {
     'speech-2.8-turbo': ('yue',),
 }
 
-ALIYUN_INSTRUCTIONS = {
+ALIYUN_LANGUAGE_HINTS = {
     'qwen-audio-3.1-tts-plus': {
-        'yue': '请用广东话朗读。',
-        'changsha': '请用长沙话朗读。',
-        'chongqing': '请用重庆话朗读。',
-        'shaanxi': '请用陕西话朗读。',
+        'yue': ('zh-yue',),
+        'changsha': ('zh-hn',),
+        'chongqing': ('zh-cq',),
+        'shaanxi': ('zh-sx',),
     },
+}
+
+ALIYUN_INSTRUCTIONS = {
     'cosyvoice-v3.5-flash': {
         'yue': '请用广东话表达。',
         'changsha': '请用湖南话表达。',
@@ -41,11 +44,19 @@ MINIMAX_LANGUAGE_BOOST = {
 }
 
 MODEL_HINTS = {
-    'aliyun:qwen-audio-3.1-tts-plus': '当前模型支持全部 4 种方言（广东话、长沙话、重庆话、陕西话），保存后可用于试听与配音。',
-    'aliyun:cosyvoice-v3.5-flash': '当前模型支持广东话、长沙话（按湖南话合成）、陕西话；暂不支持重庆话（已置灰）。',
-    'minimax': 'MiniMax 当前仅原生支持广东话（粤语）；长沙话、重庆话、陕西话暂不支持（已置灰）。',
+    'aliyun:qwen-audio-3.1-tts-plus': '当前模型支持全部 4 种方言（广东话、长沙话、重庆话、陕西话），保存后可用于试听与配音；选广东话时 AI 写口播稿也会自动按粤语口语习惯生成。',
+    'aliyun:cosyvoice-v3.5-flash': '当前模型支持广东话、长沙话（按湖南话合成）、陕西话；暂不支持重庆话（已置灰）；选广东话时 AI 写口播稿也会自动按粤语口语习惯生成。',
+    'minimax': 'MiniMax 当前仅原生支持广东话（粤语）；长沙话、重庆话、陕西话暂不支持（已置灰）；选广东话时 AI 写口播稿也会自动按粤语口语习惯生成。',
     'volcengine': '火山语音复刻暂不支持通过参数切换方言（以上 4 种已置灰）；如需方言请切换至阿里百炼，或直接上传方言录音复刻。',
 }
+
+CANTONESE_NARRATION_GUIDANCE = (
+    '【广东话口播写法】本条数字人绑定了广东话（粤语）配音，请全程严格按地道广东话（粤语）口语习惯撰写口播台词，不要写普通话书面语直译：'
+    '优先使用地道粤语口语词（如：系/唔系、同/同埋、呢度/呢间、畀、嘅、睇/睇下、讲/讲话、今日、喺、冇、咗、啲），'
+    '避免“我是/和你/这段/给你/我的/很/没有/在”等普通话书面表达；'
+    '机构正式名称、地名、数字、医疗及照护专名保持准确原文，不得生造或改写专名，也不要加任何括号或注音；'
+    '若绑定了固定片尾钩子，最后一段仍按规定原样保留。'
+)
 
 
 def normalize_dialect(value):
@@ -91,11 +102,32 @@ def validate_dialect(value, provider, model=None):
     return code
 
 
+def aliyun_language_hints(dialect, model):
+    code = validate_dialect(dialect, 'aliyun', model)
+    if not code:
+        return None
+    hints = ALIYUN_LANGUAGE_HINTS.get(model, {}).get(code)
+    return list(hints) if hints else None
+
+
 def aliyun_instruction(dialect, model):
     code = validate_dialect(dialect, 'aliyun', model)
     if not code:
         return None
-    return ALIYUN_INSTRUCTIONS[model][code]
+    return ALIYUN_INSTRUCTIONS.get(model, {}).get(code)
+
+
+def aliyun_synthesis_params(dialect, model):
+    code = validate_dialect(dialect, 'aliyun', model)
+    if not code:
+        return {}
+    hints = aliyun_language_hints(code, model)
+    if hints:
+        return {'language_hints': hints}
+    instruction = aliyun_instruction(code, model)
+    if instruction:
+        return {'instruction': instruction}
+    return {}
 
 
 def minimax_language_boost(dialect, model=None):
@@ -103,6 +135,21 @@ def minimax_language_boost(dialect, model=None):
     if not code:
         return None
     return MINIMAX_LANGUAGE_BOOST[code]
+
+
+def preview_text(name, dialect=None):
+    speaker_name = (name or '你的数字人')[:12]
+    code = normalize_dialect(dialect)
+    if code == 'yue':
+        return f'大家好，我系{speaker_name}。好高兴同你见面。今日用呢段话，畀你听下我把声同讲话嘅节奏。'
+    return f'大家好，我是{speaker_name}。很高兴和你见面。今天用这段话，给你听听我的声音和说话的节奏。'
+
+
+def narration_dialect_guidance(dialect):
+    code = normalize_dialect(dialect)
+    if code == 'yue':
+        return CANTONESE_NARRATION_GUIDANCE
+    return ''
 
 
 def public_catalog():
