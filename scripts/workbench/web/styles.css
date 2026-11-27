@@ -1141,3 +1141,218 @@ dialog.ts-modal-dialog:not([open]) {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Friendly Help Tooltips (Hover + Click Popover with Before/After Examples) */
+.ts-help-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin-left: 5px;
+}
+.ts-help-btn {
+  width: 18px !important;
+  height: 18px !important;
+  min-height: 18px !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  border: 1px solid #b5c6b1 !important;
+  background: #f2f6ef !important;
+  color: var(--accent) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.ts-help-btn:hover,
+.ts-help-tip.is-open .ts-help-btn {
+  background: var(--pine) !important;
+  color: #f6faef !important;
+  border-color: var(--pine) !important;
+}
+.ts-help-popover {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 8px);
+  width: 300px;
+  background: #17332d;
+  color: #f3f7ee;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.6;
+  text-align: left;
+  box-shadow: 0 14px 34px rgba(10, 28, 24, 0.3);
+  z-index: 60;
+  display: none;
+}
+.ts-help-tip:hover .ts-help-popover,
+.ts-help-tip.is-open .ts-help-popover {
+  display: block;
+}
+.ts-help-popover::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: 6px;
+  width: 10px;
+  height: 10px;
+  background: #17332d;
+  transform: rotate(45deg);
+}
+.ts-help-popover strong {
+  display: block;
+  color: var(--leaf);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.ts-help-ex {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 11.5px;
+}
+.ts-help-ex .is-bad { color: #ffbbb2; }
+.ts-help-ex .is-good { color: #dceabc; }
+
+/* Friendly Choice Cards & Range Scale */
+.ts-range-scale {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+.ts-choice-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 6px;
+}
+.ts-choice-cards.ts-choice-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.ts-choice-card {
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  padding: 11px 12px;
+  background: var(--paper);
+  text-align: left;
+  cursor: pointer;
+  min-height: auto !important;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color .15s, background .15s;
+}
+.ts-choice-card:hover:not(:disabled) {
+  border-color: #9bb896;
+}
+.ts-choice-card.is-active {
+  border-color: var(--pine);
+  background: #f3f8ee;
+}
+.ts-choice-card strong {
+  font-size: 13px;
+  color: var(--ink);
+  line-height: 1.4;
+}
+.ts-choice-card small {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+/* Friendly Storyboard Preview Card */
+.ts-story-preview {
+  background: var(--paper);
+  border: 1px solid #d5e2cf;
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ts-story-step {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed #e1e8dd;
+}
+.ts-story-step strong {
+  display: block;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+.ts-story-step small {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.ts-story-badge {
+  background: var(--pine);
+  color: var(--leaf);
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 5px 8px;
+  border-radius: 7px;
+  text-align: center;
+}
+.ts-story-badge.is-mid {
+  background: #edf3e7;
+  color: var(--pine);
+}
+.ts-story-badge.is-end {
+  background: #fbf2df;
+  color: #8e5b15;
+}
+.ts-story-quote {
+  margin-top: 6px;
+  padding: 8px 11px;
+  border-radius: 8px;
+  background: #f8faf6;
+  border-left: 3px solid var(--accent);
+  font-size: 12.5px;
+  color: var(--ink);
+  line-height: 1.6;
+}
+.ts-story-guard-strip {
+  background: #f5f8f2;
+  border-radius: 9px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ts-story-guard-strip span {
+  color: var(--pine);
+  font-weight: 600;
+}
+
+@media (max-width: 760px) {
+  .ts-choice-cards,
+  .ts-choice-cards.ts-choice-2 {
+    grid-template-columns: 1fr;
+  }
+  .ts-story-step {
+    grid-template-columns: 1fr;
+  }
+  .ts-help-popover {
+    width: 248px;
+  }
+}

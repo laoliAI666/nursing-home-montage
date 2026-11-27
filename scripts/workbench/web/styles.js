@@ -448,10 +448,10 @@ async function renderStylesPage() {
   const canManageText = typeof window.hasPerm === 'function' ? window.hasPerm('styles.text_manage') : true;
 
   const headAction = isText
-    ? `${canManageText ? `<button type="button" class="primary" data-action="new-text-style">${icon('plus')} 新建文本风格</button>` : ''}`
+    ? `${canManageText ? `<button type="button" class="primary" data-action="new-text-style">${icon('plus')} 新建口播写法模板</button>` : ''}`
     : `<a class="secondary" href="#people">${icon('person')} 前往数字人管理</a>`;
 
-  main.innerHTML = `${heading('风格库', '统一管理成套「视频风格（封面 + 视频）」与「文本风格（口播编排规则）」。视频风格可绑定数字人；文本风格可设为全局默认或在新建制作时按单批次微调。', headAction)}
+  main.innerHTML = `${heading('风格库', '左边管视频的「画面长相」，右边管口播的「说话方式」。选好一套设为全局默认，以后新建视频会自动套用。', headAction)}
     <nav class="content-tabs" aria-label="风格库分类">
       <a href="#styles/videos" ${!isText ? 'aria-current="page"' : ''}>视频风格<span>${(s.covers || []).length}</span></a>
       <a href="#styles/text" ${isText ? 'aria-current="page"' : ''}>文本风格<span>${textList.length}</span></a>
