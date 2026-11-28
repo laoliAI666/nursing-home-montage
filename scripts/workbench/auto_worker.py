@@ -138,9 +138,10 @@ class Production:
             if self.status()['status'] not in ('cancelled', 'timed_out'):
                 raise
 
-    def progress(self, message):
+    def progress(self, message, *, phase=None):
         row = self.status()
-        self.app.queue.report(self.item, self.lease, min(5, row['phase']), 'running', message)
+        target_phase = max(row['phase'], phase) if phase is not None else row['phase']
+        self.app.queue.report(self.item, self.lease, min(5, target_phase), 'running', message)
 
     def invoke(self, action, *, job=None, cli_args=None, extra=None):
         for attempt in range(2):
@@ -678,6 +679,7 @@ class Production:
         complete = task.get('narrationPolicy') == COMPLETE_NARRATION_POLICY and not is_revision
         if complete:
             answer = {'reply': answer.get('reply')}
+        self.progress('素材已就绪，正在整理机构原文并提炼要点' if complete else '素材已就绪，正在观察实拍素材', phase=1)
         context = self.editor.context(task, folder, answer, observe=not complete)
         evidence = source_evidence(context['sources'])
         if complete:
@@ -685,12 +687,15 @@ class Production:
             identity = digest(context)
             outline = self.read(outline_path, {})
             if outline.get('input') != identity:
+                self.progress('正在逐段核对全文必讲要点', phase=1)
                 outline = {'input': identity, 'facts': self.editor.complete_outline(context, evidence)}
                 self.write(outline_path, outline)
             facts = outline['facts']
         else:
+            self.progress('正在结合实拍与原文确定共同提纲', phase=1)
             facts = self.editor.batch_outline(context, evidence)
         if is_revision:
+            self.progress('正在根据修改意见重写文案与分镜', phase=1)
             plan, _ = self.editor.plan(task, self.row['index'], context, facts, [], evidence=evidence)
             revised = folder.parent / 'revised-plan.json'
             self.write(revised, plan)
@@ -704,6 +709,7 @@ class Production:
             self.write(plan_path, plan)
             review(self.job)
             return self.read(plan_path)
+        self.progress('必讲要点已核对，正在撰写口播文案', phase=1)
         self.draft_with_feedback(task, self.row['index'], context, facts, evidence, validate)
         self.write(marker, {'validated': fingerprint(plan_path)})
 

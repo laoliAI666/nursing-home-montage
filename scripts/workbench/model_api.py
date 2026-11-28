@@ -6,12 +6,85 @@ import json
 import os
 import re
 import secrets
+import socket
 import struct
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import zlib
+
+
+CONNECT_FALLBACK_TIMEOUT = 10.0
+
+
+def create_fast_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None):
+    """Prefer IPv4 over IPv6 and cap per-address connect timeout to avoid 75s blackhole stalls."""
+    host, port = address
+    infos = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+    if not infos:
+        raise OSError('getaddrinfo returns an empty list')
+    # Prefer IPv4 first while keeping relative order within each address family.
+    ordered = sorted(infos, key=lambda item: 0 if item[0] == socket.AF_INET else 1)
+    deadline = None
+    if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT and timeout is not None:
+        deadline = time.monotonic() + float(timeout)
+    last_err = None
+    for idx, (af, socktype, proto, _, sa) in enumerate(ordered):
+        sock = None
+        try:
+            sock = socket.socket(af, socktype, proto)
+            remaining = None if deadline is None else max(0.5, deadline - time.monotonic())
+            if len(ordered) > 1 and idx < len(ordered) - 1:
+                step_timeout = CONNECT_FALLBACK_TIMEOUT if remaining is None else min(remaining, CONNECT_FALLBACK_TIMEOUT)
+                sock.settimeout(step_timeout)
+            elif remaining is not None:
+                sock.settimeout(remaining)
+            if source_address:
+                sock.bind(source_address)
+            sock.connect(sa)
+            # Restore full read/write timeout after TCP handshake succeeds.
+            if deadline is not None:
+                sock.settimeout(max(1.0, deadline - time.monotonic()))
+            elif timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+                sock.settimeout(timeout)
+            return sock
+        except OSError as exc:
+            last_err = exc
+            if sock is not None:
+                sock.close()
+    if last_err is not None:
+        raise last_err
+    raise OSError('Unable to connect to remote host')
+
+
+class _FastHTTPConnection(http.client.HTTPConnection):
+    def connect(self):
+        self.sock = create_fast_connection((self.host, self.port), self.timeout, self.source_address)
+        if self._tunnel_host:
+            self._tunnel()
+
+
+class _FastHTTPSConnection(http.client.HTTPSConnection):
+    def connect(self):
+        sock = create_fast_connection((self.host, self.port), self.timeout, self.source_address)
+        if self._tunnel_host:
+            self.sock = sock
+            self._tunnel()
+            server_hostname = self._tunnel_host
+        else:
+            server_hostname = self.host
+        self.sock = self._context.wrap_socket(sock, server_hostname=server_hostname)
+
+
+class _FastHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_FastHTTPConnection, req)
+
+
+class _FastHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_FastHTTPSConnection, req, context=self._context)
 
 
 PROVIDERS = {
@@ -100,7 +173,7 @@ class ModelClient:
         self.on_retry = None
         self.token_field = ('max_completion_tokens' if urllib.parse.urlsplit(self.endpoint).hostname == 'api.openai.com'
                             else 'max_tokens')
-        handlers = [NoRedirect()]
+        handlers = [_FastHTTPHandler(), _FastHTTPSHandler(), NoRedirect()]
         if self.endpoint.startswith('http://'):
             handlers.append(urllib.request.ProxyHandler({}))
         self.opener = urllib.request.build_opener(*handlers)

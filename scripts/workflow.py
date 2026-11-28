@@ -256,14 +256,193 @@ class SpeechAlignmentError(RuntimeError):
     pass
 
 
+_NON_NUMERIC_YI_RE = re.compile(
+    r'(?<![0-9零一二两三四五六七八九十百千万亿])一(?:下|起|样|直|般|定|些|边|齐|阵|啲|点|个|间|位|条|句|站|旁|侧|角|块|会|会儿|旦|经|向|贯|致|律|并|同|概|味|心|手|口|眼|步|声|把|片|套|份|种|类|项|处|家)'
+)
+
+
+def _extract_numeral_tokens(raw_text):
+    """Extract normalized numeral tokens while ignoring colloquial non-quantitative '一X' idioms."""
+    raw = strip_parenthetical(raw_text or '').replace('〇', '零')
+    arabic_re = re.compile(r'\d{4}(?=年)|\d+\.\d+|\d+')
+    # 1) Explicit Arabic numbers converted to spoken Chinese numerals.
+    arabic_spoken = []
+    for m in arabic_re.finditer(raw):
+        tok = m.group(0)
+        if re.fullmatch(r'\d{4}', tok) and raw[m.end():m.end() + 1] == '年':
+            spoken = spoken_characters(tok + '年')[:-1]
+        else:
+            spoken = spoken_characters(tok)
+        if spoken:
+            arabic_spoken.append(spoken.replace('两', '二'))
+    # 2) Expand Arabic digits into spoken Chinese first so '1个' and '一个' normalize identically.
+    def _expand_arabic(m):
+        tok = m.group(0)
+        if re.fullmatch(r'\d{4}', tok) and raw[m.end():m.end() + 1] == '年':
+            return spoken_characters(tok + '年')[:-1]
+        return spoken_characters(tok)
+    expanded = arabic_re.sub(_expand_arabic, raw)
+    # Collect unmasked stream for explicit Arabic verification.
+    raw_all_nums = []
+    for m in re.finditer(r'[零一二两三四五六七八九十百千万亿点]+', expanded):
+        piece = m.group(0).replace('两', '二').strip('点')
+        if piece:
+            raw_all_nums.append(piece)
+    # 3) Mask colloquial non-quantitative '一X' and '十分' (meaning 'very') for strict numeral stream comparison.
+    masked = _NON_NUMERIC_YI_RE.sub(' ', expanded)
+    masked = re.sub(r'(?<![0-9零一二两三四五六七八九十百千万亿])十分(?![0-9零一二两三四五六七八九十百千万亿钟])', ' ', masked)
+    tokens = []
+    for m in re.finditer(r'[零一二两三四五六七八九十百千万亿点]+', masked):
+        piece = m.group(0).replace('两', '二').strip('点')
+        if not piece:
+            continue
+        tokens.append(piece)
+    return arabic_spoken, tokens, raw_all_nums
+
+
+def _dialect_sentence_spans(raw_text):
+    lines = [line.strip() for line in re.split(r'[\r\n]+', raw_text or '') if clean(line)]
+    if len(lines) <= 1:
+        lines = [part.strip() for part in re.split(r'(?<=[。！？!?])', raw_text or '') if clean(part)]
+    spans = []
+    cursor = 0
+    for line in lines:
+        n = len(clean(line))
+        if n > 0:
+            spans.append((cursor, cursor + n, line))
+            cursor += n
+    return spans
+
+
+def evaluate_dialect_alignment(text, recognized, dialect):
+    """Dialect-tolerant alignment check: strict on numerals & coverage/anti-skip, no lexical dictionary."""
+    import difflib
+    from alignment import _per_char_phonemes
+
+    exp_clean = clean(text)
+    act_clean = clean(recognized)
+    len_exp = len(exp_clean)
+    len_act = len(act_clean)
+    if not len_exp or not len_act:
+        return False, {'passed': False, 'reason': 'empty_text_or_recognition'}
+
+    # 1) Strict numeral check: zero errors on Arabic and Chinese numerals.
+    exp_arabic, exp_nums, _ = _extract_numeral_tokens(text)
+    _, act_nums, act_raw_nums = _extract_numeral_tokens(recognized)
+    numerals_ok = (exp_nums == act_nums)
+    # Double-check all explicit Arabic numerals appear in exact order inside act_raw_nums.
+    arabic_ok = True
+    if exp_arabic:
+        it = iter(act_raw_nums)
+        for tok in exp_arabic:
+            if not any(tok == candidate or tok in candidate for candidate in it):
+                arabic_ok = False
+                break
+
+    # 2) Overall character length coverage ratio.
+    length_ratio = len_act / len_exp
+    if len_exp < 20:
+        len_tol = max(3, round(len_exp * 0.20))
+        length_ok = abs(len_act - len_exp) <= len_tol
+    else:
+        length_ok = 0.85 <= length_ratio <= 1.15
+
+    # 3) Phoneme skeleton similarity (no Cantonese-Mandarin synonym dictionary required).
+    exp_keys = _per_char_phonemes(exp_clean, phonemes)
+    act_keys = _per_char_phonemes(act_clean, phonemes)
+    sm = difflib.SequenceMatcher(None, exp_keys, act_keys, autojunk=False)
+    similarity = sm.ratio()
+    min_similarity = 0.55 if dialect == 'yue' else 0.72
+    similarity_ok = similarity >= min_similarity
+
+    # 4) Anti-skip / anti-truncation: max dropped span & per-sentence coverage.
+    opcodes = sm.get_opcodes()
+    max_drop_allowed = 6 if dialect == 'yue' else 4
+    max_drop_observed = 0
+    for tag, i1, i2, j1, j2 in opcodes:
+        if tag == 'delete':
+            max_drop_observed = max(max_drop_observed, i2 - i1)
+        elif tag == 'replace':
+            net_drop = (i2 - i1) - (j2 - j1)
+            if net_drop > 0:
+                max_drop_observed = max(max_drop_observed, net_drop)
+    drop_ok = max_drop_observed <= max_drop_allowed
+
+    # Per-sentence coverage mapped through opcodes (catches any skipped/truncated sentence).
+    spans = _dialect_sentence_spans(text)
+    sentence_reports = []
+    sentences_ok = True
+    for s_start, s_end, s_text in spans:
+        s_len = s_end - s_start
+        mapped_act = 0.0
+        matched_eq = 0
+        for tag, i1, i2, j1, j2 in opcodes:
+            if tag == 'insert':
+                continue
+            ov_start = max(s_start, i1)
+            ov_end = min(s_end, i2)
+            if ov_end <= ov_start:
+                continue
+            ov = ov_end - ov_start
+            if tag == 'equal':
+                mapped_act += ov
+                matched_eq += ov
+            elif tag == 'replace' and i2 > i1:
+                mapped_act += (j2 - j1) * (ov / (i2 - i1))
+        min_expected = max(2, int(s_len * 0.60)) if s_len >= 4 else max(1, s_len - 1)
+        ok_sent = mapped_act >= min_expected and (matched_eq > 0 or s_len < 4)
+        if not ok_sent:
+            sentences_ok = False
+        sentence_reports.append({
+            'expectedLen': s_len,
+            'mappedActualLen': round(mapped_act, 2),
+            'matchedPhonemes': matched_eq,
+            'passed': ok_sent,
+            'text': s_text[:40],
+        })
+
+    passed = bool(numerals_ok and arabic_ok and length_ok and similarity_ok and drop_ok and sentences_ok)
+    reasons = []
+    if not numerals_ok or not arabic_ok:
+        reasons.append(f'numeral_mismatch(expected={exp_nums}, actual={act_nums})')
+    if not length_ok:
+        reasons.append(f'length_ratio_out_of_range({length_ratio:.3f})')
+    if not similarity_ok:
+        reasons.append(f'phoneme_similarity_low({similarity:.3f}<{min_similarity})')
+    if not drop_ok:
+        reasons.append(f'dropped_span_too_long({max_drop_observed}>{max_drop_allowed})')
+    if not sentences_ok:
+        reasons.append('sentence_coverage_failed')
+
+    report = {
+        'dialect': dialect,
+        'passed': passed,
+        'reasons': reasons,
+        'expectedLength': len_exp,
+        'actualLength': len_act,
+        'lengthRatio': round(length_ratio, 4),
+        'phonemeSimilarity': round(similarity, 4),
+        'minPhonemeSimilarity': min_similarity,
+        'expectedNumerals': exp_nums,
+        'actualNumerals': act_nums,
+        'numeralsPassed': bool(numerals_ok and arabic_ok),
+        'maxDroppedSpan': max_drop_observed,
+        'maxDroppedAllowed': max_drop_allowed,
+        'sentencesPassed': sentences_ok,
+        'sentences': sentence_reports,
+    }
+    return passed, report
+
+
 def align_audio(audio,text,out,cfg,prompt='',*,retry_prompt=''):
     from faster_whisper import WhisperModel
     import difflib
     from opencc import OpenCC
+    dialect=str((cfg or {}).get('voice',{}).get('dialect') or '').strip().lower()
     cached=out/'alignment-check.json'
     if cached.exists():
         d=read(cached)
-        if d.get('sha256')==sha(audio) and d.get('textSha256')==digest(text) and d.get('passed'):return d
+        if d.get('sha256')==sha(audio) and d.get('textSha256')==digest(text) and d.get('passed') and str(d.get('dialect') or '')==dialect:return d
     cache=Path.home()/cfg['alignment']['local_cache'];model_path=str(cache) if cache.exists() else cfg['alignment']['model']
     model=WhisperModel(model_path,device='cpu',compute_type='int8',cpu_threads=cfg['alignment']['threads'])
     cc=OpenCC('t2s');expected=phonemes(text)
@@ -276,6 +455,28 @@ def align_audio(audio,text,out,cfg,prompt='',*,retry_prompt=''):
         return rows,recognized,differences
     rows,recognized,diff=recognize(prompt)
     first_diff=None
+    dialect_ok=False
+    dialect_report=None
+    if dialect:
+        dialect_ok,dialect_report=evaluate_dialect_alignment(text,recognized,dialect)
+        if not dialect_ok and retry_prompt and retry_prompt!=prompt:
+            first_diff=diff
+            rows,recognized,diff=recognize(retry_prompt)
+            dialect_ok,dialect_report=evaluate_dialect_alignment(text,recognized,dialect)
+        passed=bool(expected) and dialect_ok
+        method=f'local faster-whisper medium dialect ({dialect}) alignment with strict numeral and sentence coverage gate'
+        result={'sha256':sha(audio),'textSha256':digest(text),'dialect':dialect,'alignmentMode':'dialect','expected':text,'recognized':recognized,'differences':diff,'dialectCheck':dialect_report,'passed':passed,'method':method,'humanListeningPerformed':False,'segments':rows}
+        if first_diff is not None:result['properNameRetry']={'firstDifferences':first_diff,'prompt':retry_prompt}
+        if passed:
+            from alignment import character_map
+            try:
+                character_map(result,text,clean,phonemes);result['numericMapping']={'passed':True,'method':'dialect anchor mapping with strict numeral group intervals'}
+            except ValueError as error:
+                result['numericMapping']={'passed':False,'error':str(error)};result['passed']=False
+        write(cached,result)
+        if not result['passed']:raise SpeechAlignmentError('Speech content or numeric timing needs review; see '+str(cached))
+        return result
+
     if diff and retry_prompt and retry_prompt!=prompt:
         first_diff=diff
         rows,recognized,diff=recognize(retry_prompt)
