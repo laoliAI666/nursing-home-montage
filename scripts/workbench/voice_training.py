@@ -19,6 +19,10 @@ AUDIO_FORMATS = {'.wav': 'wav', '.mp3': 'mp3', '.m4a': 'mov', '.aac': 'aac', '.f
 ACTIVE = {'queued', 'checking', 'submitting', 'training'}
 UNSENT = {'prepared', 'workbench_queued'}
 PERSON_ID = r'[A-Za-z0-9_-]{1,80}'
+BOUND_VOICE_SAMPLE_TEXT = (
+    '大家好，今天带大家实地看看这家养老公寓的居住环境、日常餐饮和专业照护服务。'
+    '这里阳光充足，房间宽敞安静，院子里有散步花园和活动室，长辈住在这里既舒心又安心。'
+)
 
 
 def managed_postpaid(person, record):
@@ -80,7 +84,27 @@ class VoiceTraining:
     def path(self, ident):
         return self.folder(ident) / 'voice-training.json'
 
-    def public(self, person):
+    def bound_voice_configured(self, person, cfg=None):
+        if not person.get('speaker'):
+            return False
+        if cfg is None:
+            try:
+                cfg = self.pc.load()
+            except Exception:
+                return False
+        provider = person.get('voice_provider') or 'volcengine'
+        connections = cfg.get('connections', {})
+        if provider == 'aliyun':
+            conn = connections.get('aliyun', {})
+            workspace = person.get('aliyun_workspace') or conn.get('workspace')
+            return bool(workspace and self.pc.connection_keys(conn)[0])
+        if provider == 'minimax':
+            conn = connections.get('minimax', {})
+            return bool(self.pc.connection_keys(conn)[0])
+        conn = connections.get(person.get('connection') or 'main', {})
+        return bool(self.pc.connection_keys(conn)[0])
+
+    def public(self, person, cfg=None):
         record = self.read(self.path(person['id']), {})
         state = record.get('workbench', {})
         phase = record.get('phase')
@@ -88,6 +112,8 @@ class VoiceTraining:
         replacement = self.pc.asset_path(record.get('replacementSample'))
         has_replacement = bool(replacement and replacement.is_file())
         bound = bool(person.get('speaker'))
+        bound_provider = (person.get('voice_provider') or 'volcengine') if bound else None
+        bound_configured = self.bound_voice_configured(person, cfg) if bound else False
         retraining = bool(record.get('retraining'))
         managed = managed_postpaid(person, record)
         switching = bool(record.get('previousBinding'))
@@ -109,12 +135,15 @@ class VoiceTraining:
         ali_started = record.get('provider') == 'aliyun' and phase != 'ready'
         ali_resuming = ali_started and phase in ('submitted', 'submission_unknown', 'confirmed')
         ali_sample = self.pc.asset_path(record.get('aliyunSample'))
+        ali_can_upload = state_name not in ACTIVE and not ali_resuming and (not can_query or needs_slot or ali_started)
         aliyun_clone = {
             'started': ali_started, 'model': record.get('model') if ali_started else None,
             'hasSample': has_sample or bool(ali_sample and ali_sample.is_file()),
-            'canUpload': state_name not in ACTIVE and not ali_resuming and (not can_query or needs_slot or ali_started),
+            'canUpload': ali_can_upload,
             'canStart': state_name not in ACTIVE and (not can_query or needs_slot or ali_started),
             'resuming': ali_resuming,
+            'canGenerateFromBound': bool(bound and ali_can_upload and bound_configured),
+            'boundProvider': bound_provider,
         }
         minimax_switch = None
         if can_replace_with_minimax(person):
@@ -127,6 +156,8 @@ class VoiceTraining:
                 'hasSample': has_sample or bool(staged and staged.is_file()),
                 'canUpload': can_edit,
                 'canStart': can_edit or (mini_started and phase == 'confirmed' and state_name not in ACTIVE),
+                'canGenerateFromBound': bool(bound and can_edit and bound_configured),
+                'boundProvider': bound_provider,
             }
         return {
             'state': state_name,
@@ -217,6 +248,39 @@ class VoiceTraining:
                     destination.unlink(missing_ok=True)
                     raise
                 return self.public(person)
+
+    def generate_sample_from_bound(self, ident, target_provider):
+        if target_provider not in ('aliyun', 'minimax'):
+            raise ValueError('仅支持为阿里百炼或 MiniMax 生成参考录音。')
+        cfg, person = self.load_person(ident)
+        if not person.get('speaker'):
+            raise ValueError('当前数字人尚未绑定可用音色，请直接上传录音。')
+        status = self.public(person, cfg=cfg)
+        if target_provider == 'aliyun' and not status['aliyunClone']['canUpload']:
+            raise ValueError('当前数字人正在复刻或待确认，暂时无法生成参考录音。')
+        if target_provider == 'minimax' and not (status['minimaxSwitch'] and status['minimaxSwitch']['canUpload']):
+            raise ValueError('当前数字人暂时无法生成 MiniMax 参考录音。')
+        from service_checks import person_audio
+        synth_person = {**person, 'speech_rate': 0, 'voice_dialect': ''}
+        audio = person_audio(self.app, cfg, synth_person, BOUND_VOICE_SAMPLE_TEXT, {})
+        if not audio:
+            raise ValueError('原音色未能合成有效参考录音，请改为手动上传录音。')
+        result = self.attach(ident, 'bound-voice-sample.mp3', audio, target_provider)
+        if target_provider == 'aliyun':
+            record = self.read(self.path(ident), {})
+            ali_sample = self.pc.asset_path(record.get('aliyunSample'))
+            if ali_sample and ali_sample.is_file():
+                try:
+                    aliyun_voice.sample_audio(ali_sample)
+                except Exception:
+                    with self.app.transaction():
+                        rec = self.read(self.path(ident), {})
+                        if rec.get('aliyunSample') == record.get('aliyunSample'):
+                            rec.pop('aliyunSample', None)
+                            self.write(self.path(ident), rec)
+                    ali_sample.unlink(missing_ok=True)
+                    raise
+        return result
 
     def normalize_sample(self, source, sample):
         result = self.run(['ffmpeg', '-nostdin', '-v', 'error', '-protocol_whitelist', 'file,pipe',

@@ -419,7 +419,7 @@ class App:
         people = []
         if can_people:
             for ident, p in cfg["people"].items():
-                voice_training = self.voice_training.public({**p, 'id': ident})
+                voice_training = self.voice_training.public({**p, 'id': ident}, cfg=cfg)
                 accounts = person_platform_accounts(p)
                 bindings = person_platform_bindings(p)
                 people.append({k: p.get(k) for k in ("name", "social_media_name", "speaker", "custom_speaker_id", "status", "speech_rate", "connection", "sample", "voice_provider", "aliyun_model")} | {"id": ident, "ready": bool(p.get("speaker") and self.pc.asset_path(p.get("portrait")) and self.pc.asset_path(p.get("portrait")).is_file()), "hasPortrait": bool(p.get("portrait")), "isDefault": ident == cfg.get("default_person"), "voiceTraining": voice_training, "voice_dialect": p.get("voice_dialect") or "", "music_track_id": p.get("music_track_id") or "", "cover_template_id": p.get("cover_template_id") or "", "video_style_id": p.get("video_style_id") or "", "closing_hook": person_closing_hook(p), "platform_accounts": accounts, "platform_bindings": bindings, "xiaohongshu_account_id": accounts["xiaohongshu"], "douyin_account_id": accounts["douyin"], "channels_account_id": accounts["channels"]})
@@ -1996,6 +1996,13 @@ class Handler(BaseHTTPRequestHandler):
                 if ident is not None:
                     self.app.voice_training.load_person(ident)
                 return self.reply(200, {'slots': self.app.voice_training.available_slots(ident, v.get('project'))})
+            match = re.fullmatch(r'/api/people/([A-Za-z0-9_-]{1,80})/voice-sample-from-bound', url.path)
+            if match:
+                self.require_perm(actor, "people.voice_clone")
+                ident = match[1]
+                provider = v.get('provider')
+                self.app.auth.log_audit(actor, action="people.voice_clone", resource_type="person", resource_id=ident, summary=f"从当前绑定音色为数字人「{ident}」生成参考录音", ip=ip)
+                return self.reply(201, self.app.voice_training.generate_sample_from_bound(ident, provider))
             match = re.fullmatch(r'/api/people/([A-Za-z0-9_-]{1,80})/voice-training', url.path)
             if match:
                 self.require_perm(actor, "people.voice_clone")

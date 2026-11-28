@@ -1,5 +1,5 @@
 {
-  "version": "3.12.3",
+  "version": "3.12.4",
   "config_schema": 1,
   "minimum_python": "3.11",
   "hyperframes": "0.9.44",

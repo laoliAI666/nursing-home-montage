@@ -506,7 +506,10 @@ function applyNavPermissions() {
 function applyPagePermissions() {
   if (!window.currentUser) return;
   const isServer = window.deployMode === 'server';
-  const hide = sel => main.querySelectorAll(sel).forEach(el => { el.hidden = true; });
+  const hide = sel => {
+    main.querySelectorAll(sel).forEach(el => { el.hidden = true; });
+    document.querySelectorAll('dialog.person-editor-dialog').forEach(d => d.querySelectorAll(sel).forEach(el => { el.hidden = true; }));
+  };
 
   // Server mode: hide all host-local filesystem & shutdown controls
   if (isServer) {
@@ -571,7 +574,7 @@ function applyPagePermissions() {
     hide('[data-action="edit-person"], [data-action="upload-person-music"]');
   }
   if (!window.hasPerm('people.voice_clone')) {
-    hide('[data-action="start-voice-training"], [data-action="pick-voice-sample"], [data-action="view-voice-slots"]');
+    hide('[data-action="start-voice-training"], [data-action="pick-voice-sample"], [data-action="generate-voice-sample"], [data-action="view-voice-slots"]');
   }
 
   // Styles permissions
@@ -619,6 +622,7 @@ function applyPagePermissions() {
     }
   }
 }
+window.applyPagePermissions = applyPagePermissions;
 
 // Hook labels, updateChrome, render, and refresh
 Object.assign(labels, { admin: '账号与权限中心' });

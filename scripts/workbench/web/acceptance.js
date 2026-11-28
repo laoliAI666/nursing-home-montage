@@ -158,7 +158,7 @@ function renderLiveProgress(){
 document.addEventListener('click',async e=>{const button=e.target.closest('[data-action="inspect-progress"]');if(!button)return;await busy(button,async()=>{try{await refresh(false);if(route==='task'){diagnosticOpen=true;renderLiveProgress();}else if(route==='tasks'){diagnosticOpen=true;renderTasks();notify('已读取当前记录，未向制作 Agent 发送操作');}}catch(err){notify(err.message,true);}});});
 function updateLiveClock(){main.querySelectorAll('[data-age-at]').forEach(el=>{const value=timeSince(Number(el.dataset.ageAt));if(el.textContent!==value)el.textContent=value;});const age=main.querySelector('.live-age'),sync=main.querySelector('.live-sync');if(age){const seconds=Math.max(0,Math.floor(Date.now()/1000-Number(age.dataset.updated)));const value='状态更新于 '+(seconds<60?seconds+' 秒前':Math.floor(seconds/60)+' 分钟前')+(seconds>180&&main.querySelector('.live-spinner')?' · 等待新的阶段回传':'');if(age.textContent!==value)age.textContent=value;}if(sync){const last=Number(document.documentElement.dataset.lastSync)||0,value=Date.now()-last<12000?'页面同步正常':'页面连接待恢复';if(sync.textContent!==value)sync.textContent=value;}}
 const refreshBeforeLive=refresh;let refreshChain=Promise.resolve();
-refresh=function(paint=true){const next=refreshChain.then(()=>refreshBeforeLive(paint)).then(()=>{if(paint)enhanceManagement();});refreshChain=next.catch(()=>{});return next;};
+refresh=function(paint=true,force=false){const next=refreshChain.then(()=>refreshBeforeLive(paint,force)).then(()=>{if(paint)enhanceManagement();});refreshChain=next.catch(()=>{});return next;};
 new MutationObserver(()=>enhanceManagement()).observe(main,{childList:true,subtree:true});
 setInterval(()=>{if(!document.hidden)updateLiveClock();},1000);
 

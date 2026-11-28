@@ -33,7 +33,7 @@ const paths = {
 };
 const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.clapper}</svg>`;
 function hydrateIcons(root = document) { root.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = icon(el.dataset.icon); }); }
-let state, route = 'create', selectedTask, editPerson, worksFilter = 'all', uploadTarget = 'source', scanResult, toastTimer;
+let state, route = 'create', selectedTask, editPerson, personEditorDialog = null, personEditorOpener = null, worksFilter = 'all', uploadTarget = 'source', scanResult, toastTimer;
 let createDraft = {};
 const main = $('#main');
 const labels = {create:'制作工作台', works:'我的作品', people:'我的数字人', settings:'服务设置', onboarding:'首次使用指南', task:'制作详情', preview:'成品预览'};
@@ -577,37 +577,56 @@ function personVoicePlatform(person) {
 function voiceUploadControl(person, label, provider='') {
   return `<input type="file" id="person-voice-file" data-person="${E(person.id)}" data-provider="${provider}" accept=".wav,.mp3,.m4a,.aac,.flac,.ogg" hidden><button type="button" class="secondary" data-action="pick-voice-sample">${icon('plus')} ${label}</button>`;
 }
+function voiceMissingSampleNotice(options, targetLabel) {
+  const boundLabel = voicePlatforms[options.boundProvider] || '原平台';
+  return `<div class="person-voice-notice" role="status">
+    <strong>暂未检测到本地录音样本，需先准备录音才能复刻</strong>
+    <p>${options.canGenerateFromBound
+      ? `该数字人当前仅绑定了已有${E(boundLabel)}音色，本地未保存原始录音。请上传 10–20 秒单人录音（推荐），或点击下方「用当前${E(boundLabel)}音色生成参考录音」一键提取后再点「复刻」。`
+      : `请先上传一段 10–20 秒清晰单人朗读录音（最长 60 秒），上传完成后「复刻」按钮会自动可用并提交给${E(targetLabel)}。`}</p>
+  </div>`;
+}
 function minimaxVoiceSwitch(person, voice) {
   const options=voice.minimaxSwitch;
   const issue=['failed','paused'].includes(voice.state);
+  const boundLabel=voicePlatforms[options.boundProvider]||'火山语音';
+  const readyToClone=Boolean(options.canStart&&options.hasSample);
+  const disabledTip=!options.canStart?'当前有复刻任务正在处理，请等待结果返回':'请先上传录音或用当前音色生成参考录音后再复刻';
   return `<div class="person-voice">
     <p class="form-help">当前使用火山音色。MiniMax 复刻成功后会自动切换。</p>
     ${options.started&&voice.message?`<p class="${issue?'inline-error':'form-help'}" role="status">${E(voice.message)}</p>`:''}
-    ${options.canUpload?`<p class="form-help">${options.hasSample?'可以用已保存的录音复刻，也可以更换录音。':'请先上传至少 10 秒的单人录音。'}</p>`:''}
+    ${options.canUpload&&!options.hasSample?voiceMissingSampleNotice(options,'MiniMax'):''}
+    ${options.canUpload&&options.hasSample?'<p class="form-help">已准备好本地录音样本，可直接复刻，也可以更换录音。</p>':''}
     ${!state.config.voice.minimaxConfigured?'<p class="form-help">复刻前请到<a href="#settings">设置</a>保存 MiniMax API Key。</p>':''}
     <div class="person-voice-actions">
       ${options.canUpload?voiceUploadControl(person,options.hasSample?'更换录音':'上传录音','minimax'):''}
+      ${options.canUpload&&options.canGenerateFromBound&&!options.hasSample?`<button type="button" class="secondary" data-action="generate-voice-sample" data-id="${E(person.id)}" data-provider="minimax">用当前${E(boundLabel)}音色生成参考录音</button>`:''}
       <button type="button" class="secondary" data-action="start-voice-training" data-id="${E(person.id)}" data-provider="minimax"
-        ${options.canStart&&options.hasSample?'':'disabled'}>复刻</button>
+        ${readyToClone?'':`disabled title="${E(disabledTip)}"`}>复刻</button>
     </div>
-    ${options.canStart&&options.hasSample?'<p class="form-help">点击「复刻」会把录音发送给 MiniMax。</p>':''}
+    ${readyToClone?'<p class="form-help">点击「复刻」会把录音发送给 MiniMax。</p>':''}
   </div>`;
 }
 function aliyunPersonVoice(person, voice, selectedModel) {
   const options=voice.aliyunClone;
   const issue=['failed','paused'].includes(voice.state);
   const model=options.resuming?options.model:selectedModel;
+  const boundLabel=voicePlatforms[options.boundProvider]||'原平台';
   const showStatus=options.started||(voice.state==='ready'&&voice.attemptProvider==='aliyun');
+  const readyToClone=Boolean(options.canStart&&(options.hasSample||options.resuming));
+  const disabledTip=!options.canStart?'当前有复刻任务正在处理，请等待结果返回':'请先上传录音或用当前音色生成参考录音后再复刻';
   return `<div class="person-voice">
     ${person.speaker?'<p class="form-help">新音色复刻成功后会自动换绑。</p>':''}
     ${showStatus&&voice.message?`<p class="${issue?'inline-error':'form-help'}" role="status">${E(voice.message)}</p>`:''}
     ${options.resuming?`<p class="form-help">正在处理的模型为 ${E(aliyunModels[model])}。</p>`:''}
-    ${options.canUpload?`<p class="form-help">${options.hasSample?'可用已保存的录音，也可以更换。':'请上传录音。'}建议 10–20 秒清晰单人朗读，最长 60 秒。</p>`:''}
+    ${options.canUpload&&!options.hasSample&&!options.resuming?voiceMissingSampleNotice(options,'阿里百炼'):''}
+    ${options.canUpload&&options.hasSample?'<p class="form-help">可用已保存的录音，也可以更换。建议 10–20 秒清晰单人朗读，最长 60 秒。</p>':''}
     ${!state.config.voice.aliyunConfigured?'<p class="form-help">请先在<a href="#settings">设置</a>填写百炼 API Key 和北京区业务空间 ID。</p>':''}
     <div class="person-voice-actions">
       ${options.canUpload?voiceUploadControl(person,options.hasSample?'更换录音':'上传录音','aliyun'):''}
+      ${options.canUpload&&options.canGenerateFromBound&&!options.hasSample&&!options.resuming?`<button type="button" class="secondary" data-action="generate-voice-sample" data-id="${E(person.id)}" data-provider="aliyun">用当前${E(boundLabel)}音色生成参考录音</button>`:''}
       <button type="button" class="secondary" data-action="start-voice-training" data-id="${E(person.id)}" data-provider="aliyun"
-        data-model="${E(model)}" ${options.canStart&&(options.hasSample||options.resuming)?'':'disabled'}>复刻</button>
+        data-model="${E(model)}" ${readyToClone?'':`disabled title="${E(disabledTip)}"`}>复刻</button>
     </div>
     ${options.canStart&&options.hasSample&&!options.resuming?'<p class="form-help">点击「复刻」会把录音发送给阿里百炼。</p>':''}
   </div>`;
@@ -731,14 +750,29 @@ function paintVoiceUpdates(previousPeople) {
     }
     const custom=$('#custom-speaker'), provider=$('#person-voice-provider');
     if(custom.value===(prior?.custom_speaker_id||''))custom.value=person.custom_speaker_id||'';
-    if(prior&&provider.value===personVoicePlatform(prior))provider.value=personVoicePlatform(person);
+    if(prior&&provider.value===personVoicePlatform(prior)){
+      provider.value=personVoicePlatform(person);
+      provider.dispatchEvent(new Event('input',{bubbles:true}));
+    }
     const model=$('#person-aliyun-model');
-    if(person.aliyun_model&&person.aliyun_model!==prior?.aliyun_model)model.value=person.aliyun_model;
+    if(person.aliyun_model&&person.aliyun_model!==prior?.aliyun_model){
+      model.value=person.aliyun_model;
+      model.dispatchEvent(new Event('input',{bubbles:true}));
+    }
     const dialect=$('#person-voice-dialect');
     if(dialect&&(person.voice_dialect||'')!==(prior?.voice_dialect||'')&&dialect.value===(prior?.voice_dialect||'')){
       dialect.value=person.voice_dialect||'';
+      dialect.dispatchEvent(new Event('input',{bubbles:true}));
     }
     syncPersonVoice($('#person-form'),person);
+  }
+}
+function applyVoiceTrainingUpdate(ident, result) {
+  const person=state?.config?.people?.find(p=>p.id===ident);
+  if(person&&result){
+    person.voiceTraining=result;
+    const form=$('#person-form');
+    if(editPerson===ident&&form)syncPersonVoice(form,person);
   }
 }
 async function uploadPersonVoice(input) {
@@ -752,7 +786,8 @@ async function uploadPersonVoice(input) {
       const response=await fetch(`/api/people/${encodeURIComponent(ident)}/voice-sample?${query}`,{
         method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file});
       const result=await response.json();if(!response.ok)throw new Error(result.error);
-      await refresh();notify('录音已保存');
+      applyVoiceTrainingUpdate(ident,result);
+      await refresh(true,true);notify('录音已保存，现在可以点击「复刻」');
     } catch(error) {notify(error.message,true);}
     finally {input.value='';}
   });
@@ -762,7 +797,6 @@ function formatTrackDuration(seconds) {
   return (h ? h + ':' : '') + String(m).padStart(h ? 2 : 1, '0') + ':' + String(n % 60).padStart(2, '0');
 }
 function renderPeople() {
-  clearVoicePreview();
   main.innerHTML = `${heading('每条视频，都有自己的主角。','照片、音色、配乐、视频风格、片尾钩子与分发账号统一归档在人物资料中，选好人物即可制作。',`<button class="secondary" data-action="add-person">${icon('plus')} 添加数字人</button>`)}<div class="people-grid">${state.config.people.map(p => {
     const covers = state.styles?.covers || [];
     const videos = state.styles?.videos || [];
@@ -783,8 +817,10 @@ function renderPeople() {
     }
     const dialectPrefix = p.voice_dialect ? `方言：${dialectLabel(p.voice_dialect, true)} · ` : '';
     return `<article class="person-card"><div class="portrait-area">${p.hasPortrait ? `<img src="/media/person/${E(p.id)}" alt="${E(p.name)}的数字人照片">` : ''}${p.isDefault ? badge('默认出镜') : ''}</div><div class="person-card-content"><h2>${E(p.name)} <span data-person-ready="${E(p.id)}">${personReadiness(p)}</span></h2><p class="person-card-styles">${E(dialectPrefix + styleLine)}</p><button class="secondary" data-action="edit-person" data-id="${E(p.id)}">编辑人物资料 ${icon('arrow-right')}</button></div></article>`;
-  }).join('')}<button class="add-person" data-action="add-person">${icon('plus')}<strong>添加一位新数字人</strong><small>形象、声音、风格、配乐与平台账号<br>一次绑好，做片直接复用。</small></button></div><div id="person-editor">${editPerson !== undefined ? personEditor() : ''}</div>`;
-  bindPerson();
+  }).join('')}<button class="add-person" data-action="add-person">${icon('plus')}<strong>添加一位新数字人</strong><small>形象、声音、风格、配乐与平台账号<br>一次绑好，做片直接复用。</small></button></div>`;
+  if (editPerson !== undefined && (!personEditorDialog || !personEditorDialog.isConnected)) {
+    openPersonEditor(editPerson);
+  }
 }
 function personUploadFields() {
   return `<div class="form-row person-upload-fields">
@@ -839,126 +875,191 @@ function personEditor() {
     ['visual', '配乐与视觉'],
     ['platforms', '分发账号'],
   ];
-  return `<section class="panel editor-panel">
-    <div class="editor-heading"><div><h2>${p?'编辑 '+E(p.name):'添加一个数字人'}</h2><p class="form-help" style="margin-top:4px">按模块管理数字人的形象、声音、口播、视觉与平台账号配置。</p></div><button data-action="close-editor" aria-label="关闭人物编辑">${icon('close')}</button></div>
-    <div class="person-module-nav" role="navigation" aria-label="人物资料模块">${modules.map(([id, label]) => `<button type="button" class="person-module-pill" data-module-jump="${id}">${label}</button>`).join('')}</div>
-    <form id="person-form">
-      ${p?`<input type="hidden" name="id" value="${E(p.id)}">`:''}
-      <div class="person-modules">
-        <section class="person-module" id="person-module-profile" data-module="profile">
-          <div class="person-module-head"><span class="person-module-icon">${icon('person')}</span><div><h3>个人信息与形象</h3><p>数字人基础称呼、出镜照片与默认身份。</p></div></div>
-          <div class="form-group"><label class="field-label" for="person-name">人物名称</label><input class="input" id="person-name" name="name" value="${E(p?.name)}" placeholder="例如：小林" required></div>
-          ${p ? '' : personUploadFields()}
-          <div class="switch-row"><label for="person-default">设为默认出镜人物</label><input class="switch" type="checkbox" name="default" id="person-default" ${p?.isDefault||!state.config.people.length?'checked':''}></div>
-        </section>
-
-        <section class="person-module" id="person-module-voice" data-module="voice">
-          <div class="person-module-head"><span class="person-module-icon">${icon('mic')}</span><div><h3>声音与配音</h3><p>配置语音平台、音色复刻、音色试听与语速。</p></div></div>
-          <div class="form-row">
-            <div class="form-group"><label class="field-label" for="person-voice-provider">语音平台</label>
-              <select id="person-voice-provider" name="person_voice_provider">${voicePlatformOptions(provider)}</select>
-            </div>
-            <div class="form-group">
-              <label class="field-label" for="speech-rate">语速</label>
-              <input class="input" type="number" min="-50" max="100" id="speech-rate" name="speech_rate" value="${p?.speech_rate??-3}">
-              <p class="form-help">0 为标准速度，负数稍慢，正数稍快。</p>
-            </div>
-          </div>
-          <fieldset class="form-group provider-fields" data-person-platform="volcengine" ${provider==='volcengine'?'':'hidden disabled'}>
-            <div class="form-group"><label class="field-label" for="person-speaker">火山音色 ID<span class="optional">已有音色才填</span></label>
-              <input class="input" id="person-speaker" name="speaker" value="${E(speaker('volcengine'))}" placeholder="例如：S_xxxxxxxx">
-            </div>
-            <div class="form-group" id="person-custom-fields" ${showCustom?'':'hidden'}>
-              <label class="field-label" for="custom-speaker">火山自定义音色 ID</label>
-              <input class="input" id="custom-speaker" name="custom_speaker_id" value="${E(p?.custom_speaker_id)}" ${showCustom?'':'disabled'}>
-            </div>
-          </fieldset>
-          <fieldset class="form-group provider-fields" data-person-platform="minimax" ${provider==='minimax'?'':'hidden disabled'}>
-            <label class="field-label" for="person-minimax-speaker">MiniMax Voice ID<span class="optional">已有音色才填</span></label>
-            <input class="input" id="person-minimax-speaker" name="speaker" value="${E(speaker('minimax'))}">
-          </fieldset>
-          <fieldset class="form-group provider-fields" data-person-platform="aliyun" ${provider==='aliyun'?'':'hidden disabled'}>
-            <div class="form-group">
-              <label class="field-label" for="person-aliyun-model">百炼语音模型</label>
-              <select id="person-aliyun-model" name="person_aliyun_model">${aliyunModelOptions(p?.aliyun_model||state.config.voice.aliyunModel)}</select>
-            </div>
-            <label class="field-label" for="person-aliyun-speaker">百炼音色 ID<span class="optional">已有音色才填</span></label>
-            <input class="input" id="person-aliyun-speaker" name="speaker" value="${E(speaker('aliyun'))}">
-          </fieldset>
-          <div class="form-group">
-            <label class="field-label" for="person-voice-dialect">配音方言<span class="optional">默认普通话</span></label>
-            <select id="person-voice-dialect" name="voice_dialect" data-search="false">${dialectOptionsHtml(p?.voice_dialect||'', provider, p?.aliyun_model||state.config.voice.aliyunModel)}</select>
-            <p id="person-dialect-help" class="form-help">${E(dialectHintFor(provider, p?.aliyun_model||state.config.voice.aliyunModel))}</p>
-            <p id="person-dialect-reset-note" class="form-help" role="status" hidden></p>
-          </div>
-          <div id="person-voice-editor" class="form-group">${p?personVoice(p,true,provider):'<p class="form-help">没有音色可留空，保存人物后点击「复刻」，音色会自动绑定。</p>'}</div>
-          ${p?`<details id="voice-preview" class="form-group" ${p.speaker?'':'hidden'}>
-            <summary class="field-label">试听音色</summary>
-            <label class="field-label" for="voice-preview-text">试听文案 <span class="optional">选填</span></label>
-            <textarea id="voice-preview-text" maxlength="200" placeholder="留空会用人物名生成一段约 10 秒的自我介绍。"></textarea>
-            <p class="form-help">使用当前绑定的 <span id="voice-preview-platform">${E(voicePreviewPlatformText(p))}</span> 音色，按平台规则计费。</p>
-            <div class="person-voice-actions"><button type="button" class="secondary" id="generate-voice-preview">确认合成试听</button></div>
-            <p id="voice-preview-status" class="form-help" role="status"></p>
-            <div id="voice-preview-player"></div>
-          </details>`:''}
-        </section>
-
-        <section class="person-module" id="person-module-narration" data-module="narration">
-          <div class="person-module-head"><span class="person-module-icon">${icon('text')}</span><div><h3>口播内容</h3><p>固定该数字人的片尾收口话术与表达偏好。</p></div></div>
-          <div class="form-group">
-            <div class="label-row">
-              <label class="field-label" for="person-closing-hook" style="margin:0">片尾钩子（口播最后一句话）<span class="optional">选填</span></label>
-              <span id="person-hook-count" class="person-hook-count">${closingHook.length} / 120 字</span>
-            </div>
-            <textarea id="person-closing-hook" name="closing_hook" rows="3" maxlength="120" placeholder="例如：养老这件事，交给懂的人。我是税嘉，在重庆替你看100家养老院。想实地参观的，评论区扣参观，我安排。">${E(closingHook)}</textarea>
-            <p class="form-help">留空则由 AI 按默认咨询引导生成。填写后，该数字人每条口播最后一句将固定原样念出这段话（请不要包含括号）。</p>
-          </div>
-          <div class="module-roadmap"><span>规划中</span><p>口播语气风格将在后续版本加入本模块，与片尾钩子统一管理。</p></div>
-        </section>
-
-        <section class="person-module" id="person-module-visual" data-module="visual">
-          <div class="person-module-head"><span class="person-module-icon">${icon('palette')}</span><div><h3>配乐与视觉风格</h3><p>为该数字人绑定专属背景音乐与视频风格（含配套封面与视频样式），制作时自动套用。</p></div></div>
-          <div class="form-group">
-            <div class="label-row">
-              <label class="field-label" for="person-music-track" style="margin:0">专属背景音乐（BGM）<span class="optional">选填</span></label>
-              <div class="person-music-actions">
-                <button type="button" class="text-button" data-action="upload-person-music">${icon('plus')} 上传新配乐</button>
-                <a class="text-button" href="#settings/music">管理配乐 ${icon('arrow-up-right')}</a>
-              </div>
-            </div>
-            <select id="person-music-track" name="music_track_id">${personMusicOptions(boundMusicId)}</select>
-            <input type="file" id="person-music-upload" accept="audio/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.opus" hidden>
-            <p id="person-music-upload-status" class="form-help" role="status"></p>
-            <div id="person-music-preview" class="person-music-preview">${renderPersonMusicPreview(boundMusicId)}</div>
-            <p class="form-help">绑定后，每次选这位数字人制作视频都会自动使用这首配乐；单次新建制作也可临时覆盖。</p>
-          </div>
-          <input type="hidden" name="cover_template_id" value="${E(p?.cover_template_id || '')}">
-          <input type="hidden" name="video_style_id" value="${E(p?.video_style_id || '')}">
-          <div id="person-style-bindings" class="person-style-bindings"></div>
-        </section>
-
-        <section class="person-module" id="person-module-platforms" data-module="platforms">
-          <div class="person-module-head"><span class="person-module-icon">${icon('arrow-up-right')}</span><div><h3>多平台分发账号</h3><p>全部非必填，绑定后用于后续一键分发到对应平台账号。</p></div></div>
-          <div class="platform-accounts-grid">
-            <div class="form-group">
-              <label class="field-label" for="person-xhs-id">小红书账号 ID<span class="optional">选填</span></label>
-              <input class="input" id="person-xhs-id" name="xiaohongshu_account_id" maxlength="100" value="${E(xhsId)}" placeholder="填写小红书账号 ID">
-            </div>
-            <div class="form-group">
-              <label class="field-label" for="person-dy-id">抖音账号 ID<span class="optional">选填</span></label>
-              <input class="input" id="person-dy-id" name="douyin_account_id" maxlength="100" value="${E(dyId)}" placeholder="填写抖音账号 ID">
-            </div>
-            <div class="form-group">
-              <label class="field-label" for="person-channels-id">视频号账号 ID<span class="optional">选填</span></label>
-              <input class="input" id="person-channels-id" name="channels_account_id" maxlength="100" value="${E(channelsId)}" placeholder="填写视频号账号 ID">
-            </div>
-          </div>
-        </section>
+  return `<div class="style-dialog-head">
+      <div>
+        <h2 id="person-dialog-title">${p?'编辑 '+E(p.name):'添加一个数字人'}</h2>
+        <p class="style-dialog-sub">按模块管理数字人的形象、声音、口播、视觉与平台账号配置。</p>
       </div>
-      <div id="person-error" class="inline-error error-slot" role="alert"></div>
-      <div class="person-editor-footer"><button class="primary" type="submit">${icon('save')} 保存人物资料</button></div>
-    </form>
-  </section>`;
+      <button type="button" data-action="close-editor" aria-label="关闭人物编辑">${icon('close')}</button>
+    </div>
+    <form id="person-form" class="person-modal-form">
+      ${p?`<input type="hidden" name="id" value="${E(p.id)}">`:''}
+      <div class="person-modal-body">
+        <nav class="person-modal-nav" aria-label="人物资料模块">${modules.map(([id, label], idx) => `<button type="button" class="${idx===0?'active':''}" data-module-jump="${id}">${label}</button>`).join('')}</nav>
+        <div class="person-modal-content">
+          <div class="person-modules">
+            <section class="person-module" id="person-module-profile" data-module="profile">
+              <div class="person-module-head"><span class="person-module-icon">${icon('person')}</span><div><h3>个人信息与形象</h3><p>数字人基础称呼、出镜照片与默认身份。</p></div></div>
+              <div class="form-group"><label class="field-label" for="person-name">人物名称</label><input class="input" id="person-name" name="name" value="${E(p?.name)}" placeholder="例如：小林" required></div>
+              ${p ? '' : personUploadFields()}
+              <div class="switch-row"><label for="person-default">设为默认出镜人物</label><input class="switch" type="checkbox" name="default" id="person-default" ${p?.isDefault||!state.config.people.length?'checked':''}></div>
+            </section>
+
+            <section class="person-module" id="person-module-voice" data-module="voice">
+              <div class="person-module-head"><span class="person-module-icon">${icon('mic')}</span><div><h3>声音与配音</h3><p>配置语音平台、音色复刻、音色试听与语速。</p></div></div>
+              <div class="form-row">
+                <div class="form-group"><label class="field-label" for="person-voice-provider">语音平台</label>
+                  <select id="person-voice-provider" name="person_voice_provider">${voicePlatformOptions(provider)}</select>
+                </div>
+                <div class="form-group">
+                  <label class="field-label" for="speech-rate">语速</label>
+                  <input class="input" type="number" min="-50" max="100" id="speech-rate" name="speech_rate" value="${p?.speech_rate??-3}">
+                  <p class="form-help">0 为标准速度，负数稍慢，正数稍快。</p>
+                </div>
+              </div>
+              <fieldset class="form-group provider-fields" data-person-platform="volcengine" ${provider==='volcengine'?'':'hidden disabled'}>
+                <div class="form-group"><label class="field-label" for="person-speaker">火山音色 ID<span class="optional">已有音色才填</span></label>
+                  <input class="input" id="person-speaker" name="speaker" value="${E(speaker('volcengine'))}" placeholder="例如：S_xxxxxxxx">
+                </div>
+                <div class="form-group" id="person-custom-fields" ${showCustom?'':'hidden'}>
+                  <label class="field-label" for="custom-speaker">火山自定义音色 ID</label>
+                  <input class="input" id="custom-speaker" name="custom_speaker_id" value="${E(p?.custom_speaker_id)}" ${showCustom?'':'disabled'}>
+                </div>
+              </fieldset>
+              <fieldset class="form-group provider-fields" data-person-platform="minimax" ${provider==='minimax'?'':'hidden disabled'}>
+                <label class="field-label" for="person-minimax-speaker">MiniMax Voice ID<span class="optional">已有音色才填</span></label>
+                <input class="input" id="person-minimax-speaker" name="speaker" value="${E(speaker('minimax'))}">
+              </fieldset>
+              <fieldset class="form-group provider-fields" data-person-platform="aliyun" ${provider==='aliyun'?'':'hidden disabled'}>
+                <div class="form-group">
+                  <label class="field-label" for="person-aliyun-model">百炼语音模型</label>
+                  <select id="person-aliyun-model" name="person_aliyun_model">${aliyunModelOptions(p?.aliyun_model||state.config.voice.aliyunModel)}</select>
+                </div>
+                <label class="field-label" for="person-aliyun-speaker">百炼音色 ID<span class="optional">已有音色才填</span></label>
+                <input class="input" id="person-aliyun-speaker" name="speaker" value="${E(speaker('aliyun'))}">
+              </fieldset>
+              <div class="form-group">
+                <label class="field-label" for="person-voice-dialect">配音方言<span class="optional">默认普通话</span></label>
+                <select id="person-voice-dialect" name="voice_dialect" data-search="false">${dialectOptionsHtml(p?.voice_dialect||'', provider, p?.aliyun_model||state.config.voice.aliyunModel)}</select>
+                <p id="person-dialect-help" class="form-help">${E(dialectHintFor(provider, p?.aliyun_model||state.config.voice.aliyunModel))}</p>
+                <p id="person-dialect-reset-note" class="form-help" role="status" hidden></p>
+              </div>
+              <div id="person-voice-editor" class="form-group">${p?personVoice(p,true,provider):'<p class="form-help">没有音色可留空，保存人物后点击「复刻」，音色会自动绑定。</p>'}</div>
+              ${p?`<details id="voice-preview" class="form-group" ${p.speaker?'':'hidden'}>
+                <summary class="field-label">试听音色</summary>
+                <label class="field-label" for="voice-preview-text">试听文案 <span class="optional">选填</span></label>
+                <textarea id="voice-preview-text" maxlength="200" placeholder="留空会用人物名生成一段约 10 秒的自我介绍。"></textarea>
+                <p class="form-help">使用当前绑定的 <span id="voice-preview-platform">${E(voicePreviewPlatformText(p))}</span> 音色，按平台规则计费。</p>
+                <div class="person-voice-actions"><button type="button" class="secondary" id="generate-voice-preview">确认合成试听</button></div>
+                <p id="voice-preview-status" class="form-help" role="status"></p>
+                <div id="voice-preview-player"></div>
+              </details>`:''}
+            </section>
+
+            <section class="person-module" id="person-module-narration" data-module="narration">
+              <div class="person-module-head"><span class="person-module-icon">${icon('text')}</span><div><h3>口播内容</h3><p>固定该数字人的片尾收口话术与表达偏好。</p></div></div>
+              <div class="form-group">
+                <div class="label-row">
+                  <label class="field-label" for="person-closing-hook" style="margin:0">片尾钩子（口播最后一句话）<span class="optional">选填</span></label>
+                  <span id="person-hook-count" class="person-hook-count">${closingHook.length} / 120 字</span>
+                </div>
+                <textarea id="person-closing-hook" name="closing_hook" rows="3" maxlength="120" placeholder="例如：养老这件事，交给懂的人。我是税嘉，在重庆替你看100家养老院。想实地参观的，评论区扣参观，我安排。">${E(closingHook)}</textarea>
+                <p class="form-help">留空则由 AI 按默认咨询引导生成。填写后，该数字人每条口播最后一句将固定原样念出这段话（请不要包含括号）。</p>
+              </div>
+              <div class="module-roadmap"><span>规划中</span><p>口播语气风格将在后续版本加入本模块，与片尾钩子统一管理。</p></div>
+            </section>
+
+            <section class="person-module" id="person-module-visual" data-module="visual">
+              <div class="person-module-head"><span class="person-module-icon">${icon('palette')}</span><div><h3>配乐与视觉风格</h3><p>为该数字人绑定专属背景音乐与视频风格（含配套封面与视频样式），制作时自动套用。</p></div></div>
+              <div class="form-group">
+                <div class="label-row">
+                  <label class="field-label" for="person-music-track" style="margin:0">专属背景音乐（BGM）<span class="optional">选填</span></label>
+                  <div class="person-music-actions">
+                    <button type="button" class="text-button" data-action="upload-person-music">${icon('plus')} 上传新配乐</button>
+                    <a class="text-button" href="#settings/music">管理配乐 ${icon('arrow-up-right')}</a>
+                  </div>
+                </div>
+                <select id="person-music-track" name="music_track_id">${personMusicOptions(boundMusicId)}</select>
+                <input type="file" id="person-music-upload" accept="audio/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.opus" hidden>
+                <p id="person-music-upload-status" class="form-help" role="status"></p>
+                <div id="person-music-preview" class="person-music-preview">${renderPersonMusicPreview(boundMusicId)}</div>
+                <p class="form-help">绑定后，每次选这位数字人制作视频都会自动使用这首配乐；单次新建制作也可临时覆盖。</p>
+              </div>
+              <input type="hidden" name="cover_template_id" value="${E(p?.cover_template_id || '')}">
+              <input type="hidden" name="video_style_id" value="${E(p?.video_style_id || '')}">
+              <div id="person-style-bindings" class="person-style-bindings"></div>
+            </section>
+
+            <section class="person-module" id="person-module-platforms" data-module="platforms">
+              <div class="person-module-head"><span class="person-module-icon">${icon('arrow-up-right')}</span><div><h3>多平台分发账号</h3><p>全部非必填，绑定后用于后续一键分发到对应平台账号。</p></div></div>
+              <div class="platform-accounts-grid">
+                <div class="form-group">
+                  <label class="field-label" for="person-xhs-id">小红书账号 ID<span class="optional">选填</span></label>
+                  <input class="input" id="person-xhs-id" name="xiaohongshu_account_id" maxlength="100" value="${E(xhsId)}" placeholder="填写小红书账号 ID">
+                </div>
+                <div class="form-group">
+                  <label class="field-label" for="person-dy-id">抖音账号 ID<span class="optional">选填</span></label>
+                  <input class="input" id="person-dy-id" name="douyin_account_id" maxlength="100" value="${E(dyId)}" placeholder="填写抖音账号 ID">
+                </div>
+                <div class="form-group">
+                  <label class="field-label" for="person-channels-id">视频号账号 ID<span class="optional">选填</span></label>
+                  <input class="input" id="person-channels-id" name="channels_account_id" maxlength="100" value="${E(channelsId)}" placeholder="填写视频号账号 ID">
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+      <div class="person-modal-foot">
+        <div id="person-error" class="inline-error error-slot" role="alert"></div>
+        <div class="person-modal-foot-actions">
+          <button type="button" class="secondary" data-action="close-editor">取消</button>
+          <button class="primary" type="submit">${icon('save')} 保存人物资料</button>
+        </div>
+      </div>
+    </form>`;
+}
+function closePersonEditor(restoreFocus = true) {
+  editPerson = undefined;
+  clearVoicePreview();
+  if (typeof closeSelect === 'function') closeSelect();
+  const dialog = personEditorDialog;
+  const opener = personEditorOpener;
+  personEditorDialog = null;
+  personEditorOpener = null;
+  if (dialog) {
+    if (dialog.open) dialog.close();
+    dialog.remove();
+  }
+  if (restoreFocus && opener?.isConnected) opener.focus();
+}
+function openPersonEditor(personId, opener = null) {
+  editPerson = personId;
+  if (opener) personEditorOpener = opener;
+  clearVoicePreview();
+  if (typeof closeSelect === 'function') closeSelect();
+  if (personEditorDialog && personEditorDialog.isConnected) {
+    personEditorDialog.innerHTML = personEditor();
+    bindPerson();
+    window.applyPagePermissions?.();
+    const content = personEditorDialog.querySelector('.person-modal-content');
+    if (content) content.scrollTop = 0;
+    return;
+  }
+  const dialog = document.createElement('dialog');
+  dialog.id = 'person-editor-dialog';
+  dialog.className = 'style-dialog person-editor-dialog';
+  dialog.setAttribute('aria-labelledby', 'person-dialog-title');
+  dialog.innerHTML = personEditor();
+  document.body.append(dialog);
+  personEditorDialog = dialog;
+  let backdropPointerDown = false;
+  dialog.addEventListener('pointerdown', ev => { backdropPointerDown = (ev.target === dialog); });
+  dialog.addEventListener('click', ev => {
+    if (backdropPointerDown && ev.target === dialog) closePersonEditor(true);
+    backdropPointerDown = false;
+  });
+  dialog.addEventListener('cancel', ev => {
+    ev.preventDefault();
+    if (document.querySelector('.select-popover')) {
+      if (typeof closeSelect === 'function') closeSelect(true);
+      return;
+    }
+    closePersonEditor(true);
+  });
+  dialog.showModal();
+  bindPerson();
+  window.applyPagePermissions?.();
 }
 function syncPersonVoice(form, person) {
   const provider=form.elements.person_voice_provider.value;
@@ -987,18 +1088,43 @@ function syncPersonVoice(form, person) {
     }
     dialectSelect.dispatchEvent(new Event('input',{bubbles:true}));
   }
-  if(person)$('#person-voice-editor').innerHTML=personVoice(person,true,provider,aliModel);
+  if(person){
+    $('#person-voice-editor').innerHTML=personVoice(person,true,provider,aliModel);
+    window.applyPagePermissions?.();
+  }
 }
 function bindPerson() {
   const form = $('#person-form');
   if (!form) return;
-  const editorPanel = form.closest('.editor-panel');
-  editorPanel?.querySelectorAll('[data-module-jump]').forEach(btn => {
+  const dialogRoot = form.closest('.person-editor-dialog') || form;
+  const scrollArea = dialogRoot.querySelector('.person-modal-content');
+  const navButtons = [...dialogRoot.querySelectorAll('[data-module-jump]')];
+  const setActiveNav = modId => {
+    navButtons.forEach(b => b.classList.toggle('active', b.dataset.moduleJump === modId));
+  };
+  navButtons.forEach(btn => {
     btn.addEventListener('click', () => {
-      const target = editorPanel.querySelector('#person-module-' + btn.dataset.moduleJump);
-      target?.scrollIntoView({behavior: 'smooth', block: 'start'});
+      const target = dialogRoot.querySelector('#person-module-' + btn.dataset.moduleJump);
+      setActiveNav(btn.dataset.moduleJump);
+      if (target && scrollArea) {
+        const top = target.offsetTop - 16;
+        scrollArea.scrollTo({top: Math.max(0, top), behavior: 'smooth'});
+      } else {
+        target?.scrollIntoView({behavior: 'smooth', block: 'start'});
+      }
     });
   });
+  if (scrollArea && navButtons.length) {
+    const sections = [...dialogRoot.querySelectorAll('.person-module[data-module]')];
+    scrollArea.addEventListener('scroll', () => {
+      const marker = scrollArea.scrollTop + 48;
+      let current = sections[0]?.dataset.module;
+      for (const sec of sections) {
+        if (sec.offsetTop <= marker) current = sec.dataset.module;
+      }
+      if (current) setActiveNav(current);
+    }, {passive: true});
+  }
   const editing=()=>state.config.people.find(person=>person.id===editPerson);
   bindVoicePreview(editing);
   form.elements.person_voice_provider.addEventListener('change',()=>syncPersonVoice(form,editing()));
@@ -1097,22 +1223,28 @@ function bindPerson() {
       try {
         if (data.has('id')) {
           await api('/api/people', {...Object.fromEntries(data), default:form.elements.default.checked});
-          editPerson = undefined;
+          await refresh(false, true);
+          closePersonEditor(true);
+          if (route === 'people') renderPeople();
+          notify('人物资料已保存');
         } else {
           const label = button.innerHTML;
           button.textContent = '正在上传并保存…';
+          let createdId;
           try {
             const response = await fetch('/api/people', {method:'POST', body:data});
             const result = await response.json();
             if (!response.ok) throw new Error(result.error);
-            editPerson = result.id;
+            createdId = result.id;
           } finally {
             button.innerHTML = label;
           }
+          await refresh(false, true);
+          editPerson = createdId;
+          if (route === 'people') renderPeople();
+          openPersonEditor(createdId);
+          notify('人物资料已保存，现在可以点击「复刻」或继续完善配置');
         }
-        await refresh(false);
-        if (route === 'people') renderPeople();
-        notify('人物资料已保存');
       } catch (error) {
         errorSlot.textContent = error.message;
       }
@@ -1225,10 +1357,17 @@ document.addEventListener('click', async e=>{
     if(action==='check-agent'){await api('/api/check-agent',{});await refresh(false);if($('#agent-config-status'))$('#agent-config-status').innerHTML=agentStatusBlock();updateChrome();notify(state.config.agent.canDispatch?'接单通道已有回传':'恢复连接请求已保存。请在 Codex 中接入本地接单通道。');}
     if(action==='copy-agent'){await navigator.clipboard.writeText(state.config.agent.instruction);notify('已复制，在 Agent 中粘贴并发送即可');}
     if(action==='preview')setRoute('preview/'+(button.dataset.reference?'reference':button.dataset.id+'/'+button.dataset.index));
-    if(action==='add-person'){editPerson=null;renderPeople();$('#person-editor').scrollIntoView({block:'start',behavior:'smooth'});}
-    if(action==='edit-person'){editPerson=button.dataset.id;renderPeople();$('#person-editor').scrollIntoView({block:'start',behavior:'smooth'});}
-    if(action==='close-editor'){editPerson=undefined;renderPeople();}
+    if(action==='add-person'){openPersonEditor(null,button);}
+    if(action==='edit-person'){openPersonEditor(button.dataset.id,button);}
+    if(action==='close-editor'){closePersonEditor(true);}
     if(action==='pick-voice-sample')$('#person-voice-file')?.click();
+    if(action==='generate-voice-sample')await busy(button,async()=>{
+      const ident=button.dataset.id, provider=button.dataset.provider;
+      const result=await api(`/api/people/${encodeURIComponent(ident)}/voice-sample-from-bound`,{provider});
+      applyVoiceTrainingUpdate(ident,result);
+      await refresh(true,true);
+      notify('已用当前音色生成参考录音，现在可以直接点击「复刻」');
+    });
     if(action==='view-voice-slots')await showVoiceSlots(button);
     if(action==='start-voice-training')await busy(button,async()=>{
       const person=state.config.people.find(p=>p.id===button.dataset.id);
@@ -1236,9 +1375,10 @@ document.addEventListener('click', async e=>{
       if(!retrain&&person?.voiceTraining.needsSlot&&provider==='volcengine'){
         await showVoiceSlots(button,person.id);
       }else{
-        await api(`/api/people/${encodeURIComponent(button.dataset.id)}/voice-training`,
+        const result=await api(`/api/people/${encodeURIComponent(button.dataset.id)}/voice-training`,
           {retrain,provider,model:button.dataset.model});
-        await refresh();
+        applyVoiceTrainingUpdate(button.dataset.id,result);
+        await refresh(true,true);
       }
     });
     if(action==='filter'){worksFilter=button.dataset.filter;renderWorks();}
@@ -1249,7 +1389,7 @@ document.addEventListener('click', async e=>{
 });
 $('#folder-upload').addEventListener('change',e=>importFolder(e.target.files));
 document.addEventListener('change',e=>{if(e.target.id==='person-voice-file')uploadPersonVoice(e.target);});
-window.addEventListener('hashchange',()=>{clearVoicePreview();render();window.scrollTo({top:0});});
+window.addEventListener('hashchange',()=>{closePersonEditor(false);clearVoicePreview();render();window.scrollTo({top:0});});
 async function refresh(paint=true) {
   const old=state;state=await api('/api/state');
   if(!paint)return;
