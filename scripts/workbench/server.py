@@ -1048,8 +1048,8 @@ class App:
 本次工程固定为：{t['job']}。使用队列记录给出的单视频工程目录，逐条完整复核并交付；不要用目录外的其他旧成片冒充成果。music 以请求为准。不够的信息先检查已有项目配置。
 原序号恢复：如果本次工程已有 state.json 和 runtime.json，先读取当前工程与已核验资产，从中断阶段继续。不能再次 inventory 或 revise 到这个已存在的目录，不能退回 baseJob 重新生成；baseJob 此时只供查证。仅在首次尚无本次工程时执行下方的首次制作或另存步骤。素材、音频、数字人和供应商任务按已保存的匹配关系复用。
 配乐选择：music=false 时在 plan.settings.music 中显式 enabled=false，music=true 时优先使用 request.videoMusicTracks[person].resource（若无则用 request.musicTrack.resource）合并到 plan.settings.music，必须用该固定副本，不改用最新默认曲。没有 musicTrack 的旧任务沿用已有 runtime。保留音量、人声避让和淡入淡出参数；音乐时长不足或哈希不匹配时提问，不私换曲目。单条重做继承原配乐。
-片尾钩子：若 request.personClosingHooks[person] 非空，口播最后一句（kind=cta）必须原样使用该数字人绑定的片尾钩子，并在 plan.settings.closing_hook.text 中写入同一原文，不要擅自改写。
-配音方言：若 request.personVoiceDialects[person] 为 "yue"（广东话），口播台词须全程按地道广东话（粤语）口语习惯撰写（如用「系、同、呢度、畀、嘅、睇下、今日、喺、冇」替代普通话书面语），同时保持机构名、地名、数字与照护专名准确且不加括号。
+片尾钩子：若 request.personClosingHooks[person] 非空，普通话及其他非粤语口播最后一句（kind=cta）必须原样使用该数字人绑定的片尾钩子，并在 plan.settings.closing_hook.text 中写入同一原文，不要擅自改写；若该人物绑定了广东话（request.personVoiceDialects[person] == "yue"），则须在严格保留人物称呼、数字、引流关键词与原意的前提下将绑定片尾钩子自然转为地道广东话（粤语）口语（禁括号），并将转换后的粤语末句写入 plan.settings.closing_hook.text。
+配音方言：若 request.personVoiceDialects[person] 为 "yue"（广东话），口播台词（含片尾钩子）须全程按地道广东话（粤语）口语习惯撰写（如用「系、同、呢度、畀、嘅、睇下、今日、喺、冇」替代普通话书面语），同时保持机构名、地名、数字与照护专名准确且不加括号。
 视觉风格：若 request.personVisualStyles[person] 存在，将 coverTemplateId 写入 plan.settings.cover.template，将 videoStyleId 写入 plan.settings.template.id，使用任务启动时固定的封面与视频样式。
 内容偏好：requirements 是整批共同偏好；videoPreferences 数组第 i 项仅对应第 i+1 条。单条明确指定的部分优先；未指定的部分继承整批偏好，两者均未填写时才按默认规范制作。两者都只能使用已核验事实。应同时适配本条的封面标题、三枚标签及选图、发布标题和描述、完整口播、分镜。用户只说“重点突出”时保留综合介绍，明确专题时按专题制作，不机械套同一份封面。
 单条重做：revisionFromArchive=true 表示旧任务已验收且中间资产已清理，此时不要执行 revise。按 source 快照新建工程，basePlan 只用于读取原稿和封面主题，使用当前项目人物/服务配置，移除旧计划中指向已清理资产的运行设置；按完整流程重新生成必要配音和数字人。否则 kind=revision 时只做 count=1 的这一条，revisionOf 是原视频，baseJob 是原可编辑工程，basePlan 是选中版本计划，revisedNarration 是用户编辑后的完整口播，publicationOverride 是用户指定的发布字段。读取原工程和以上字段，按 skill 的另存与恢复规范执行 revise SOURCE --out NEW --plan NEW_PLAN；不能修改其他视频或覆盖原工程。非空 revisedNarration 保留用户表述，逐句核对事实和字幕；如不符合事实，在页面提出具体问题。不要把旧配音、旧数字人口型当成新文案资产复用；文案未变时复用匹配资产。新的封面与标题仍须适配修改后的正文和偏好，显式发布字段覆盖自动稿。

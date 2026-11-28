@@ -659,9 +659,11 @@ class Editor:
 
     def draft_narration(self, context, facts, preference, budget, index, feedback='', *, variation=None, remember=None, closing_hook=None, rules=None, dialect=None):
         dialect_note = ''
+        adapt_hook = False
         if dialect:
-            from voice_dialects import narration_dialect_guidance
+            from voice_dialects import adapts_closing_hook_for_dialect, narration_dialect_guidance
             dialect_note = narration_dialect_guidance(dialect)
+            adapt_hook = bool(closing_hook and adapts_closing_hook_for_dialect(dialect))
         if variation is not None:
             from text_styles import build_narration_system_prompt
             if isinstance(rules, dict):
@@ -675,8 +677,12 @@ class Editor:
             return self.narration_paragraphs(result)
         # A rotation changes the entry point while every script keeps the same facts.
         ordered = facts[index % len(facts):] + facts[:index % len(facts)]
-        cta_rule = (f'结尾最后一段必须原样使用该数字人绑定的固定片尾钩子（一字不改）：「{closing_hook}」。'
-                    if closing_hook else '结尾留一句留言咨询参观。')
+        cta_rule = (
+            f'结尾最后一段须以该数字人绑定的固定片尾钩子为蓝本，严格保留人物称呼、数字、引流关键词与原意，并转为地道广东话（粤语）口语（禁括号）：「{closing_hook}」。'
+            if adapt_hook else
+            f'结尾最后一段必须原样使用该数字人绑定的固定片尾钩子（一字不改）：「{closing_hook}」。'
+            if closing_hook else '结尾留一句留言咨询参观。'
+        )
         payload = {**narration_material(context, ordered), 'preference': preference, 'feedback': feedback}
         if closing_hook:
             payload['boundClosingHook'] = closing_hook
@@ -706,9 +712,11 @@ class Editor:
     def revise_narration(self, parts, targets, issues, context, facts, budget, preference='', *,
                          variation=None, remember=None, closing_hook=None, rules=None, dialect=None):
         dialect_note = ''
+        adapt_hook = False
         if dialect:
-            from voice_dialects import narration_dialect_guidance
+            from voice_dialects import adapts_closing_hook_for_dialect, narration_dialect_guidance
             dialect_note = narration_dialect_guidance(dialect)
+            adapt_hook = bool(closing_hook and adapts_closing_hook_for_dialect(dialect))
         if variation is not None:
             from text_styles import build_narration_repair_prompt, extract_rules
             if isinstance(rules, dict):
@@ -727,7 +735,10 @@ class Editor:
                 once_note = '，全文只说一次。' if mention_once else '。'
                 protected.append(f'第 1 段自然说出完整机构名称「{name}」{once_note}')
             if closing_hook:
-                protected.append(f'最后一段为数字人绑定的固定片尾钩子，必须原样保留：{closing_hook}')
+                if adapt_hook:
+                    protected.append(f'最后一段基于数字人固定片尾钩子「{closing_hook}」，须严格保留人物称呼、数字、引流关键词与原意，并转为地道广东话（粤语）口语（禁括号）。')
+                else:
+                    protected.append(f'最后一段为数字人绑定的固定片尾钩子，必须原样保留：{closing_hook}')
             elif len(parts) - 1 in targets:
                 protected.append(f'最后一段只保留一个咨询动作：{user["咨询引导"]}')
             user['返修信息'] = {
@@ -772,9 +783,11 @@ class Editor:
         bound_hook = str((task.get('personClosingHooks') or {}).get(person) or '').strip() if (not revised and respect_hook) else ''
         bound_dialect = str((task.get('personVoiceDialects') or {}).get(person) or '').strip() if not revised else ''
         dialect_note = ''
+        adapt_hook = False
         if bound_dialect:
-            from voice_dialects import narration_dialect_guidance
+            from voice_dialects import adapts_closing_hook_for_dialect, narration_dialect_guidance
             dialect_note = narration_dialect_guidance(bound_dialect)
+            adapt_hook = bool(bound_hook and adapts_closing_hook_for_dialect(bound_dialect))
         evidence = evidence or {}
         target = task.get('targetDurationSeconds')
         length = initial_budget(target) if target is not None else {}
@@ -828,7 +841,12 @@ class Editor:
             'institution.displayName 和 institution.headline 各最多 12 字，标点也计入。'
             '封面放在 plan.cover，包含 main_title 和三个 labels；发布文案放在 plan.publication，'
             '包含 title、description 和五个不同的 topics。两个字段都按同一条完整口播撰写。'
-            + (f'结尾最后一句（kind=cta）必须原样使用该数字人绑定的固定片尾钩子：「{bound_hook}」。\n' if bound_hook else '\n')
+            + (
+                f'结尾最后一句（kind=cta）须以该数字人绑定的固定片尾钩子为蓝本，严格保留人物称呼、数字、引流关键词与原意，并转为地道广东话（粤语）口语（禁括号）：「{bound_hook}」。\n'
+                if adapt_hook else
+                f'结尾最后一句（kind=cta）必须原样使用该数字人绑定的固定片尾钩子：「{bound_hook}」。\n'
+                if bound_hook else '\n'
+            )
             + (dialect_note + '\n' if dialect_note else '')
             + self.rules('plan-schema', 'narration', 'narration-polish', 'covers') + '\n' + compact,
             {**context, 'facts': facts, 'supportingEvidence': evidence, 'person': person, 'index': index + 1, 'total': task['count'],
@@ -857,7 +875,7 @@ class Editor:
         plan['settings'] = {'music': {'enabled': task['music']}}
         if task['music'] and track:
             plan['settings']['music']['resource'] = track['resource']
-        if bound_hook:
+        if bound_hook and not adapt_hook:
             plan['settings']['closing_hook'] = {'text': bound_hook}
         visual_style = (task.get('personVisualStyles') or {}).get(person) or {}
         if visual_style.get('coverTemplateId'):
@@ -886,7 +904,12 @@ class Editor:
             # Layout uses the measured speech and glyph geometry in the render engine.
             sentence.pop('captions', None)
             if bound_hook and i == len(sentences) - 1 and sentence.get('kind') == 'cta':
-                sentence['text'] = bound_hook
+                if adapt_hook:
+                    adapted_cta = sentence['text'].strip() or bound_hook
+                    sentence['text'] = adapted_cta
+                    plan['settings']['closing_hook'] = {'text': adapted_cta}
+                else:
+                    sentence['text'] = bound_hook
             elif not revised and sentence.get('kind') == 'cta' and not (prefs or task.get('requirements')):
                 # These interchangeable CTA forms avoid a known rhotic ASR boundary.
                 sentence['text'] = sentence['text'].replace('在这儿', '在这里').replace('来这儿', '来这里')
@@ -1190,7 +1213,7 @@ class Editor:
             '2）医疗治愈/疗效/改善认知/延缓衰退等夸大或未经核实的效果承诺；'
             '3）口播把仅作环境背景的画面硬说成对应房间或服务正在发生的实拍现场；'
             '4）漏掉用户明确指定的要求或主题。'
-            '若末句（kind=cta）来自数字人绑定的固定片尾钩子，其中的出镜人自我介绍、探访系列口径及互动引导属于既定人物设定，原样保留，不得判为事实错误或硬打回。'
+            '若末句（kind=cta）来自数字人绑定的固定片尾钩子（含广东话口语转换版），其中的出镜人自我介绍、探访系列口径及互动引导属于既定人物设定，不得判为事实错误或硬打回。'
             '轻微的口语化缩略（例如把“10分钟即可抵达就医”简说成“10分钟可达”、口语省去“最大程度”等修饰语）、服务清单长短、段落节奏或背景镜头贴合度优化，均属于风格建议，必须将 hardChecksPassed 设为 true，仅写入 styleIssues，不得硬打回。'
             '审核口语质量、覆盖范围、结尾咨询、封面及发布文案。'
             + coverage_rule + '实拍可呈现的重点展开，缺少对应画面的重要内容一句带过。'

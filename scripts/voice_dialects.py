@@ -1,4 +1,5 @@
 """Dialect catalog, per-model support matrix, provider parameters, and script guidance."""
+import re
 
 DEFAULT_LABEL = '普通话（默认）'
 
@@ -55,7 +56,12 @@ CANTONESE_NARRATION_GUIDANCE = (
     '优先使用地道粤语口语词（如：系/唔系、同/同埋、呢度/呢间、畀、嘅、睇/睇下、讲/讲话、今日、喺、冇、咗、啲），'
     '避免“我是/和你/这段/给你/我的/很/没有/在”等普通话书面表达；'
     '机构正式名称、地名、数字、医疗及照护专名保持准确原文，不得生造或改写专名，也不要加任何括号或注音；'
-    '若绑定了固定片尾钩子，最后一段仍按规定原样保留。'
+    '若绑定了固定片尾钩子，最后一段也须在严格保留人物称呼、数字、引流关键词与原意的前提下，自然改写为地道广东话（粤语）口语'
+    '（例如将“我是/带你看完/想要/在评论区/的”转为“我系/带你睇完/想/喺评论区/嘅”），不要生硬保留普通话书面语。'
+)
+
+_MANDARIN_HOOK_MARKERS = re.compile(
+    r'我是|我们|这里|这儿|这家|这个|这段|给你|和你|我的|没有|看完|看看|想要|怎么|什么|为什么|哪里|在评论区|评论区里|喜欢的话|的(?=[，。！？!?,.\s]|$)'
 )
 
 
@@ -149,6 +155,35 @@ def narration_dialect_guidance(dialect):
     code = normalize_dialect(dialect)
     if code == 'yue':
         return CANTONESE_NARRATION_GUIDANCE
+    return ''
+
+
+def adapts_closing_hook_for_dialect(dialect):
+    """Return True when a person's bound closing hook should be adapted into dialect speech."""
+    return normalize_dialect(dialect) == 'yue'
+
+
+def cantonese_hook_adaptation_issue(actual_text, bound_hook, dialect):
+    """Guardrail for Cantonese closing-hook adaptation: preserve numerals and avoid verbatim Mandarin copy."""
+    if not bound_hook or not adapts_closing_hook_for_dialect(dialect):
+        return ''
+    actual = str(actual_text or '').strip()
+    source = str(bound_hook or '').strip()
+    if not actual:
+        return '最后一段片尾钩子不能为空，请按绑定片尾钩子转为地道广东话（粤语）口语。'
+    expected_nums = re.findall(r'\d+', source)
+    missing_nums = [num for num in dict.fromkeys(expected_nums) if num not in actual]
+    if missing_nums:
+        return (
+            f'最后一段片尾钩子遗漏了原钩子中的数字（{"、".join(missing_nums)}），'
+            '请保留全部原数字、人物称呼与引流关键词，并保持地道广东话（粤语）口语。'
+        )
+    if re.sub(r'\s+', '', actual) == re.sub(r'\s+', '', source) and _MANDARIN_HOOK_MARKERS.search(source):
+        return (
+            '最后一段片尾钩子仍直接照抄了普通话原文，未转为地道广东话（粤语）口语。'
+            '请在严格保留人物称呼、数字、引流关键词与原意的前提下，将最后一段自然改写为粤语口语'
+            '（如将“我是/看完/想要/在/的”转为“我系/睇完/想/喺/嘅”）。'
+        )
     return ''
 
 

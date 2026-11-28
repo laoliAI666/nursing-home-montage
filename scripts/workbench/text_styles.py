@@ -635,11 +635,19 @@ def build_narration_system_prompt(snapshot: dict[str, Any] | None, *, dialect: s
         parts.append("\n".join(guard_lines))
 
     # Body & ending block
-    end_tail = (
-        "若「咨询引导」标明为该数字人绑定的固定片尾钩子，最后一段必须原样使用该钩子全文（一字不改），并将其字数计入全文总字数范围内。"
-        if ending["respectPersonHook"]
-        else "最后一段按本条「咨询引导」自然收尾，并将其字数计入全文总字数范围内。"
-    )
+    adapt_hook = False
+    if dialect:
+        from voice_dialects import adapts_closing_hook_for_dialect
+        adapt_hook = adapts_closing_hook_for_dialect(dialect)
+    if ending["respectPersonHook"]:
+        end_tail = (
+            "若「咨询引导」标明为该数字人绑定的固定片尾钩子，最后一段须在严格保留人物称呼、数字、引流关键词与原意的前提下，"
+            "自然转为地道广东话（粤语）口语（禁止括号，不要生硬照抄普通话书面语），并将其字数计入全文总字数范围内。"
+            if adapt_hook
+            else "若「咨询引导」标明为该数字人绑定的固定片尾钩子，最后一段必须原样使用该钩子全文（一字不改），并将其字数计入全文总字数范围内。"
+        )
+    else:
+        end_tail = "最后一段按本条「咨询引导」自然收尾，并将其字数计入全文总字数范围内。"
     parts.append(f"【正文要求】{body['prompt']}\n【结尾要求】{ending['prompt']}{end_tail}")
 
     parts.append(
@@ -692,8 +700,16 @@ def build_narration_repair_prompt(snapshot: dict[str, Any] | None, *, dialect: s
         "继续覆盖本条必讲清单，保留适用对象、服务条件和本条切入方式。"
         "超长时先压缩重复、次要例子和修饰语，不能用删除必须保留项来凑字数。偏短时解释一个有原文依据的要点。"
     )
+    adapt_hook = False
+    if dialect:
+        from voice_dialects import adapts_closing_hook_for_dialect
+        adapt_hook = adapts_closing_hook_for_dialect(dialect)
     if ending["respectPersonHook"]:
-        lines.append("结尾保留一个咨询动作；若绑定了固定片尾钩子，最后一段原样保留不得改写。")
+        lines.append(
+            "结尾保留一个咨询动作；若绑定了固定片尾钩子，最后一段须严格保留人物称呼、数字、引流关键词与原意并保持地道广东话（粤语）口语。"
+            if adapt_hook
+            else "结尾保留一个咨询动作；若绑定了固定片尾钩子，最后一段原样保留不得改写。"
+        )
     else:
         lines.append("结尾保留一个单一清晰的咨询动作。")
     lines.append('只返回 {"edits":[{"index":2,"text":"修订段落"}]}，段落编号从 1 起，每个指定编号返回一次。')

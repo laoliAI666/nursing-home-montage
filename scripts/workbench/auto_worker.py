@@ -406,6 +406,8 @@ class Production:
         budget = self.app.planning.narration_budget(task, index)
         bound_hook = self.closing_hook_for(task, index)
         bound_dialect = self.voice_dialect_for(task, index)
+        from voice_dialects import adapts_closing_hook_for_dialect, cantonese_hook_adaptation_issue
+        adapt_hook = bool(bound_hook and adapts_closing_hook_for_dialect(bound_dialect))
         prior = [paragraphs(self.read(folder/item['plan'])) for item in items]
         receipt = (folder or self.job)/f'narration-draft-{index + 1:04d}.json'
         log = self.read(receipt, {'firstReturn':None,'repairs':0})
@@ -440,6 +442,10 @@ class Production:
 
         def apply_bound_hook(parts):
             if bound_hook and parts:
+                if adapt_hook:
+                    if not str(parts[-1] or '').strip():
+                        return [*parts[:-1], bound_hook]
+                    return list(parts)
                 return [*parts[:-1], bound_hook]
             return list(parts)
 
@@ -514,7 +520,11 @@ class Production:
                     sections = '、'.join(str(i + 1) for i in repeated)
                     notes.append(f'正文和本批已有稿的相似度为 {similarity:.1f}%，达到 {sim_limit}%。'
                                  f'重新组织第 {sections or "已指定"} 段的句式和衔接，保持事实和顺序。')
-            if bound_hook and len(parts) > 1:
+            if adapt_hook and parts:
+                if hook_issue := cantonese_hook_adaptation_issue(parts[-1], bound_hook, bound_dialect):
+                    notes.append(hook_issue)
+                    positions.add(len(parts) - 1)
+            if bound_hook and not adapt_hook and len(parts) > 1:
                 positions.discard(len(parts) - 1)
             return notes, sorted(positions)
 
