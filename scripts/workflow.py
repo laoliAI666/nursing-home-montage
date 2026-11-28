@@ -144,6 +144,84 @@ def word_letters(word,next_word=''):
     if re.search(r'\d{4}\s*$',word) and next_word.lstrip(' ,，、').startswith('年'):
         return clean(word+'年')[:-1]
     return clean(word)
+def _validate_plan_typography(plan, cfg):
+    """Pre-TTS validation of chapter label length/width and active font glyph coverage."""
+    labels=[]
+    for i,s in enumerate(plan['sentences']):
+        if 'label' not in s or s['label'] is None:continue
+        if not isinstance(s['label'],str) or any(c in s['label'] for c in '\r\n'):
+            raise ValueError(f'第 {i+1} 句的章节标签格式不正确，不能包含换行。')
+        cleaned=s['label'].strip()
+        s['label']=cleaned
+        if cleaned:labels.append((i,cleaned))
+    try:
+        from fontTools.ttLib import TTFont
+    except ImportError:
+        for _,lb in labels:
+            if sum(0.55 if ord(c)<128 else 1.0 for c in lb)>15:
+                raise ValueError('章节标签过长，请改短，不压扁文字。')
+        return
+    import style_registry as sr
+    template_id=cfg.get('template',{}).get('id',sr.DEFAULT_VIDEO_ID)
+    roles=cfg.get('template',{}).get('overrides',{}).get('fonts',{})
+    default_ui=str(SKILL/'assets/NotoSansSC-Black.otf')
+    if template_id==sr.DEFAULT_VIDEO_ID:
+        body_override=cfg.get('typography',{}).get('body_font')
+        if body_override and not Path(body_override).is_file():
+            raise ValueError('Configured body font missing')
+        caption_font=(body_override or str(SKILL/'assets/LXGWWenKai-Regular.ttf'),cfg.get('typography',{}).get('collection_index'))
+        label_font=(roles.get('body',{}).get('file') or default_ui,roles.get('body',{}).get('index'))
+        title_font=(roles.get('title',{}).get('file') or default_ui,roles.get('title',{}).get('index'))
+        sub_font=(roles.get('subtitle',{}).get('file') or default_ui,roles.get('subtitle',{}).get('index'))
+        font_specs=[caption_font,label_font,title_font,sub_font]
+    else:
+        ui_font=(roles.get('body',{}).get('file') or default_ui,None)
+        label_font=ui_font
+        font_specs=[ui_font]
+    inst=plan['institution']
+    all_text=(
+        ''.join(strip_parenthetical(s['text']) for s in plan['sentences'])
+        +''.join(''.join(c.get('lines',[])) for s in plan['sentences'] for c in s.get('captions',[]))
+        +str(inst.get('name',''))+str(inst.get('displayName',''))+str(inst.get('headline',''))
+        +''.join(lb for _,lb in labels)
+    )
+    loaded={}
+    try:
+        for path,index in dict.fromkeys(font_specs):
+            font=TTFont(path,fontNumber=index) if index is not None else TTFont(path)
+            cmap=font.getBestCmap() or {}
+            loaded[(path,index)]=(font,cmap)
+            missing=sorted({c for c in all_text if not c.isspace() and ord(c) not in cmap})
+            if missing:raise ValueError('字体缺少实际用字：'+''.join(missing[:30]))
+        if labels:
+            lfont,lcmap=loaded[label_font]
+            units_per_em=lfont['head'].unitsPerEm;hmtx=lfont['hmtx']
+            def measure(text,size):
+                total=0.0
+                for c in text:
+                    glyph=lcmap.get(ord(c))
+                    total+=(size*0.6) if glyph is None else (hmtx[glyph][0]*size/units_per_em)
+                return total
+            if template_id==sr.DEFAULT_VIDEO_ID:
+                spec=pc.merge(read(SKILL/'assets/templates/fullscreen-orange.json'),cfg.get('template',{}).get('overrides',{}))
+                x,_,w,_=spec['chapter']['rect'];size=spec['chapter']['font_size']
+                for _,lb in labels:
+                    if x+max(w,measure(lb,size)+40)>840:
+                        raise ValueError('章节标签过长，请改短，不压扁文字。')
+            else:
+                video_entry=sr.get_video(template_id) if sr.video_exists(template_id) else cfg.get('template',{}).get('_frozenEntry')
+                if video_entry:
+                    ch=(video_entry.get('videoSpec') or {}).get('chapter') or {}
+                    variant=ch.get('variant','solid-pill')
+                    prefix=''.join(c for c in str(ch.get('prefix','')) if c.isspace() or ord(c) in lcmap)
+                    suffix=''.join(c for c in str(ch.get('suffix','')) if c.isspace() or ord(c) in lcmap)
+                    extra_l=32 if variant=='dot-pill' else (20 if variant in ('left-bar','left-bar-border') else 0)
+                    for _,lb in labels:
+                        if max(210,measure(f'{prefix}{lb}{suffix}',40)+56+extra_l)>880:
+                            raise ValueError('章节标签过长，请改短，不压扁文字。')
+    finally:
+        for font,_ in loaded.values():font.close()
+
 def validate_plan(job):
     plan=read(job/'plan.json');inv=read(job/'inventory.json');files={r['path']:r for r in inv['files']};facts={}
     inst=plan['institution']
@@ -191,6 +269,7 @@ def validate_plan(job):
         if s.get('captions') and ''.join(clean(c['text']) for c in s['captions'])!=clean(s['text']):raise ValueError('Captions must cover the complete original sentence')
         for c in s.get('captions',[]):
             if clean(''.join(c['lines']))!=clean(c['text']) or not 1<=len(c['lines'])<=2:raise ValueError('Caption lines must preserve wording and use 1–2 lines')
+    _validate_plan_typography(plan,cfg)
     # Quotations prove provenance, not the truth of an arbitrary paraphrase; SKILL.md requires semantic source review.
     (job/'narration.txt').write_text('\n'.join(strip_parenthetical(s['text']) for s in plan['sentences'])+'\n', encoding='utf-8')
     write(job/'plan.json',plan)

@@ -257,7 +257,8 @@ def build(job):
     for f in ('OrangeRounded.woff2','OrangeLabel.woff2'):(job/'assets/fonts'/f).unlink(missing_ok=True)
     chapters=[]
     for i,s in enumerate(plan['sentences']):
-        st,du,lb=boundaries[i],boundaries[i+1]-boundaries[i],s['label']
+        st,du,lb=boundaries[i],boundaries[i+1]-boundaries[i],str(s.get('label') or '').strip()
+        if not lb:continue
         if chapters and chapters[-1][2]==lb:chapters[-1][1]+=du
         else:chapters.append([st,du,lb])
     timeline={'duration':total,'voiceStart':offset,'voiceDuration':duration,'audio':'assets/voice/narration-master.wav','audioSha256':sha(voice_dir/'narration-master.wav'),'rawAudio':'assets/voice/narration.mp3','rawAudioSha256':sha(raw),'constantGainDB':gain,'speaker':cfg['voice']['speaker'],'speechRate':cfg['voice']['speech_rate'],'outroStart':total,'outroDuration':0,'holdLastCaption':True,'chapters':chapters}

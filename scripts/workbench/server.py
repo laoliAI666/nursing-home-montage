@@ -1391,7 +1391,7 @@ class Handler(BaseHTTPRequestHandler):
             "reference": self.app.reference() if (can_works or can_tasks) else {"available": False},
             "music": self.app.music.public() if can_music else {"tracks": [], "defaultId": ""},
             "institutions": self.app.store.list_institutions_fast() if (can_lib or can_tasks) else [],
-            "materialPreps": self.app.material_prep.all_jobs() if (can_lib or can_tasks) else {},
+            "materialPreps": self.app.material_prep.all_jobs() if (can_lib or can_tasks) else [],
             "draft": self.app.auth.get_draft(actor.user_id) if actor.can("tasks.create") else {},
             "selectedSource": "" if self.app.deploy_mode == "server" else read(self.app.data / "selected-source.json", {}).get("folder", ""),
             "currentUser": actor.public_user(int(self.app.auth.get_settings().get("reauthWindowSeconds", 300))),

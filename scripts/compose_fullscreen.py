@@ -482,6 +482,8 @@ def _compose_styled(job, cfg, template_id):
     brand = re.sub(r'\s*·\s*', ' · ', inst['displayName']).strip()
     ui = _svg_scrims(vspec) + _svg_header(vspec, inst['headline'], brand, typography, stickers)
     for i, (st, du, label) in enumerate(timeline['chapters']):
+        if not str(label or '').strip():
+            continue
         ui += _svg_chapter(vspec, i, st, du, label, typography, avatar_side, chapter_top)
     (job / 'compositions').mkdir(exist_ok=True)
     (job / 'compositions/orange-ui.html').write_text(document('orange-ui', ui), encoding='utf-8')
@@ -622,8 +624,9 @@ def compose(job):
     ui=f'''<g transform="translate({hx*916/1080} {hy*1717/1920}) scale({h['scale']})"><text x="458" y="220" text-anchor="middle" font-family="TitleFace" font-size="86" font-weight="900" font-style="italic" textLength="{h['title_width']}" lengthAdjust="spacingAndGlyphs" fill="white" stroke="#14100C" stroke-width="10" paint-order="stroke fill" stroke-linejoin="round" style="text-shadow:0 4px 6px #0008">{esc(inst['headline'])}</text><path fill="#FF941F" d="M58 265L788 251L856 265L829 278L877 288L853 304L887 316L871 330L883 344L858 354L871 370L827 383L92 401L38 383L51 369L24 351L45 337L26 321L55 306L42 291L76 281Z"/><text x="458" y="353" text-anchor="middle" font-family="BrandFace" font-weight="900" font-style="italic" font-size="82" textLength="{h['brand_width']}" lengthAdjust="spacingAndGlyphs" fill="white" stroke="#111" stroke-width="10" paint-order="stroke fill" stroke-linejoin="round">{esc(brand)}</text></g>'''
     timeline=read(job/'natural-timeline.json');x,y,w,height=spec['chapter']['rect']
     for i,(st,du,label) in enumerate(timeline['chapters']):
+        if not str(label or '').strip():continue
         size=spec['chapter']['font_size']
-        label_width=sum(label_metrics.font['hmtx'][label_metrics.cm[ord(c)]][0]*size/label_metrics.units for c in label)
+        label_width=_measure_text(label_metrics,label,size)
         width=max(w,label_width+40)
         if x+width>840:raise ValueError('章节标签过长，请改短，不压扁文字。')
         ui+=f'<g id="chapter-{i}" class="clip" data-start="{st}" data-duration="{du}" data-track-index="1"><rect x="{x}" y="{y}" width="{width}" height="{height}" rx="7" fill="#FF982D"/><text x="{x+width/2}" y="{y+54}" text-anchor="middle" font-family="OrangeLabel" font-size="{spec["chapter"]["font_size"]}" font-weight="900" fill="#111">{esc(label)}</text></g>'

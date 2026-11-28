@@ -903,6 +903,10 @@ class Editor:
                 raise PlanError(f'第 {i + 1} 句须包含口播 text 和 shots 数组。')
             # Layout uses the measured speech and glyph geometry in the render engine.
             sentence.pop('captions', None)
+            raw_label = re.sub(r'[\r\n]+', '', str(sentence.get('label') or '')).strip()
+            if not raw_label:
+                raw_label = '开场介绍' if i == 0 else '咨询引导' if sentence.get('kind') == 'cta' else '要点介绍'
+            sentence['label'] = raw_label
             if bound_hook and i == len(sentences) - 1 and sentence.get('kind') == 'cta':
                 if adapt_hook:
                     adapted_cta = sentence['text'].strip() or bound_hook
@@ -975,6 +979,7 @@ class Editor:
         result = self.ask(
             '给已经定稿的口播小节选镜头、绑定原文、编写封面和发布文案。spokenSegments 的每个编号恰好返回一次，'
             '用 segments 对象相同的数字键，禁止合并、拆分或改写台词。每条记录含 label、factIds、shots；'
+            'label 为该小节的简短章节标签（2 至 10 个常用汉字，不含换行、括号或特殊符号）；'
             'factIds 根据实际台词匹配，核心事实优先用 f 编号，其他可用 e 编号。每个事实小节需有来源。'
             '首尾只选有运动的真实视频。画面直接呈现台词事实时在 match 填 direct，否则填 context 并在 description 说明仅作背景。'
             'shots 的 path 填 mediaById 里的 M 开头编号，另填原片起始秒 sourceStart、相对时长 weight 和 description。'

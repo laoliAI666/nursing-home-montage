@@ -9,18 +9,18 @@ def scaffold(job,font_styles=""):
     timeline=read(job/'natural-timeline.json');total=timeline['duration']
     media=[]
     for i,shot in enumerate(read(job/'shot-list.json')):
-        common=f'id="shot-{i:02d}" class="clip footage" src="{esc(shot["asset"])}" data-start="{shot["start"]}" data-duration="{shot["duration"]}" data-track-index="0" style="z-index:{i+1};object-position:50% {shot["positionY"]}%"'
+        common=f'id="shot-{i:02d}" class="clip footage" src="{esc(shot["asset"])}" data-start="{shot["start"]}" data-duration="{shot["duration"]}" data-track-index="0" style="z-index:1;object-position:50% {shot["positionY"]}%"'
         if Path(shot['asset']).suffix.lower() in ('.mp4','.mov','.m4v','.mkv','.avi','.webm'):
             media.append(f'<video {common} muted playsinline data-media-start="{shot["sourceStart"]}"></video>')
         else:media.append(f'<img {common} alt="{esc(shot["description"])}">')
     animations=[]
     for a in read(job/'avatars.json'):
         ident=a['id']
-        media.append(f'<div id="presenter-{ident}-wrap" data-layout-allow-overlap style="position:absolute;left:{a["x"]}px;top:{a["y"]}px;width:{a["width"]}px;height:{a["height"]}px;z-index:35;opacity:0"><video id="presenter-{ident}" class="clip" src="{esc(a["video"])}" data-start="{a["start"]}" data-duration="{a["duration"]}" data-track-index="5" muted playsinline style="width:100%;height:100%;object-fit:contain"></video></div>')
+        media.append(f'<div id="presenter-{ident}-wrap" data-layout-allow-overlap style="position:absolute;left:{a["x"]}px;top:{a["y"]}px;width:{a["width"]}px;height:{a["height"]}px;z-index:1100;opacity:0"><video id="presenter-{ident}" class="clip" src="{esc(a["video"])}" data-start="{a["start"]}" data-duration="{a["duration"]}" data-track-index="5" muted playsinline style="width:100%;height:100%;object-fit:contain"></video></div>')
         animations.append(f'tl.fromTo("#presenter-{ident}-wrap",{{opacity:0}},{{opacity:1,duration:{a["fadeIn"]},immediateRender:false}},{a["start"]});')
         if a.get('fadeOut'):animations.append(f'tl.to("#presenter-{ident}-wrap",{{opacity:0,duration:{a["fadeOut"]}}},{a["start"]+a["duration"]-a["fadeOut"]});')
     for ident,track in [('orange-ui',1),('orange-captions',2)]:
-        media.append(f'<div id="{ident}" class="clip host" data-composition-id="{ident}" data-composition-src="compositions/{ident}.html" data-start="0" data-duration="{total}" data-width="1080" data-height="1920" data-track-index="{track}" style="z-index:{30 if track==1 else 40}"></div>')
+        media.append(f'<div id="{ident}" class="clip host" data-composition-id="{ident}" data-composition-src="compositions/{ident}.html" data-start="0" data-duration="{total}" data-width="1080" data-height="1920" data-track-index="{track}" style="z-index:{1000 if track==1 else 1200}"></div>')
     media.append(f'<audio id="female-narration" class="clip" src="{esc(timeline["audio"])}" data-start="{timeline["voiceStart"]}" data-duration="{timeline["voiceDuration"]}" data-volume="1" data-track-index="3"></audio>')
     bgm=read(job/'bgm-timeline.json')
     if bgm.get('enabled'):

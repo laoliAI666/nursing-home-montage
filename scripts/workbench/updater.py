@@ -358,16 +358,27 @@ class WorkbenchUpdater:
                     inst_map = {x["id"]: x.get("name") or x["id"] for x in app.library.records()}
                 except Exception:
                     pass
-                prep_jobs = app.material_prep.all_jobs() or {}
+                raw_prep_jobs = app.material_prep.all_jobs() or []
+                if isinstance(raw_prep_jobs, dict):
+                    prep_entries = [(str(k), v) for k, v in raw_prep_jobs.items() if isinstance(v, dict)]
+                elif isinstance(raw_prep_jobs, list):
+                    prep_entries = [
+                        (str(item.get("institutionId") or ""), item)
+                        for item in raw_prep_jobs
+                        if isinstance(item, dict) and item.get("institutionId")
+                    ]
+                else:
+                    prep_entries = []
                 added_prep = False
-                for ident, info in prep_jobs.items():
-                    if app.material_prep.is_running(ident) or (isinstance(info, dict) and info.get("status") == "running"):
-                        total = int((info or {}).get("total") or 0)
-                        done = int((info or {}).get("processed") or 0)
+                for ident, info in prep_entries:
+                    if app.material_prep.is_running(ident) or info.get("status") == "running":
+                        total = int(info.get("total") or 0)
+                        done = int(info.get("processed") or 0)
                         pct = f"（{int(done * 100 / total)}%）" if total > 0 else ""
+                        inst_name = info.get("institutionName") or inst_map.get(ident, ident)
                         blockers.append({
                             "kind": "素材整理",
-                            "title": f"{inst_map.get(ident, ident)} · AI 素材识别",
+                            "title": f"{inst_name} · AI 素材识别",
                             "detail": f"已整理 {done}/{total} 条实拍素材{pct}" if total > 0 else "正在后台识别镜头内容",
                             "route": f"#institution/{ident}",
                         })
